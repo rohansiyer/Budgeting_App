@@ -26,11 +26,13 @@ import {
 import { calculateDailyTotal, formatCurrency } from '../utils/calculations';
 import { MonthlyCalendarView } from '../components/MonthlyCalendarView';
 import { DailyDetailScreen } from './DailyDetailScreen';
+import { WeeklyBreakdownScreen } from './WeeklyBreakdownScreen';
 
 const CalendarScreen = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [showWeeklyBreakdown, setShowWeeklyBreakdown] = useState(false);
 
   const { transactions, accounts, getAccountBalance, isLoading, loadData } =
     useBudgetStore();
@@ -176,7 +178,10 @@ const CalendarScreen = () => {
             </View>
 
             {/* Ending balance */}
-            <TouchableOpacity style={styles.endingBalanceCard}>
+            <TouchableOpacity
+              style={styles.endingBalanceCard}
+              onPress={() => setShowWeeklyBreakdown(true)}
+            >
               <Text style={styles.balanceLabel}>Ending Balance</Text>
               <View style={styles.accountBalances}>
                 {accounts.map((acc) => (
@@ -215,6 +220,15 @@ const CalendarScreen = () => {
       {/* Daily Detail Modal */}
       {selectedDay && (
         <DailyDetailScreen date={selectedDay} onClose={() => setSelectedDay(null)} />
+      )}
+
+      {/* Weekly Breakdown Modal */}
+      {showWeeklyBreakdown && (
+        <WeeklyBreakdownScreen
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+          onClose={() => setShowWeeklyBreakdown(false)}
+        />
       )}
     </View>
   );
