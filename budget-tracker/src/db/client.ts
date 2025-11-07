@@ -16,6 +16,20 @@ const statements = [
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )`,
+      `CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        planned_monthly REAL NOT NULL,
+        planned_weekly REAL,
+        recurring INTEGER NOT NULL,
+        recurring_day INTEGER,
+        account_id TEXT NOT NULL,
+        icon TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (account_id) REFERENCES accounts(id)
+      )`,
       `CREATE TABLE IF NOT EXISTS transactions (
         id TEXT PRIMARY KEY,
         amount REAL NOT NULL,
@@ -34,20 +48,6 @@ const statements = [
       )`,
       `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)`,
       `CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`,
-      `CREATE TABLE IF NOT EXISTS categories (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        color TEXT NOT NULL,
-        planned_monthly REAL NOT NULL,
-        planned_weekly REAL,
-        recurring INTEGER NOT NULL,
-        recurring_day INTEGER,
-        account_id TEXT NOT NULL,
-        icon TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (account_id) REFERENCES accounts(id)
-      )`,
       `CREATE TABLE IF NOT EXISTS income_configs (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
