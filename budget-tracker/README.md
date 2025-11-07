@@ -4,14 +4,14 @@ A comprehensive React Native budget tracking app built with Expo, designed for m
 
 ## Features
 
-### 📅 Calendar View
+### Calendar View
 - **Weekly View**: Track daily transactions with running balances
 - **Monthly View**: Color-coded calendar showing spending intensity
 - Toggle between views seamlessly
 - Navigate through weeks/months
 - Tap any day to see detailed breakdown
 
-### 💰 Transaction Management
+### Transaction Management
 - Add income and expenses by category
 - Real-time account balance calculations
 - Multiple account support (PNC Spending, DCU Savings)
@@ -19,7 +19,7 @@ A comprehensive React Native budget tracking app built with Expo, designed for m
 - Edit and delete transactions
 - Account-to-account transfers
 
-### 📊 Analytics & Insights
+### Analytics & Insights
 - **Dual-layer pie chart**: Planned vs Actual spending visualization
 - Category-wise spending breakdown
 - Budget adherence tracking with progress bars
@@ -28,7 +28,7 @@ A comprehensive React Native budget tracking app built with Expo, designed for m
 - Month-over-month comparisons
 - Over-budget category alerts
 
-### ⚙️ Settings & Management
+### Settings & Management
 - Edit account balances
 - Manage category budgets
 - View recurring expenses
@@ -37,7 +37,7 @@ A comprehensive React Native budget tracking app built with Expo, designed for m
 - Dark mode (always on)
 - Notification preferences
 
-### 📈 Weekly Breakdown
+### Weekly Breakdown
 - Detailed weekly financial summary
 - Starting and ending balances by account
 - Income breakdown by source
