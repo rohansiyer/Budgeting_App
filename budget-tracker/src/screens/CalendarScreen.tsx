@@ -25,10 +25,12 @@ import {
 } from '../utils/dateUtils';
 import { calculateDailyTotal, formatCurrency } from '../utils/calculations';
 import { MonthlyCalendarView } from '../components/MonthlyCalendarView';
+import { DailyDetailScreen } from './DailyDetailScreen';
 
 const CalendarScreen = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   const { transactions, accounts, getAccountBalance, isLoading, loadData } =
     useBudgetStore();
@@ -147,6 +149,7 @@ const CalendarScreen = () => {
                   <TouchableOpacity
                     key={dayStr}
                     style={[styles.dayCard, today && styles.dayCardToday]}
+                    onPress={() => setSelectedDay(day)}
                   >
                     <Text style={[styles.dayName, today && styles.dayNameToday]}>
                       {format(day, 'EEE')}
@@ -201,8 +204,17 @@ const CalendarScreen = () => {
         </>
       ) : (
         <ScrollView style={styles.scrollView}>
-          <MonthlyCalendarView currentDate={currentDate} transactions={transactions} />
+          <MonthlyCalendarView
+            currentDate={currentDate}
+            transactions={transactions}
+            onDayPress={(day) => setSelectedDay(day)}
+          />
         </ScrollView>
+      )}
+
+      {/* Daily Detail Modal */}
+      {selectedDay && (
+        <DailyDetailScreen date={selectedDay} onClose={() => setSelectedDay(null)} />
       )}
     </View>
   );
