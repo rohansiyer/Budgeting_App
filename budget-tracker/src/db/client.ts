@@ -1,8 +1,8 @@
 import { drizzle } from 'drizzle-orm/expo-sqlite';
-import * as ExpoSQLite from 'expo-sqlite';
+import { openDatabaseSync } from 'expo-sqlite';
 import * as schema from './schema';
 
-const expoDb = ExpoSQLite.openDatabase('budget_tracker.db');
+const expoDb = openDatabaseSync('budget_tracker.db');
 
 export const db = drizzle(expoDb, { schema });
 
@@ -98,21 +98,13 @@ const statements = [
 
 // Initialize database tables
 export const initDatabase = async () => {
-  return new Promise<void>((resolve, reject) => {
-    expoDb.transaction(
-      (tx) => {
-        statements.forEach(statement => {
-          tx.executeSql(statement);
-        });
-      },
-      (error) => {
-        console.error('Error initializing database:', error);
-        reject(error);
-      },
-      () => {
-        console.log('Database initialized successfully');
-        resolve();
-      }
-    );
-  });
+  try {
+    for (const statement of statements) {
+      await expoDb.execAsync(statement);
+    }
+    console.log('Database initialized successfully');
+  } catch (error) {
+    console.error('Error initializing database:', error);
+    throw error;
+  }
 };
