@@ -17,9 +17,11 @@ interface BudgetStore {
   incomeConfigs: IncomeConfig[];
   settings: Settings | null;
   isLoading: boolean;
+  error: string | null;
 
   // Actions
   loadData: () => Promise<void>;
+  clearError: () => void;
 
   // Account actions
   addAccount: (account: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
@@ -53,9 +55,10 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   incomeConfigs: [],
   settings: null,
   isLoading: false,
+  error: null,
 
   loadData: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const [accounts, transactions, categories, incomeConfigs, settings] = await Promise.all([
         db.select().from(schema.accounts),
@@ -72,77 +75,128 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
         incomeConfigs: incomeConfigs as IncomeConfig[],
         settings: settings.length > 0 ? (settings[0] as Settings) : null,
         isLoading: false,
+        error: null,
       });
     } catch (error) {
       console.error('Error loading data:', error);
-      set({ isLoading: false });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load data';
+      set({ isLoading: false, error: errorMessage });
+      throw error; // Re-throw so UI can handle it
     }
+  },
+
+  clearError: () => {
+    set({ error: null });
   },
 
   // Account actions
   addAccount: async (account) => {
-    const now = new Date().toISOString();
-    const newAccount: Account = {
-      ...account,
-      id: generateId(),
-      createdAt: now,
-      updatedAt: now,
-    };
+    try {
+      const now = new Date().toISOString();
+      const newAccount: Account = {
+        ...account,
+        id: generateId(),
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    await db.insert(schema.accounts).values(newAccount);
-    set({ accounts: [...get().accounts, newAccount] });
+      await db.insert(schema.accounts).values(newAccount);
+      set({ accounts: [...get().accounts, newAccount], error: null });
+    } catch (error) {
+      console.error('Error adding account:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add account';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   updateAccount: async (id, updates) => {
-    const now = new Date().toISOString();
-    await db
-      .update(schema.accounts)
-      .set({ ...updates, updatedAt: now })
-      .where(eq(schema.accounts.id, id));
+    try {
+      const now = new Date().toISOString();
+      await db
+        .update(schema.accounts)
+        .set({ ...updates, updatedAt: now })
+        .where(eq(schema.accounts.id, id));
 
-    set({
-      accounts: get().accounts.map((acc) =>
-        acc.id === id ? { ...acc, ...updates, updatedAt: now } : acc
-      ),
-    });
+      set({
+        accounts: get().accounts.map((acc) =>
+          acc.id === id ? { ...acc, ...updates, updatedAt: now } : acc
+        ),
+        error: null,
+      });
+    } catch (error) {
+      console.error('Error updating account:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update account';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   deleteAccount: async (id) => {
-    await db.delete(schema.accounts).where(eq(schema.accounts.id, id));
-    set({ accounts: get().accounts.filter((acc) => acc.id !== id) });
+    try {
+      await db.delete(schema.accounts).where(eq(schema.accounts.id, id));
+      set({ accounts: get().accounts.filter((acc) => acc.id !== id), error: null });
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete account';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   // Transaction actions
   addTransaction: async (transaction) => {
-    const now = new Date().toISOString();
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: generateId(),
-      createdAt: now,
-      updatedAt: now,
-    };
+    try {
+      const now = new Date().toISOString();
+      const newTransaction: Transaction = {
+        ...transaction,
+        id: generateId(),
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    await db.insert(schema.transactions).values(newTransaction);
-    set({ transactions: [newTransaction, ...get().transactions] });
+      await db.insert(schema.transactions).values(newTransaction);
+      set({ transactions: [newTransaction, ...get().transactions], error: null });
+    } catch (error) {
+      console.error('Error adding transaction:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add transaction';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   updateTransaction: async (id, updates) => {
-    const now = new Date().toISOString();
-    await db
-      .update(schema.transactions)
-      .set({ ...updates, updatedAt: now })
-      .where(eq(schema.transactions.id, id));
+    try {
+      const now = new Date().toISOString();
+      await db
+        .update(schema.transactions)
+        .set({ ...updates, updatedAt: now })
+        .where(eq(schema.transactions.id, id));
 
-    set({
-      transactions: get().transactions.map((txn) =>
-        txn.id === id ? { ...txn, ...updates, updatedAt: now } : txn
-      ),
-    });
+      set({
+        transactions: get().transactions.map((txn) =>
+          txn.id === id ? { ...txn, ...updates, updatedAt: now } : txn
+        ),
+        error: null,
+      });
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update transaction';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   deleteTransaction: async (id) => {
-    await db.delete(schema.transactions).where(eq(schema.transactions.id, id));
-    set({ transactions: get().transactions.filter((txn) => txn.id !== id) });
+    try {
+      await db.delete(schema.transactions).where(eq(schema.transactions.id, id));
+      set({ transactions: get().transactions.filter((txn) => txn.id !== id), error: null });
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete transaction';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   getTransactionsForDate: (date: string) => {
@@ -157,51 +211,85 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   // Category actions
   addCategory: async (category) => {
-    const now = new Date().toISOString();
-    const newCategory: Category = {
-      ...category,
-      id: generateId(),
-      createdAt: now,
-      updatedAt: now,
-    };
+    try {
+      const now = new Date().toISOString();
+      const newCategory: Category = {
+        ...category,
+        id: generateId(),
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    await db.insert(schema.categories).values(newCategory);
-    set({ categories: [...get().categories, newCategory] });
+      await db.insert(schema.categories).values(newCategory);
+      set({ categories: [...get().categories, newCategory], error: null });
+    } catch (error) {
+      console.error('Error adding category:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add category';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   updateCategory: async (id, updates) => {
-    const now = new Date().toISOString();
-    await db
-      .update(schema.categories)
-      .set({ ...updates, updatedAt: now })
-      .where(eq(schema.categories.id, id));
+    try {
+      const now = new Date().toISOString();
+      await db
+        .update(schema.categories)
+        .set({ ...updates, updatedAt: now })
+        .where(eq(schema.categories.id, id));
 
-    set({
-      categories: get().categories.map((cat) =>
-        cat.id === id ? { ...cat, ...updates, updatedAt: now } : cat
-      ),
-    });
+      set({
+        categories: get().categories.map((cat) =>
+          cat.id === id ? { ...cat, ...updates, updatedAt: now } : cat
+        ),
+        error: null,
+      });
+    } catch (error) {
+      console.error('Error updating category:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update category';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   deleteCategory: async (id) => {
-    await db.delete(schema.categories).where(eq(schema.categories.id, id));
-    set({ categories: get().categories.filter((cat) => cat.id !== id) });
+    try {
+      await db.delete(schema.categories).where(eq(schema.categories.id, id));
+      set({ categories: get().categories.filter((cat) => cat.id !== id), error: null });
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete category';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   // Settings actions
   updateSettings: async (updates) => {
-    const currentSettings = get().settings;
-    if (!currentSettings) return;
+    try {
+      const currentSettings = get().settings;
+      if (!currentSettings) {
+        const error = new Error('Settings not initialized');
+        set({ error: error.message });
+        throw error;
+      }
 
-    const now = new Date().toISOString();
-    await db
-      .update(schema.settings)
-      .set({ ...updates, updatedAt: now })
-      .where(eq(schema.settings.id, currentSettings.id));
+      const now = new Date().toISOString();
+      await db
+        .update(schema.settings)
+        .set({ ...updates, updatedAt: now })
+        .where(eq(schema.settings.id, currentSettings.id));
 
-    set({
-      settings: { ...currentSettings, ...updates, updatedAt: now },
-    });
+      set({
+        settings: { ...currentSettings, ...updates, updatedAt: now },
+        error: null,
+      });
+    } catch (error) {
+      console.error('Error updating settings:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update settings';
+      set({ error: errorMessage });
+      throw error;
+    }
   },
 
   // Computed values
