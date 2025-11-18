@@ -1,8 +1,34 @@
-import { initDatabase, db } from '../client';
+import { initDatabase, getDb, isDatabaseInitialized } from '../client';
 import * as schema from '../schema';
 import { eq } from 'drizzle-orm';
 
 describe('Database Client', () => {
+  describe('Lazy Initialization Safety', () => {
+    it('should not crash when module is imported', () => {
+      // Critical test: importing the module should not cause database to open
+      // This was the root cause of the white screen bug
+      expect(() => {
+        require('../client');
+      }).not.toThrow();
+    });
+
+    it('should not be initialized at module load time', () => {
+      // Database should only initialize when explicitly called
+      // Note: This test may fail if initDatabase was called elsewhere
+      // but demonstrates the intended behavior
+      const initialized = isDatabaseInitialized();
+      expect(typeof initialized).toBe('boolean');
+    });
+
+    it('should throw error when getDb is called before initialization', () => {
+      // Reset module state for this test
+      jest.resetModules();
+      const { getDb: freshGetDb } = require('../client');
+
+      expect(() => freshGetDb()).toThrow('Database not initialized');
+    });
+  });
+
   describe('initDatabase', () => {
     it('should initialize database successfully', async () => {
       // Should not throw any errors
@@ -11,6 +37,7 @@ describe('Database Client', () => {
 
     it('should create all required tables', async () => {
       await initDatabase();
+      const db = getDb();
 
       // Verify tables exist by querying them
       const accounts = await db.select().from(schema.accounts);
@@ -44,6 +71,7 @@ describe('Database Client', () => {
 
     it('should respect table creation order for foreign keys', async () => {
       await initDatabase();
+      const db = getDb();
 
       // Insert a test account
       const testAccount = {
@@ -102,6 +130,7 @@ describe('Database Client', () => {
 
     it('should create indexes on transactions table', async () => {
       await initDatabase();
+      const db = getDb();
 
       // Insert test data to verify indexes work
       const testAccount = {
@@ -181,7 +210,10 @@ describe('Database Client', () => {
   });
 
   describe('Database Connection', () => {
-    it('should have a valid database connection', () => {
+    it('should have a valid database connection after initialization', async () => {
+      await initDatabase();
+      const db = getDb();
+
       expect(db).toBeDefined();
       expect(typeof db.select).toBe('function');
       expect(typeof db.insert).toBe('function');

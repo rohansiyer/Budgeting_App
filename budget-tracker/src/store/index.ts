@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { db } from '../db/client';
+import { getDb } from '../db/client';
 import * as schema from '../db/schema';
 import { Account, Transaction, Category, Settings, IncomeConfig } from '../types';
 import { eq, and, between, desc } from 'drizzle-orm';
@@ -60,6 +60,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   loadData: async () => {
     set({ isLoading: true, error: null });
     try {
+      const db = getDb();
       const [accounts, transactions, categories, incomeConfigs, settings] = await Promise.all([
         db.select().from(schema.accounts),
         db.select().from(schema.transactions).orderBy(desc(schema.transactions.timestamp)),
@@ -92,6 +93,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   // Account actions
   addAccount: async (account) => {
     try {
+      const db = getDb();
       const now = new Date().toISOString();
       const newAccount: Account = {
         ...account,
@@ -112,6 +114,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   updateAccount: async (id, updates) => {
     try {
+      const db = getDb();
       const now = new Date().toISOString();
       await db
         .update(schema.accounts)
@@ -134,6 +137,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   deleteAccount: async (id) => {
     try {
+      const db = getDb();
       await db.delete(schema.accounts).where(eq(schema.accounts.id, id));
       set({ accounts: get().accounts.filter((acc) => acc.id !== id), error: null });
     } catch (error) {
@@ -147,6 +151,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   // Transaction actions
   addTransaction: async (transaction) => {
     try {
+      const db = getDb();
       const now = new Date().toISOString();
       const newTransaction: Transaction = {
         ...transaction,
@@ -167,6 +172,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   updateTransaction: async (id, updates) => {
     try {
+      const db = getDb();
       const now = new Date().toISOString();
       await db
         .update(schema.transactions)
@@ -189,6 +195,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   deleteTransaction: async (id) => {
     try {
+      const db = getDb();
       await db.delete(schema.transactions).where(eq(schema.transactions.id, id));
       set({ transactions: get().transactions.filter((txn) => txn.id !== id), error: null });
     } catch (error) {
@@ -212,6 +219,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   // Category actions
   addCategory: async (category) => {
     try {
+      const db = getDb();
       const now = new Date().toISOString();
       const newCategory: Category = {
         ...category,
@@ -232,6 +240,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   updateCategory: async (id, updates) => {
     try {
+      const db = getDb();
       const now = new Date().toISOString();
       await db
         .update(schema.categories)
@@ -254,6 +263,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   deleteCategory: async (id) => {
     try {
+      const db = getDb();
       await db.delete(schema.categories).where(eq(schema.categories.id, id));
       set({ categories: get().categories.filter((cat) => cat.id !== id), error: null });
     } catch (error) {
@@ -267,6 +277,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   // Settings actions
   updateSettings: async (updates) => {
     try {
+      const db = getDb();
       const currentSettings = get().settings;
       if (!currentSettings) {
         const error = new Error('Settings not initialized');

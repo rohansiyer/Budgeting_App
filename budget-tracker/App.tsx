@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
-import { Button } from 'react-native-paper';
+import { Button, PaperProvider } from 'react-native-paper';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
 import { colors } from './src/theme/colors';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
-export default function App() {
+function AppContent() {
   const [isReady, setIsReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -39,38 +40,44 @@ export default function App() {
   // Show error screen with retry option
   if (initError && !isRetrying) {
     return (
-      <View style={styles.errorContainer}>
-        <View style={styles.errorContent}>
-          <ActivityIndicator size="large" color={colors.status.error} style={styles.errorIcon} />
-          <Text style={styles.errorTitle}>Initialization Failed</Text>
-          <Text style={styles.errorMessage}>{initError}</Text>
-          <View style={styles.buttonContainer}>
-            <View style={styles.retryButton}>
-              <Button mode="contained" onPress={handleRetry} buttonColor={colors.accent.primary}>
-                Retry Initialization
-              </Button>
+      <PaperProvider>
+        <View style={styles.errorContainer}>
+          <View style={styles.errorContent}>
+            <ActivityIndicator size="large" color={colors.status.error} style={styles.errorIcon} />
+            <Text style={styles.errorTitle}>Initialization Failed</Text>
+            <Text style={styles.errorMessage}>{initError}</Text>
+            <View style={styles.buttonContainer}>
+              <View style={styles.retryButton}>
+                <Button mode="contained" onPress={handleRetry} buttonColor={colors.accent.primary}>
+                  Retry Initialization
+                </Button>
+              </View>
             </View>
           </View>
         </View>
-      </View>
+      </PaperProvider>
     );
   }
 
   // Show loading screen
   if (!isReady) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accent.primary} />
-        <Text style={styles.loadingText}>Initializing database...</Text>
-      </View>
+      <PaperProvider>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.accent.primary} />
+          <Text style={styles.loadingText}>Initializing database...</Text>
+        </View>
+      </PaperProvider>
     );
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <RootNavigator />
-    </NavigationContainer>
+    <PaperProvider>
+      <NavigationContainer>
+        <StatusBar style="light" />
+        <RootNavigator />
+      </NavigationContainer>
+    </PaperProvider>
   );
 }
 
@@ -121,3 +128,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}

@@ -2,7 +2,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
-  testMatch: ['**/__tests__/**/*.test.ts'],
+  testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
   // Skip database and store tests by default - they require native SQLite environment
   // To run all tests including integration tests: npm test -- --testPathIgnorePatterns=""
   testPathIgnorePatterns: [
