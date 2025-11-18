@@ -217,5 +217,135 @@ describe('Date Utils', () => {
       expect(parsed.getMonth()).toBe(10);
       expect(parsed.getDate()).toBe(7);
     });
+
+    it('should parse ISO datetime string', () => {
+      const dateStr = '2025-11-07T15:30:45Z';
+      const parsed = parseDate(dateStr);
+
+      expect(parsed.getFullYear()).toBe(2025);
+      expect(parsed.getMonth()).toBe(10);
+      expect(parsed.getDate()).toBe(7);
+    });
+  });
+
+  describe('Edge Cases and Boundary Conditions', () => {
+    it('should handle year boundaries correctly', () => {
+      const newYearsEve = new Date('2024-12-31');
+      const newYearsDay = new Date('2025-01-01');
+
+      const eveWeek = getWeekBoundaries(newYearsEve);
+      const dayWeek = getWeekBoundaries(newYearsDay);
+
+      // Verify dates are valid
+      expect(eveWeek.start).toBeInstanceOf(Date);
+      expect(dayWeek.start).toBeInstanceOf(Date);
+    });
+
+    it('should handle leap year February correctly', () => {
+      const leapFeb = new Date('2024-02-29'); // Valid leap day
+      const days = getDaysInMonth(leapFeb);
+
+      expect(days).toHaveLength(29);
+      expect(days[28].getDate()).toBe(29);
+    });
+
+    it('should handle month transitions in week boundaries', () => {
+      const endOfMonth = new Date('2025-01-31');
+      const { start, end } = getWeekBoundaries(endOfMonth);
+
+      expect(start).toBeInstanceOf(Date);
+      expect(end).toBeInstanceOf(Date);
+      // Week should span into February
+      expect(end.getMonth()).toBeGreaterThanOrEqual(start.getMonth());
+    });
+
+    it('should handle very old dates', () => {
+      const oldDate = new Date('1970-01-01');
+      const formatted = formatDate(oldDate);
+
+      expect(formatted).toBe('1970-01-01');
+    });
+
+    it('should handle far future dates', () => {
+      const futureDate = new Date('2099-12-31');
+      const formatted = formatDate(futureDate);
+
+      expect(formatted).toBe('2099-12-31');
+    });
+
+    it('should handle getNextOccurrence at week boundary', () => {
+      const saturday = new Date('2025-11-08'); // Saturday (day 6)
+      const nextSunday = getNextOccurrence(0, saturday); // Next Sunday
+
+      expect(nextSunday.getDay()).toBe(0);
+      expect(nextSunday.getDate()).toBe(9); // Next day
+    });
+
+    it('should handle getNextOccurrence for same day of week', () => {
+      const wednesday = new Date('2025-11-05'); // Wednesday (day 3)
+      const nextWednesday = getNextOccurrence(3, wednesday);
+
+      // Should be next week
+      expect(nextWednesday.getDay()).toBe(3);
+      expect(nextWednesday.getDate()).toBe(12); // One week later
+    });
+
+    it('should handle formatWeekRange across years', () => {
+      const start = new Date('2024-12-29'); // Sunday
+      const end = new Date('2025-01-04'); // Saturday
+
+      const formatted = formatWeekRange(start, end);
+
+      expect(formatted).toContain('Dec 29');
+      expect(formatted).toContain('Jan 4');
+      expect(formatted).toContain('2025');
+    });
+
+    it('should handle all days of week for getNextOccurrence', () => {
+      const baseDate = new Date('2025-11-10'); // Monday
+
+      for (let day = 0; day < 7; day++) {
+        const nextOccurrence = getNextOccurrence(day, baseDate);
+        expect(nextOccurrence.getDay()).toBe(day);
+        expect(nextOccurrence.getTime()).toBeGreaterThan(baseDate.getTime());
+      }
+    });
+
+    it('should handle time preservation in toISODateTime', () => {
+      const date = new Date('2025-11-07T23:59:59.999Z');
+      const iso = toISODateTime(date);
+
+      expect(iso).toContain('23:59:59');
+      expect(iso).toContain('.999Z');
+    });
+
+    it('should handle different week start days in getDaysInWeek', () => {
+      const date = new Date('2025-11-07');
+
+      const sundayWeek = getDaysInWeek(date, 0);
+      const mondayWeek = getDaysInWeek(date, 1);
+
+      expect(sundayWeek).toHaveLength(7);
+      expect(mondayWeek).toHaveLength(7);
+      expect(sundayWeek[0].getDay()).toBe(0);
+      expect(mondayWeek[0].getDay()).toBe(1);
+    });
+
+    it('should handle month with 31 days', () => {
+      const january = new Date('2025-01-15');
+      const days = getDaysInMonth(january);
+
+      expect(days).toHaveLength(31);
+      expect(days[30].getDate()).toBe(31);
+    });
+
+    it('should handle month with 30 days', () => {
+      const april = new Date('2025-04-15');
+      const days = getDaysInMonth(april);
+
+      expect(days).toHaveLength(30);
+      expect(days[29].getDate()).toBe(30);
+    });
   });
 });
+

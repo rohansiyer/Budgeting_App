@@ -398,4 +398,144 @@ describe('Calculation Utils', () => {
       expect(progress.percentage).toBe(0);
     });
   });
+
+  describe('Edge Cases and Precision', () => {
+    it('should handle empty transaction arrays', () => {
+      const empty: Transaction[] = [];
+
+      expect(calculateDailyTotal(empty)).toBe(0);
+      expect(calculateIncomeTotal(empty)).toBe(0);
+      expect(calculateExpenseTotal(empty)).toBe(0);
+    });
+
+    it('should handle very large amounts', () => {
+      const largeTransactions: Transaction[] = [
+        {
+          id: '1',
+          amount: 1000000.50,
+          type: 'income',
+          categoryId: null,
+          accountId: 'test',
+          date: '2025-11-07',
+          timestamp: '2025-11-07T12:00:00Z',
+          createdAt: '2025-11-07T12:00:00Z',
+          updatedAt: '2025-11-07T12:00:00Z',
+        },
+        {
+          id: '2',
+          amount: 999999.75,
+          type: 'expense',
+          categoryId: 'test',
+          accountId: 'test',
+          date: '2025-11-07',
+          timestamp: '2025-11-07T12:00:00Z',
+          createdAt: '2025-11-07T12:00:00Z',
+          updatedAt: '2025-11-07T12:00:00Z',
+        },
+      ];
+
+      const total = calculateDailyTotal(largeTransactions);
+      expect(total).toBe(0.75);
+    });
+
+    it('should handle decimal precision correctly', () => {
+      const precisionTransactions: Transaction[] = [
+        {
+          id: '1',
+          amount: 10.11,
+          type: 'expense',
+          categoryId: 'test',
+          accountId: 'test',
+          date: '2025-11-07',
+          timestamp: '2025-11-07T12:00:00Z',
+          createdAt: '2025-11-07T12:00:00Z',
+          updatedAt: '2025-11-07T12:00:00Z',
+        },
+        {
+          id: '2',
+          amount: 10.22,
+          type: 'expense',
+          categoryId: 'test',
+          accountId: 'test',
+          date: '2025-11-07',
+          timestamp: '2025-11-07T12:00:00Z',
+          createdAt: '2025-11-07T12:00:00Z',
+          updatedAt: '2025-11-07T12:00:00Z',
+        },
+        {
+          id: '3',
+          amount: 10.33,
+          type: 'expense',
+          categoryId: 'test',
+          accountId: 'test',
+          date: '2025-11-07',
+          timestamp: '2025-11-07T12:00:00Z',
+          createdAt: '2025-11-07T12:00:00Z',
+          updatedAt: '2025-11-07T12:00:00Z',
+        },
+      ];
+
+      const total = calculateExpenseTotal(precisionTransactions);
+      expect(total).toBeCloseTo(30.66, 2);
+    });
+
+    it('should handle formatCurrency with very small amounts', () => {
+      expect(formatCurrency(0.01)).toBe('$0.01');
+      expect(formatCurrency(0.05)).toBe('$0.05');
+      expect(formatCurrency(0.99)).toBe('$0.99');
+    });
+
+    it('should handle formatCurrency with very large amounts', () => {
+      expect(formatCurrency(1000000)).toBe('$1,000,000.00');
+      expect(formatCurrency(9999999.99)).toBe('$9,999,999.99');
+    });
+
+    it('should handle negative savings rate when overspending', () => {
+      const rate = calculateSavingsRate(500, 1000);
+      expect(rate).toBe(-100);
+    });
+
+    it('should handle calculateCategorySpending with no matching transactions', () => {
+      const spending = calculateCategorySpending(mockTransactions, 'nonexistent');
+      expect(spending).toBe(0);
+    });
+
+    it('should handle budget progress when spending exceeds budget', () => {
+      const category: Category = {
+        id: 'overspend',
+        name: 'Overspend',
+        color: '#FF0000',
+        plannedMonthly: 100,
+        recurring: false,
+        accountId: 'test',
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:00:00Z',
+      };
+
+      const overspendTransactions: Transaction[] = [
+        {
+          id: '1',
+          amount: 150,
+          type: 'expense',
+          categoryId: 'overspend',
+          accountId: 'test',
+          date: '2025-11-15',
+          timestamp: '2025-11-15T12:00:00Z',
+          createdAt: '2025-11-15T12:00:00Z',
+          updatedAt: '2025-11-15T12:00:00Z',
+        },
+      ];
+
+      const progress = calculateMonthlyBudgetProgress(
+        overspendTransactions,
+        category,
+        new Date('2025-11-20')
+      );
+
+      expect(progress.spent).toBe(150);
+      expect(progress.budget).toBe(100);
+      expect(progress.percentage).toBe(150);
+      expect(progress.remaining).toBe(-50);
+    });
+  });
 });
