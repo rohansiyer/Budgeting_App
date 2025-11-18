@@ -3,10 +3,14 @@ import {
   calculateIncomeTotal,
   calculateExpenseTotal,
   calculateCategorySpending,
+  calculateCategorySpendingBreakdown,
+  calculateWeeklyBreakdown,
+  calculateMonthlyBudgetProgress,
+  calculateWeeklyBudgetProgress,
   formatCurrency,
   calculateSavingsRate,
 } from '../calculations';
-import { Transaction } from '../../types';
+import { Transaction, Category, Account } from '../../types';
 
 const mockTransactions: Transaction[] = [
   {
@@ -176,6 +180,222 @@ describe('Calculation Utils', () => {
     it('should handle equal income and expenses', () => {
       const rate = calculateSavingsRate(1000, 1000);
       expect(rate).toBe(0); // 0% savings
+    });
+  });
+
+  describe('calculateCategorySpendingBreakdown', () => {
+    it('should calculate spending breakdown for all categories', () => {
+      const categories: Category[] = [
+        {
+          id: 'food',
+          name: 'Food',
+          color: '#00FF00',
+          plannedMonthly: 500,
+          recurring: false,
+          accountId: 'pnc',
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:00Z',
+        },
+        {
+          id: 'gas',
+          name: 'Gas',
+          color: '#0000FF',
+          plannedMonthly: 200,
+          recurring: false,
+          accountId: 'pnc',
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:00Z',
+        },
+      ];
+
+      const breakdown = calculateCategorySpendingBreakdown(mockTransactions, categories);
+
+      expect(breakdown).toHaveLength(2);
+      expect(breakdown[0].categoryId).toBe('food');
+      expect(breakdown[0].planned).toBe(500);
+      expect(breakdown[0].actual).toBe(50);
+      expect(breakdown[0].percentage).toBe(10);
+    });
+
+    it('should handle zero planned budget', () => {
+      const categories: Category[] = [
+        {
+          id: 'food',
+          name: 'Food',
+          color: '#00FF00',
+          plannedMonthly: 0,
+          recurring: false,
+          accountId: 'pnc',
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:00Z',
+        },
+      ];
+
+      const breakdown = calculateCategorySpendingBreakdown(mockTransactions, categories);
+
+      expect(breakdown[0].percentage).toBe(0);
+    });
+  });
+
+  describe('calculateWeeklyBreakdown', () => {
+    it('should calculate weekly breakdown correctly', () => {
+      const accounts: Account[] = [
+        {
+          id: 'pnc',
+          name: 'PNC',
+          type: 'checking',
+          startingBalance: 1000,
+          startingDate: '2025-01-01',
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:00Z',
+        },
+        {
+          id: 'dcu',
+          name: 'DCU',
+          type: 'savings',
+          startingBalance: 500,
+          startingDate: '2025-01-01',
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:00Z',
+        },
+      ];
+
+      const breakdown = calculateWeeklyBreakdown(
+        mockTransactions,
+        accounts,
+        '2025-11-07',
+        '2025-11-08'
+      );
+
+      expect(breakdown.startDate).toBe('2025-11-07');
+      expect(breakdown.endDate).toBe('2025-11-08');
+      expect(breakdown.income.total).toBe(1200);
+      expect(breakdown.expenses.total).toBe(80);
+      expect(breakdown.netChange).toBe(1120);
+    });
+
+    it('should calculate account balances correctly', () => {
+      const accounts: Account[] = [
+        {
+          id: 'pnc',
+          name: 'PNC',
+          type: 'checking',
+          startingBalance: 1000,
+          startingDate: '2025-01-01',
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:00Z',
+        },
+      ];
+
+      const breakdown = calculateWeeklyBreakdown(
+        mockTransactions,
+        accounts,
+        '2025-11-07',
+        '2025-11-07'
+      );
+
+      // Mock transactions are on 11/07-11/08, so starting balance before 11/07 is just the starting balance + prior txns
+      // Transaction 1 (income 1000) is on 11/07, Transaction 2 (expense 50) is on 11/07, Transaction 3 (expense 30) is on 11/07
+      expect(breakdown.startingBalance.pnc).toBe(1000); // Just starting balance
+      expect(breakdown.endingBalance.pnc).toBe(1920); // 1000 + 1000 income - 50 - 30 expenses on 11/07
+    });
+  });
+
+  describe('calculateMonthlyBudgetProgress', () => {
+    it('should calculate monthly budget progress', () => {
+      const category: Category = {
+        id: 'food',
+        name: 'Food',
+        color: '#00FF00',
+        plannedMonthly: 500,
+        recurring: false,
+        accountId: 'pnc',
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:00:00Z',
+      };
+
+      const progress = calculateMonthlyBudgetProgress(
+        mockTransactions,
+        category,
+        new Date('2025-11-15')
+      );
+
+      expect(progress.budget).toBe(500);
+      expect(progress.spent).toBe(50);
+      expect(progress.percentage).toBe(10);
+      expect(progress.remaining).toBe(450);
+    });
+
+    it('should handle zero budget', () => {
+      const category: Category = {
+        id: 'food',
+        name: 'Food',
+        color: '#00FF00',
+        plannedMonthly: 0,
+        recurring: false,
+        accountId: 'pnc',
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:00:00Z',
+      };
+
+      const progress = calculateMonthlyBudgetProgress(
+        mockTransactions,
+        category,
+        new Date('2025-11-15')
+      );
+
+      expect(progress.percentage).toBe(0);
+    });
+  });
+
+  describe('calculateWeeklyBudgetProgress', () => {
+    it('should calculate weekly budget progress', () => {
+      const category: Category = {
+        id: 'food',
+        name: 'Food',
+        color: '#00FF00',
+        plannedMonthly: 500,
+        plannedWeekly: 100,
+        recurring: false,
+        accountId: 'pnc',
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:00:00Z',
+      };
+
+      const progress = calculateWeeklyBudgetProgress(
+        mockTransactions,
+        category,
+        '2025-11-07',
+        '2025-11-07'
+      );
+
+      expect(progress.budget).toBe(100);
+      expect(progress.spent).toBe(50);
+      expect(progress.percentage).toBe(50);
+      expect(progress.remaining).toBe(50);
+    });
+
+    it('should handle missing weekly budget', () => {
+      const category: Category = {
+        id: 'food',
+        name: 'Food',
+        color: '#00FF00',
+        plannedMonthly: 500,
+        recurring: false,
+        accountId: 'pnc',
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:00:00Z',
+      };
+
+      const progress = calculateWeeklyBudgetProgress(
+        mockTransactions,
+        category,
+        '2025-11-07',
+        '2025-11-07'
+      );
+
+      expect(progress.budget).toBe(0);
+      expect(progress.percentage).toBe(0);
     });
   });
 });
