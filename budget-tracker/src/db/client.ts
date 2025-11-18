@@ -105,6 +105,7 @@ const statements = [
 
 
 // Initialize database connection and tables
+// Note: Kept as async for API consistency, even though operations are synchronous
 export const initDatabase = async () => {
   try {
     console.log('Opening database connection...');
@@ -116,10 +117,10 @@ export const initDatabase = async () => {
       console.log('Database connection established');
     }
 
-    // Create tables
+    // Create tables using synchronous API
     console.log('Creating database tables...');
     for (const statement of statements) {
-      await expoDb.execAsync(statement);
+      expoDb.runSync(statement);
     }
 
     console.log('Database initialized successfully');
