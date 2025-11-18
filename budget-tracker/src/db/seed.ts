@@ -1,4 +1,4 @@
-import { db } from './client';
+import { getDb } from './client';
 import * as schema from './schema';
 import { Account, Category, IncomeConfig, Settings } from '../types';
 
@@ -11,6 +11,8 @@ export const seedInitialData = async () => {
   const today = new Date().toISOString().split('T')[0];
 
   try {
+    const db = getDb();
+
     // Check if already seeded
     const existingSettings = await db.select().from(schema.settings).limit(1);
     if (existingSettings.length > 0) {

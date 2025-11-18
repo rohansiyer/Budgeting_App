@@ -2,9 +2,17 @@ import { drizzle } from 'drizzle-orm/expo-sqlite';
 import { openDatabaseSync } from 'expo-sqlite';
 import * as schema from './schema';
 
-const expoDb = openDatabaseSync('budget_tracker.db');
+// Lazy-initialized database instances
+let expoDb: any = null;
+let db: any = null;
 
-export const db = drizzle(expoDb, { schema });
+// Get or initialize database connection
+export const getDb = () => {
+  if (!db) {
+    throw new Error('Database not initialized. Call initDatabase() first.');
+  }
+  return db;
+};
 
 const statements = [
       `CREATE TABLE IF NOT EXISTS accounts (
@@ -96,15 +104,36 @@ const statements = [
 ];
 
 
-// Initialize database tables
+// Initialize database connection and tables
+// Note: Kept as async for API consistency, even though operations are synchronous
 export const initDatabase = async () => {
   try {
-    for (const statement of statements) {
-      await expoDb.execAsync(statement);
+    console.log('Opening database connection...');
+
+    // Open database if not already opened
+    if (!expoDb) {
+      expoDb = openDatabaseSync('budget_tracker.db');
+      db = drizzle(expoDb, { schema });
+      console.log('Database connection established');
     }
+
+    // Create tables using synchronous API
+    console.log('Creating database tables...');
+    for (const statement of statements) {
+      expoDb.runSync(statement);
+    }
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Error initializing database:', error);
+    // Reset state on error so retry can work
+    expoDb = null;
+    db = null;
     throw error;
   }
+};
+
+// Check if database is initialized
+export const isDatabaseInitialized = () => {
+  return db !== null;
 };

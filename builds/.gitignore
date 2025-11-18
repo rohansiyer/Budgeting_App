@@ -1,0 +1,9 @@
+# APK files (build artifacts)
+*.apk
+
+# Extracted APK directories
+apk-extracted/
+
+# Keep this .gitignore file and documentation
+!.gitignore
+!*.md
