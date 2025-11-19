@@ -15,7 +15,7 @@ import {
   parseISO,
 } from 'date-fns';
 
-export { startOfMonth, addMonths, subMonths };
+export { startOfMonth, endOfMonth, addMonths, subMonths, format, getDay };
 
 export const getWeekBoundaries = (date: Date, weekStartsOn: 0 | 1 = 0) => {
   const start = startOfWeek(date, { weekStartsOn });
