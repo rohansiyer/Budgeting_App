@@ -176,7 +176,7 @@ describe('Budget Store', () => {
       await expect(
         store.addAccount({
           name: '', // Invalid: empty name
-          type: 'checking' // intentionally invalid for test,
+          type: 'checking', // intentionally invalid for test
           startingBalance: -1,
           startingDate: 'invalid-date',
         })
@@ -660,13 +660,13 @@ describe('Budget Store', () => {
       await expect(
         store.addTransaction({
           amount: 0,
-          type: 'checking' // intentionally invalid for test as any,
+          type: 'checking' as any, // intentionally invalid for test
           categoryId: 'non-existent',
           accountId: 'non-existent',
           date: 'invalid-date',
           timestamp: 'invalid',
-          // note omitted (optional),
-          // toAccountId omitted (optional),
+          // note omitted (optional)
+          // toAccountId omitted (optional)
         })
       ).rejects.toThrow();
 

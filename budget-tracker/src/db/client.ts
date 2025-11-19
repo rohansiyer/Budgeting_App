@@ -137,3 +137,6 @@ export const initDatabase = async () => {
 export const isDatabaseInitialized = () => {
   return db !== null;
 };
+
+// Export db for direct use in tests (use getDb() in production code)
+export { db };
