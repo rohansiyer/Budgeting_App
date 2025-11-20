@@ -8,6 +8,8 @@ import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
 import { colors } from './src/theme/colors';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { requestNotificationPermissions, scheduleNextMonthNotification } from './src/utils/notifications';
+import * as Notifications from 'expo-notifications';
 
 function AppContent() {
   const [isReady, setIsReady] = useState(false);
@@ -20,6 +22,13 @@ function AppContent() {
       setIsRetrying(false);
       await initDatabase();
       await seedInitialData();
+
+      // Request notification permissions and schedule recurring reminder
+      const hasPermission = await requestNotificationPermissions();
+      if (hasPermission) {
+        await scheduleNextMonthNotification();
+      }
+
       setIsReady(true);
     } catch (error) {
       console.error('Failed to initialize app:', error);
@@ -30,6 +39,17 @@ function AppContent() {
 
   useEffect(() => {
     initialize();
+
+    // Listen for notification responses (when user taps notification)
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data.type === 'recurring-expenses') {
+        // Navigation to recurring expense screen would be handled here
+        console.log('Navigate to recurring expense confirmation for month:', data.month);
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
 
   const handleRetry = () => {

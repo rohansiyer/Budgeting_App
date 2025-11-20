@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ export const DailyDetailScreen: React.FC<DailyDetailScreenProps> = ({ date, onCl
     transactions,
     categories,
     accounts,
+    incomeConfigs,
     addTransaction,
     getAccountBalance,
   } = useBudgetStore();
@@ -37,12 +38,66 @@ export const DailyDetailScreen: React.FC<DailyDetailScreenProps> = ({ date, onCl
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState('pnc');
+  const [hasCheckedPaycheck, setHasCheckedPaycheck] = useState(false);
 
   const dateStr = toISODate(date);
   const dayTransactions = useMemo(
     () => transactions.filter((txn) => txn.date === dateStr),
     [transactions, dateStr]
   );
+
+  // Check if this is paycheck day and auto-add paycheck if needed
+  useEffect(() => {
+    if (hasCheckedPaycheck) return;
+
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 3 = Wednesday
+    const paycheckConfig = incomeConfigs.find((config) => config.type === 'weekly_paycheck');
+
+    // If it's the configured paycheck day
+    if (paycheckConfig && paycheckConfig.dayOfWeek === dayOfWeek && paycheckConfig.amount) {
+      const existingPaycheck = dayTransactions.find(
+        (txn) => txn.type === 'income' && txn.note?.toLowerCase().includes('paycheck')
+      );
+
+      // Only add if no paycheck exists for this day
+      if (!existingPaycheck) {
+        const addPaychecks = async () => {
+          const pncAmount = paycheckConfig.amount! * 0.7; // 70% to PNC
+          const dcuAmount = paycheckConfig.amount! * 0.3; // 30% to DCU
+
+          try {
+            await addTransaction({
+              amount: pncAmount,
+              type: 'income',
+              categoryId: 'paycheck',
+              accountId: 'pnc',
+              date: dateStr,
+              timestamp: new Date().toISOString(),
+              note: 'Weekly Paycheck (PNC)',
+            });
+
+            await addTransaction({
+              amount: dcuAmount,
+              type: 'income',
+              categoryId: 'paycheck',
+              accountId: 'dcu',
+              date: dateStr,
+              timestamp: new Date().toISOString(),
+              note: 'Weekly Paycheck (DCU)',
+            });
+          } catch (error) {
+            console.error('Error adding automatic paycheck:', error);
+          }
+        };
+
+        addPaychecks();
+      }
+
+      setHasCheckedPaycheck(true);
+    } else {
+      setHasCheckedPaycheck(true);
+    }
+  }, [date, incomeConfigs, dayTransactions, hasCheckedPaycheck, addTransaction, dateStr]);
 
   const incomeTransactions = dayTransactions.filter((txn) => txn.type === 'income');
   const expenseTransactions = dayTransactions.filter((txn) => txn.type === 'expense');

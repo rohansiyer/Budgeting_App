@@ -43,6 +43,14 @@ interface BudgetStore {
   // Settings actions
   updateSettings: (updates: Partial<Settings>) => Promise<void>;
 
+  // Income config actions
+  updateIncomeConfig: (id: string, updates: Partial<IncomeConfig>) => Promise<void>;
+
+  // Data management
+  clearAllData: () => Promise<void>;
+  exportData: () => Promise<string>;
+  importData: (jsonData: string) => Promise<void>;
+
   // Computed values
   getAccountBalance: (accountId: string, asOfDate?: string) => number;
   getTotalBalance: (asOfDate?: string) => number;
@@ -298,6 +306,108 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     } catch (error) {
       console.error('Error updating settings:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to update settings';
+      set({ error: errorMessage });
+      throw error;
+    }
+  },
+
+  // Income config actions
+  updateIncomeConfig: async (id, updates) => {
+    try {
+      const db = getDb();
+      const now = new Date().toISOString();
+      await db
+        .update(schema.incomeConfigs)
+        .set({ ...updates, updatedAt: now })
+        .where(eq(schema.incomeConfigs.id, id));
+
+      set({
+        incomeConfigs: get().incomeConfigs.map((config) =>
+          config.id === id ? { ...config, ...updates, updatedAt: now } : config
+        ),
+        error: null,
+      });
+    } catch (error) {
+      console.error('Error updating income config:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update income config';
+      set({ error: errorMessage });
+      throw error;
+    }
+  },
+
+  // Data management
+  clearAllData: async () => {
+    try {
+      const db = getDb();
+      // Delete all data from tables
+      await db.delete(schema.transactions);
+      await db.delete(schema.recurringStatuses);
+
+      set({
+        transactions: [],
+        error: null,
+      });
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to clear data';
+      set({ error: errorMessage });
+      throw error;
+    }
+  },
+
+  exportData: async () => {
+    try {
+      const state = get();
+      const exportData = {
+        accounts: state.accounts,
+        transactions: state.transactions,
+        categories: state.categories,
+        incomeConfigs: state.incomeConfigs,
+        settings: state.settings,
+        exportedAt: new Date().toISOString(),
+        version: '1.0',
+      };
+      return JSON.stringify(exportData, null, 2);
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to export data';
+      set({ error: errorMessage });
+      throw error;
+    }
+  },
+
+  importData: async (jsonData: string) => {
+    try {
+      const importedData = JSON.parse(jsonData);
+      const db = getDb();
+
+      // Clear existing data first
+      await db.delete(schema.transactions);
+      await db.delete(schema.accounts);
+      await db.delete(schema.categories);
+
+      // Import accounts
+      if (importedData.accounts && importedData.accounts.length > 0) {
+        await db.insert(schema.accounts).values(importedData.accounts);
+      }
+
+      // Import categories
+      if (importedData.categories && importedData.categories.length > 0) {
+        await db.insert(schema.categories).values(importedData.categories);
+      }
+
+      // Import transactions
+      if (importedData.transactions && importedData.transactions.length > 0) {
+        await db.insert(schema.transactions).values(importedData.transactions);
+      }
+
+      // Reload data
+      await get().loadData();
+
+      set({ error: null });
+    } catch (error) {
+      console.error('Error importing data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to import data';
       set({ error: errorMessage });
       throw error;
     }

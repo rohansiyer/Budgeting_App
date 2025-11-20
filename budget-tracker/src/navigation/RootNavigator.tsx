@@ -3,10 +3,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
-// Screens (we'll create these next)
+// Screens
 import CalendarScreen from '../screens/CalendarScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen';
-import SettingsScreen from '../screens/SettingsScreen';
+import EnhancedSettingsScreen from '../screens/EnhancedSettingsScreen';
 
 export type RootTabParamList = {
   Calendar: undefined;
@@ -55,10 +55,10 @@ export const RootNavigator = () => {
       />
       <Tab.Screen
         name="Settings"
-        component={SettingsScreen}
+        component={EnhancedSettingsScreen}
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size}) => (
             <Ionicons name="settings" size={size} color={color} />
           ),
         }}

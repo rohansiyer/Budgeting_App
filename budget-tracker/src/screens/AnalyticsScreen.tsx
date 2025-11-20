@@ -22,7 +22,7 @@ import { DualLayerPieChart } from '../components/DualLayerPieChart';
 
 const AnalyticsScreen = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const { transactions, categories, accounts, getTotalBalance } = useBudgetStore();
+  const { transactions, categories, accounts, incomeConfigs, getTotalBalance } = useBudgetStore();
 
   const monthStart = useMemo(() => startOfMonth(currentMonth), [currentMonth]);
   const monthEnd = useMemo(() => endOfMonth(currentMonth), [currentMonth]);
@@ -52,6 +52,64 @@ const AnalyticsScreen = () => {
   );
 
   const totalBalance = getTotalBalance(toISODate(monthEnd));
+
+  // Calculate days to next paycheck
+  const daysToPaycheck = useMemo(() => {
+    const paycheckConfig = incomeConfigs.find((c) => c.type === 'weekly_paycheck');
+    if (!paycheckConfig || paycheckConfig.dayOfWeek === undefined) return null;
+
+    const today = new Date();
+    const todayDayOfWeek = today.getDay();
+    let daysUntil = paycheckConfig.dayOfWeek - todayDayOfWeek;
+    if (daysUntil <= 0) daysUntil += 7; // If already passed this week, get next week
+
+    return daysUntil;
+  }, [incomeConfigs]);
+
+  // Calculate average daily spending
+  const avgDailySpending = useMemo(() => {
+    if (monthTransactions.length === 0) return 0;
+    const today = new Date();
+    const daysIntoMonth = today.getMonth() === currentMonth.getMonth() && today.getFullYear() === currentMonth.getFullYear()
+      ? today.getDate()
+      : new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+
+    return monthlyExpenses / Math.max(daysIntoMonth, 1);
+  }, [monthlyExpenses, currentMonth, monthTransactions]);
+
+  // Calculate projected end-of-month balance
+  const projectedEndBalance = useMemo(() => {
+    const today = new Date();
+    if (today.getMonth() !== currentMonth.getMonth() || today.getFullYear() !== currentMonth.getFullYear()) {
+      return null; // Only show for current month
+    }
+
+    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+    const daysRemaining = daysInMonth - today.getDate();
+
+    const projectedExpenses = monthlyExpenses + (avgDailySpending * daysRemaining);
+
+    // Estimate remaining income (rough estimate based on weekly paycheck)
+    const paycheckConfig = incomeConfigs.find((c) => c.type === 'weekly_paycheck');
+    const weeksRemaining = Math.floor(daysRemaining / 7);
+    const projectedIncome = monthlyIncome + ((paycheckConfig?.amount || 0) * weeksRemaining);
+
+    return totalBalance + (projectedIncome - projectedExpenses - monthlyIncome + monthlyExpenses);
+  }, [currentMonth, totalBalance, monthlyIncome, monthlyExpenses, avgDailySpending, incomeConfigs]);
+
+  // Get previous month data for comparison
+  const prevMonthData = useMemo(() => {
+    const prevMonthStart = startOfMonth(subMonths(currentMonth, 1));
+    const prevMonthEnd = endOfMonth(subMonths(currentMonth, 1));
+    const prevTxns = transactions.filter(
+      (txn) => txn.date >= toISODate(prevMonthStart) && txn.date <= toISODate(prevMonthEnd)
+    );
+
+    return {
+      income: calculateIncomeTotal(prevTxns),
+      expenses: calculateExpenseTotal(prevTxns),
+    };
+  }, [transactions, currentMonth]);
 
   const handlePreviousMonth = () => {
     setCurrentMonth(subMonths(currentMonth, 1));
@@ -207,6 +265,81 @@ const AnalyticsScreen = () => {
                 </View>
               );
             })}
+        </View>
+
+        {/* Additional Metrics */}
+        <View style={styles.metricsSection}>
+          <Text style={styles.sectionTitle}>Additional Metrics</Text>
+
+          {daysToPaycheck !== null && (
+            <View style={styles.metricCard}>
+              <Ionicons name="calendar-outline" size={24} color={colors.accent.secondary} />
+              <View style={styles.metricContent}>
+                <Text style={styles.metricLabel}>Days to Next Paycheck</Text>
+                <Text style={styles.metricValue}>
+                  {daysToPaycheck === 0 ? 'Today!' : `${daysToPaycheck} day${daysToPaycheck !== 1 ? 's' : ''}`}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.metricCard}>
+            <Ionicons name="trending-down-outline" size={24} color={colors.status.info} />
+            <View style={styles.metricContent}>
+              <Text style={styles.metricLabel}>Average Daily Spending</Text>
+              <Text style={styles.metricValue}>{formatCurrency(avgDailySpending)}/day</Text>
+            </View>
+          </View>
+
+          {projectedEndBalance !== null && (
+            <View style={styles.metricCard}>
+              <Ionicons name="calculator-outline" size={24} color={colors.accent.primary} />
+              <View style={styles.metricContent}>
+                <Text style={styles.metricLabel}>Projected End-of-Month Balance</Text>
+                <Text style={[styles.metricValue, projectedEndBalance < 0 && styles.metricValueNegative]}>
+                  {formatCurrency(projectedEndBalance)}
+                </Text>
+                <Text style={styles.metricNote}>
+                  Based on current spending trends
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Month-over-month comparison */}
+          {prevMonthData.income > 0 && (
+            <View style={styles.comparisonCard}>
+              <Text style={styles.comparisonTitle}>Month-over-Month</Text>
+              <View style={styles.comparisonRow}>
+                <Text style={styles.comparisonLabel}>Income Change:</Text>
+                <Text
+                  style={[
+                    styles.comparisonValue,
+                    monthlyIncome > prevMonthData.income ? styles.positiveChange : styles.negativeChange,
+                  ]}
+                >
+                  {monthlyIncome > prevMonthData.income ? '+' : ''}
+                  {formatCurrency(monthlyIncome - prevMonthData.income)}
+                  {' '}
+                  ({((monthlyIncome - prevMonthData.income) / prevMonthData.income * 100).toFixed(1)}%)
+                </Text>
+              </View>
+              <View style={styles.comparisonRow}>
+                <Text style={styles.comparisonLabel}>Expense Change:</Text>
+                <Text
+                  style={[
+                    styles.comparisonValue,
+                    monthlyExpenses < prevMonthData.expenses ? styles.positiveChange : styles.negativeChange,
+                  ]}
+                >
+                  {monthlyExpenses > prevMonthData.expenses ? '+' : ''}
+                  {formatCurrency(monthlyExpenses - prevMonthData.expenses)}
+                  {' '}
+                  ({((monthlyExpenses - prevMonthData.expenses) / prevMonthData.expenses * 100).toFixed(1)}%)
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Insights */}
@@ -477,6 +610,74 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.secondary,
     lineHeight: 18,
+  },
+  metricsSection: {
+    padding: theme.spacing.sm,
+  },
+  metricCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    gap: theme.spacing.md,
+    alignItems: 'center',
+  },
+  metricContent: {
+    flex: 1,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginBottom: 4,
+  },
+  metricValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    fontFamily: 'monospace',
+  },
+  metricValueNegative: {
+    color: colors.status.error,
+  },
+  metricNote: {
+    fontSize: 10,
+    color: colors.text.disabled,
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  comparisonCard: {
+    backgroundColor: colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  comparisonTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    marginBottom: theme.spacing.sm,
+  },
+  comparisonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  comparisonLabel: {
+    fontSize: 14,
+    color: colors.text.secondary,
+  },
+  comparisonValue: {
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: '600',
+  },
+  positiveChange: {
+    color: colors.status.success,
+  },
+  negativeChange: {
+    color: colors.status.error,
   },
 });
 
