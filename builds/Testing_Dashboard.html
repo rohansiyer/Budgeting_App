@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APK Testing Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: #fafafa;
+            border: 1px solid #eee;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        img, video {
+            max-width: 100%;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .status-pass {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .code-block {
+            background: #2d3436;
+            color: #dfe6e9;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: 'Consolas', monospace;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>APK Testing Dashboard</h1>
+    <p><strong>Date:</strong> <script>document.write(new Date().toLocaleDateString())</script></p>
+    <p><strong>APK:</strong> application-d9f18726-6e73-4ab1-9caa-2a71ad4e462f.apk</p>
+    <p><strong>Package Name:</strong> com.anonymous.budgettracker</p>
+
+    <div class="section">
+        <h2>Testing Summary</h2>
+        <div class="card">
+            <p><strong>Installation:</strong> <span class="status-pass">SUCCESS</span></p>
+            <p><strong>Launch:</strong> <span class="status-pass">SUCCESS</span></p>
+            <p><strong>Stability:</strong> No crashes observed during initial launch and navigation.</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Visual Evidence</h2>
+        <div class="grid">
+            <div class="card">
+                <h3>Launch Screen</h3>
+                <img src="launch_screen.png" alt="Launch Screen">
+            </div>
+            <div class="card">
+                <h3>User Flow Recording</h3>
+                <video controls>
+                    <source src="launch_test.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>UI Hierarchy Analysis</h2>
+        <div class="card">
+            <p><strong>Main Activity Structure:</strong></p>
+            <ul>
+                <li><strong>Title:</strong> Budget Tracker</li>
+                <li><strong>Navigation:</strong> Bottom Navigation Bar (Calendar, Analytics, Settings)</li>
+                <li><strong>Content:</strong>
+                    <ul>
+                        <li>Date Selector (Nov 16 - Nov 22, 2025)</li>
+                        <li>Account Balances (PNC Spending, DCU Savings)</li>
+                        <li>Transaction List (Daily breakdown)</li>
+                    </ul>
+                </li>
+            </ul>
+            <p><strong>Raw XML Snippet:</strong></p>
+            <div class="code-block">
+&lt;node class="android.widget.TextView" text="Budget Tracker" ... /&gt;
+&lt;node class="android.widget.TextView" text="PNC Spending: $810.63" ... /&gt;
+&lt;node class="android.widget.TextView" text="DCU Savings: $347.42" ... /&gt;
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Recommendations</h2>
+        <ul>
+            <li><strong>Usability:</strong> The app launches directly to the dashboard, which is good. The bottom navigation is standard and intuitive.</li>
+            <li><strong>Visuals:</strong> The color scheme appears clean (based on XML analysis). Ensure contrast ratios meet accessibility standards.</li>
+            <li><strong>Testing:</strong> Continue testing specific flows like adding a transaction (requires more interaction).</li>
+        </ul>
+    </div>
+</div>
+
+</body>
+</html>
