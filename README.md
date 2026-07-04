@@ -1,335 +1,54 @@
-# Budget Tracker - Personal Finance Manager
+# Ducks in a Row 🦆
 
-A comprehensive React Native budget tracking app built with Expo, designed for managing personal finances with a beautiful dark-mode interface.
+A personal budgeting app where keeping your finances in order earns you ducks — and letting things slip loses them. Envelope budgeting with a game layer that lives in the middle of your analytics.
 
-## Features
+**Current release: v0.2.0** — fully functional, distributed via EAS Update (`preview` channel) for Expo Go on SDK 54.
 
-### Calendar View
-- **Weekly View**: Track daily transactions with running balances
-- **Monthly View**: Color-coded calendar showing spending intensity
-- Toggle between views seamlessly
-- Navigate through weeks/months
-- Tap any day to see detailed breakdown
+## The concept
 
-### Transaction Management
-- Add income and expenses by category
-- Real-time account balance calculations
-- Multiple account support (PNC Spending, DCU Savings)
-- Transaction notes and categorization
-- Edit and delete transactions
-- Account-to-account transfers
+- **One daily question:** *can I buy this?* The Home screen answers with a single safe-to-spend number backed by envelope meters for your variable spending (segmented blocks — one block, ten dollars).
+- **One monthly question:** *did I keep my life in order?* On the 1st, the app evaluates three goals — fixed bills paid, every envelope under budget, savings rate on target. All three: a pixel duck waddles into your pond. None: one duck walks away (it pauses and looks back; we're sorry). The pond lives in the center of the plan-vs-actual donut on the Pond tab.
+- Twelve ducks caps the flock; after that, good months earn the whole flock accessories — bowtie, monocle, top hat.
 
-### Analytics & Insights
-- **Dual-layer pie chart**: Planned vs Actual spending visualization
-- Category-wise spending breakdown
-- Budget adherence tracking with progress bars
-- Savings rate calculation
-- Smart insights and warnings
-- Month-over-month comparisons
-- Over-budget category alerts
+## Features (v0.2)
 
-### Settings & Management
-- Edit account balances
-- Manage category budgets
-- View recurring expenses
-- Data export (JSON backup)
-- Share/backup capabilities
-- Dark mode (always on)
-- Notification preferences
+- **Setup wizard** — accounts, income sources with cent-exact split ratios and real pay schedules (weekly / biweekly / semimonthly / monthly), fixed categories and envelopes. Fully editable later (edits reconcile in place). "New chapter" archives your current config for life changes — history and ducks survive.
+- **Envelopes with carryover** — roll leftovers forward, sweep them to savings (moves real money), or let them go. Borrow from next week when you overshoot: capped at one week ahead, 50% of next week's budget, repayment visible in both weeks. Budget is conserved — never created.
+- **Duck guard** — cross-month borrows count against the month that overspent. You cannot borrow from August to save July's duck.
+- **Calendar heatmap** — spend intensity per day, mint rings on paydays, coral on fixed-bill hits; tap into a full day view with long-press edit/delete and undo.
+- **Backup & restore** — versioned JSON export via the share sheet; import replaces everything atomically.
+- **App lock** — PIN + biometrics, background-lock timeout.
+- **Local notifications** — bill reminder, payday note, envelope warnings; all opt-in.
+- **100% offline.** No accounts, no tracking, no data leaves the device except backups you export yourself.
 
-### Weekly Breakdown
-- Detailed weekly financial summary
-- Starting and ending balances by account
-- Income breakdown by source
-- Expense breakdown by category
-- Net change tracking with trend indicators
+## Tech
 
-## Tech Stack
+Expo SDK 54 · React Native 0.81 · TypeScript (strict) · SQLite (expo-sqlite + Drizzle, versioned migrations) · Zustand · react-native-svg. All money is integer cents behind a branded `Cents` type — floats never touch money paths.
 
-- **Framework**: React Native with Expo
-- **Language**: TypeScript
-- **Database**: SQLite with drizzle-orm
-- **State Management**: Zustand
-- **UI Components**: React Native Paper, custom components
-- **Charts**: Custom SVG-based dual-layer pie chart
-- **Date Handling**: date-fns
-- **Navigation**: React Navigation (Bottom Tabs)
-- **Build**: EAS Build for APK generation
+## Repo layout
 
-## Installation
+| Path | What it is |
+|---|---|
+| `budget-tracker/` | The app. See `budget-tracker/CONTRACTS.md` for the internal architecture contracts. |
+| `CLAUDE.md` | Codebase guide for AI-assisted development sessions. |
+| `DucksInARow_DesignDoc_v2.md` | The v2 design spec this release implements. |
+| `BudgetApp_DesignDoc.md` | The original v1 spec (historical; §9 is the Duck System source). |
+| `CHANGELOG.md` | Release history. |
+| `store/` | Play Store compliance docs (privacy policy, data safety, listing draft). |
+| `builds/` | v1-era build/test artifacts (historical). |
 
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-- Expo CLI
-- EAS CLI (for building)
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   cd budget-tracker
-   npm install
-   ```
-
-2. **Start the development server**
-   ```bash
-   npm start
-   ```
-
-3. **Run on Android**
-   ```bash
-   npm run android
-   ```
-
-4. **Run on iOS** (macOS only)
-   ```bash
-   npm run ios
-   ```
-
-5. **Run on Web**
-   ```bash
-   npm run web
-   ```
-
-## Building for Production
-
-### Build APK for Sideloading
-
-1. **Install EAS CLI**
-   ```bash
-   npm install -g eas-cli
-   ```
-
-2. **Login to Expo**
-   ```bash
-   eas login
-   ```
-
-3. **Configure build**
-   ```bash
-   eas build:configure
-   ```
-
-4. **Build APK**
-   ```bash
-   eas build -p android --profile preview
-   ```
-
-5. **Download and install**
-   - Download APK from the provided link
-   - Transfer to Android device
-   - Enable "Install from Unknown Sources"
-   - Install the APK
-
-### Build for Play Store
+## Development
 
 ```bash
-eas build -p android --profile production
+cd budget-tracker
+npm install
+npx expo start          # Expo Go dev loop (hot reload)
+npx jest                # full test suite (includes db/store integration on in-memory SQLite)
+npx tsc --noEmit        # typecheck
 ```
 
-## Project Structure
+Publish a preview build: `npx eas-cli update --branch preview --message "..."` — anyone with the channel QR gets it on next load.
 
-```
-budget-tracker/
-├── src/
-│   ├── components/          # Reusable UI components
-│   │   ├── DualLayerPieChart.tsx
-│   │   ├── MonthlyCalendarView.tsx
-│   │   └── TransactionContextMenu.tsx
-│   ├── db/                  # Database layer
-│   │   ├── client.ts        # SQLite client & init
-│   │   ├── schema.ts        # Drizzle ORM schemas
-│   │   └── seed.ts          # Initial data seeding
-│   ├── navigation/          # App navigation
-│   │   └── RootNavigator.tsx
-│   ├── screens/             # Main app screens
-│   │   ├── AnalyticsScreen.tsx
-│   │   ├── CalendarScreen.tsx
-│   │   ├── DailyDetailScreen.tsx
-│   │   ├── SettingsScreen.tsx
-│   │   └── WeeklyBreakdownScreen.tsx
-│   ├── store/               # Zustand state management
-│   │   └── index.ts
-│   ├── theme/               # Design system
-│   │   └── colors.ts
-│   ├── types/               # TypeScript definitions
-│   │   └── index.ts
-│   └── utils/               # Utility functions
-│       ├── calculations.ts  # Financial calculations
-│       └── dateUtils.ts     # Date manipulation
-├── App.tsx                  # App entry point
-├── eas.json                 # EAS Build configuration
-├── package.json
-└── tsconfig.json
-```
+## Roadmap
 
-## Default Configuration
-
-### Accounts
-- **PNC Spending**: Starting balance $810.63 (checking)
-- **DCU Savings**: Starting balance $347.42 (savings)
-
-### Income
-- Weekly paycheck: $1,158.05 every Wednesday
-  - 70% → PNC ($810.63)
-  - 30% → DCU ($347.42)
-- Tutoring: $200-$400/month (variable)
-
-### Expense Categories
-
-**Fixed Monthly** (Auto-deduct on 1st):
-- Rent: $975
-- Electricity: $30
-- Internet: $65
-- Phone: $55
-- Car Payment: $400
-- Car Insurance: $90
-
-**Variable**:
-- Gas: $40/week (~$173/month)
-- Food: $35/week (~$152/month)
-- Fun Money: $400/month
-
-## Usage Guide
-
-### Adding Transactions
-
-1. **From Calendar**: Tap any day card
-2. **Add Income**: Tap "Add Income" button
-3. **Add Expense**: Tap "+ Add expense" under any category
-4. Fill in amount, note (optional), and select account
-5. Transactions save automatically
-
-### Viewing Analytics
-
-1. Navigate to Analytics tab
-2. Use left/right arrows to navigate months
-3. Tap "This Month" to return to current month
-4. View dual-layer pie chart showing planned vs actual
-5. Scroll down for detailed category breakdown
-6. Check insights section for personalized advice
-
-### Managing Budgets
-
-1. Go to Settings tab
-2. Scroll to "EXPENSE CATEGORIES"
-3. Tap edit icon next to any category
-4. Enter new monthly budget amount
-5. Weekly budget auto-calculates (monthly / 4.33)
-
-### Weekly Breakdown
-
-1. In Calendar view (weekly mode)
-2. Tap the "Ending Balance" card at the bottom
-3. View comprehensive weekly summary
-4. See income/expense breakdown by category
-5. Check budget adherence for each category
-
-### Exporting Data
-
-1. Go to Settings tab
-2. Scroll to "DATA" section
-3. Tap "Export Data"
-4. Choose app to share backup file
-5. Backup includes accounts and categories
-
-## Database Schema
-
-The app uses SQLite with the following main tables:
-
-- `accounts`: Financial accounts (checking, savings)
-- `transactions`: All financial transactions
-- `categories`: Expense and income categories
-- `income_configs`: Income source configurations
-- `income_splits`: Auto-split rules for income
-- `recurring_statuses`: Recurring expense tracking
-- `settings`: App preferences
-
-All data is stored locally on the device. No cloud sync (yet).
-
-## Customization
-
-### Changing Starting Balances
-
-Edit in Settings → Accounts → Tap edit icon
-
-### Modifying Categories
-
-Edit budgets in Settings → Categories → Tap edit icon
-
-### Adding New Categories
-
-Currently requires database modification. Feature coming soon.
-
-## Troubleshooting
-
-### Database not initializing
-- Clear app data and restart
-- Check console for initialization errors
-
-### Transactions not appearing
-- Ensure correct date is selected
-- Check if transactions were saved successfully
-- Verify account selection
-
-### Build failures
-- Run `npm install` to ensure dependencies are current
-- Clear Expo cache: `expo start -c`
-- Check EAS build logs for specific errors
-
-## Performance
-
-- Optimized for 1000+ transactions
-- SQLite indexing on dates and accounts
-- Memoized calculations in React components
-- Lazy loading of transaction history
-
-## Security
-
-- All data stored locally (no transmission)
-- No external API calls
-- No personal data collection
-- Backup files are unencrypted JSON
-
-## Future Enhancements
-
-- [ ] Cloud backup and sync
-- [ ] Receipt photo attachments
-- [ ] Custom category creation
-- [ ] Bill payment reminders
-- [ ] Investment tracking
-- [ ] Multi-device support
-- [ ] Bank account integration (Plaid)
-- [ ] Widgets
-- [ ] Search and filter transactions
-
-## Contributing
-
-This is a personal project, but suggestions and feedback are welcome!
-
-## License
-
-MIT License - feel free to use and modify for personal use.
-
-## Support
-
-For issues or questions, please check:
-1. This README
-2. Console logs for errors
-3. Expo documentation
-4. React Navigation docs
-
-## Acknowledgments
-
-Built with:
-- Expo team for amazing tools
-- React Native community
-- Drizzle ORM contributors
-- date-fns team
-
----
-
-**Version**: 1.0.0
-**Last Updated**: 2025-11-07
-**Author**: Budget Tracker Team
+Custom duck sprite sheets, richer pond animations, `expo prebuild --clean` for a standalone SDK 54 APK/AAB, Play Store listing assets. See CHANGELOG for known v0.2 scope notes.

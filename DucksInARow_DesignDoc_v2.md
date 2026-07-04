@@ -1,6 +1,6 @@
 # Ducks in a Row — Design Doc v2
 
-**Status:** Concept approved, pre-implementation
+**Status:** IMPLEMENTED — shipped as v0.2.0 (see CHANGELOG.md). This document is the spec of record for the shipped app; CLAUDE.md maps spec sections to code.
 **Supersedes:** `BudgetApp_DesignDoc.md` (v1) where they conflict; v1 remains the reference for flows not restated here (recurring-bill confirmation, income split engine, data model details).
 **Mockup:** Interactive six-screen mockup reviewed and approved (envelopes + midnight palette + Duck System + carryover + configurability).
 
