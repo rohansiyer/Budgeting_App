@@ -1,699 +1,558 @@
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, theme } from '../theme/colors';
-import { useBudgetStore } from '../store';
-import { formatDateDisplay, toISODate } from '../utils/dateUtils';
-import { formatCurrency, calculateCategorySpending } from '../utils/calculations';
-import { Transaction } from '../types';
+import React, { useState } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import * as tokens from '../theme/tokens';
+import { Cents, formatCents, sumCents, toDecimalString, ZERO } from '../lib/money';
+import { PixelBox, HardButton, RuledList, CategoryChip } from '../components/kit';
+import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
+import { Sheet } from '../components/Sheet';
+import { useStore } from '../providers/StoreProvider';
+import { useAppShell } from '../providers/AppShell';
+import { tryParseCents } from '../format/moneyInput';
+import { longDate, weekStartOf } from '../format/dates';
+import type {
+  ISODate,
+  TransactionRecord,
+  CategoryConfig,
+  IncomeSourceConfig,
+  AccountConfig,
+} from '../types/contracts';
 
-interface DailyDetailScreenProps {
-  date: Date;
-  onClose: () => void;
-}
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
 
-export const DailyDetailScreen: React.FC<DailyDetailScreenProps> = ({ date, onClose }) => {
-  const {
-    transactions,
-    categories,
-    accounts,
-    addTransaction,
-    getAccountBalance,
-  } = useBudgetStore();
+export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: () => void }) {
+  const store = useStore();
+  const { showUndo } = useAppShell();
 
-  const [showAddExpense, setShowAddExpense] = useState(false);
-  const [showAddIncome, setShowAddIncome] = useState(false);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [selectedAccountId, setSelectedAccountId] = useState('pnc');
+  const categories = store.listCategories();
+  const accounts = store.listAccounts();
+  const incomeSources = store.listIncomeSources();
+  const catById = (id: string) => categories.find((c) => c.id === id);
+  const acctById = (id: string) => accounts.find((a) => a.id === id);
+  const spendingAccount = accounts.find((a) => a.kind === 'spending') ?? accounts[0];
 
-  const dateStr = toISODate(date);
-  const dayTransactions = useMemo(
-    () => transactions.filter((txn) => txn.date === dateStr),
-    [transactions, dateStr]
+  const dayTxns = store.getTransactions({ from: date, to: date });
+  const spentToday = sumCents(
+    dayTxns.filter((t) => t.kind === 'expense').map((t) => t.amount),
   );
+  const accountAfter = spendingAccount
+    ? store.getAccountBalance(spendingAccount.id, date)
+    : ZERO;
+  const envelopeLeft = store.getSafeToSpend(weekStartOf(date));
 
-  const incomeTransactions = dayTransactions.filter((txn) => txn.type === 'income');
-  const expenseTransactions = dayTransactions.filter((txn) => txn.type === 'expense');
+  const [menuTxn, setMenuTxn] = useState<TransactionRecord | null>(null);
+  const [editTxn, setEditTxn] = useState<TransactionRecord | null>(null);
+  const [addKind, setAddKind] = useState<'expense' | 'income' | null>(null);
 
-  const dailyIncome = incomeTransactions.reduce((sum, txn) => sum + txn.amount, 0);
-  const dailyExpenses = expenseTransactions.reduce((sum, txn) => sum + txn.amount, 0);
-  const dailyTotal = dailyIncome - dailyExpenses;
-
-  const handleAddExpense = async (categoryId: string) => {
-    setSelectedCategoryId(categoryId);
-    setShowAddExpense(true);
-  };
-
-  const handleAddIncome = () => {
-    setShowAddIncome(true);
-  };
-
-  const handleSaveExpense = async () => {
-    if (!amount || parseFloat(amount) <= 0) return;
-
-    await addTransaction({
-      amount: parseFloat(amount),
-      type: 'expense',
-      categoryId: selectedCategoryId,
-      accountId: selectedAccountId,
-      date: dateStr,
-      timestamp: new Date().toISOString(),
-      note: note || undefined,
+  const handleDelete = async (t: TransactionRecord) => {
+    const { undo } = await store.deleteTransaction(t.id);
+    const catName = catById(t.categoryId)?.name ?? 'transaction';
+    showUndo(`Deleted ${t.kind === 'income' ? (t.note ?? 'income') : catName}`, async () => {
+      const ok = await undo();
+      if (!ok) showUndo('Too late — the undo window closed.');
     });
-
-    setAmount('');
-    setNote('');
-    setShowAddExpense(false);
-  };
-
-  const handleSaveIncome = async () => {
-    if (!amount || parseFloat(amount) <= 0) return;
-
-    await addTransaction({
-      amount: parseFloat(amount),
-      type: 'income',
-      categoryId: 'paycheck',
-      accountId: selectedAccountId,
-      date: dateStr,
-      timestamp: new Date().toISOString(),
-      note: note || undefined,
-    });
-
-    setAmount('');
-    setNote('');
-    setShowAddIncome(false);
-  };
-
-  const getCategoryTransactions = (categoryId: string) => {
-    return expenseTransactions.filter((txn) => txn.categoryId === categoryId);
-  };
-
-  const getCategoryTotal = (categoryId: string) => {
-    return getCategoryTransactions(categoryId).reduce((sum, txn) => sum + txn.amount, 0);
   };
 
   return (
-    <Modal animationType="slide" transparent={false} visible={true}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{formatDateDisplay(date)}</Text>
-          <View style={styles.backButton} />
-        </View>
-
-        <ScrollView style={styles.content}>
-          {/* Income Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>INCOME</Text>
-              <TouchableOpacity onPress={handleAddIncome} style={styles.addButton}>
-                <Ionicons name="add-circle" size={20} color={colors.accent.primary} />
-                <Text style={styles.addButtonText}>Add Income</Text>
-              </TouchableOpacity>
-            </View>
-
-            {incomeTransactions.length > 0 ? (
-              incomeTransactions.map((txn) => (
-                <View key={txn.id} style={styles.transactionRow}>
-                  <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionNote}>
-                      {txn.note || 'Income'}
-                    </Text>
-                    <Text style={styles.transactionAccount}>
-                      {accounts.find((a) => a.id === txn.accountId)?.name}
-                    </Text>
-                  </View>
-                  <Text style={styles.transactionAmountPositive}>
-                    +{formatCurrency(txn.amount)}
-                  </Text>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No income recorded</Text>
-            )}
-          </View>
-
-          {/* Expenses Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>EXPENSES</Text>
-
-            {categories
-              .filter((cat) => !cat.recurring)
-              .map((category) => {
-                const categoryTotal = getCategoryTotal(category.id);
-                const categoryTxns = getCategoryTransactions(category.id);
-                const budget = category.plannedWeekly || category.plannedMonthly / 4.33;
-                const percentage = budget > 0 ? (categoryTotal / budget) * 100 : 0;
-
-                return (
-                  <View key={category.id} style={styles.categoryCard}>
-                    <View style={styles.categoryHeader}>
-                      <Text style={styles.categoryName}>{category.name}</Text>
-                      <Text style={styles.categoryBudget}>
-                        {formatCurrency(categoryTotal)} / {formatCurrency(budget)}
-                      </Text>
-                    </View>
-
-                    {/* Progress bar */}
-                    <View style={styles.progressBarContainer}>
-                      <View
-                        style={[
-                          styles.progressBar,
-                          {
-                            width: `${Math.min(percentage, 100)}%`,
-                            backgroundColor:
-                              percentage > 100
-                                ? colors.status.error
-                                : percentage > 80
-                                ? colors.status.warning
-                                : colors.status.success,
-                          },
-                        ]}
-                      />
-                    </View>
-
-                    {/* Transactions for this category */}
-                    {categoryTxns.map((txn) => (
-                      <View key={txn.id} style={styles.expenseRow}>
-                        <Text style={styles.expenseNote}>{txn.note || 'Expense'}</Text>
-                        <Text style={styles.expenseAmount}>
-                          {formatCurrency(txn.amount)}
-                        </Text>
-                      </View>
-                    ))}
-
-                    <TouchableOpacity
-                      onPress={() => handleAddExpense(category.id)}
-                      style={styles.addExpenseButton}
-                    >
-                      <Ionicons name="add" size={16} color={colors.accent.primary} />
-                      <Text style={styles.addExpenseText}>Add expense</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-          </View>
-
-          {/* Daily Summary */}
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Daily Total</Text>
-            <Text
-              style={[
-                styles.summaryAmount,
-                dailyTotal > 0 && styles.summaryAmountPositive,
-                dailyTotal < 0 && styles.summaryAmountNegative,
-              ]}
-            >
-              {dailyTotal > 0 ? '+' : ''}
-              {formatCurrency(dailyTotal)}
-            </Text>
-
-            <View style={styles.summaryDetails}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryDetailLabel}>Income:</Text>
-                <Text style={styles.summaryDetailValue}>
-                  +{formatCurrency(dailyIncome)}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryDetailLabel}>Expenses:</Text>
-                <Text style={styles.summaryDetailValue}>
-                  -{formatCurrency(dailyExpenses)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.accountBalancesSection}>
-              <Text style={styles.accountBalancesLabel}>Account Balances:</Text>
-              {accounts.map((acc) => (
-                <View key={acc.id} style={styles.accountBalanceRow}>
-                  <Text style={styles.accountName}>{acc.name}:</Text>
-                  <Text style={styles.accountBalance}>
-                    {formatCurrency(getAccountBalance(acc.id, dateStr))}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* Add Expense Modal */}
-        <Modal
-          visible={showAddExpense}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowAddExpense(false)}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.modalOverlay}
-          >
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                Add {categories.find((c) => c.id === selectedCategoryId)?.name} Expense
-              </Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Amount"
-                placeholderTextColor={colors.text.disabled}
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
-                autoFocus
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Note (optional)"
-                placeholderTextColor={colors.text.disabled}
-                value={note}
-                onChangeText={setNote}
-              />
-
-              <Text style={styles.inputLabel}>Account</Text>
-              <View style={styles.accountSelector}>
-                {accounts.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[
-                      styles.accountOption,
-                      selectedAccountId === acc.id && styles.accountOptionSelected,
-                    ]}
-                    onPress={() => setSelectedAccountId(acc.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.accountOptionText,
-                        selectedAccountId === acc.id && styles.accountOptionTextSelected,
-                      ]}
-                    >
-                      {acc.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.modalButtonCancel]}
-                  onPress={() => {
-                    setShowAddExpense(false);
-                    setAmount('');
-                    setNote('');
-                  }}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.modalButtonSave]}
-                  onPress={handleSaveExpense}
-                >
-                  <Text style={styles.modalButtonTextPrimary}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-
-        {/* Add Income Modal */}
-        <Modal
-          visible={showAddIncome}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowAddIncome(false)}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.modalOverlay}
-          >
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Add Income</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Amount"
-                placeholderTextColor={colors.text.disabled}
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
-                autoFocus
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Note (optional)"
-                placeholderTextColor={colors.text.disabled}
-                value={note}
-                onChangeText={setNote}
-              />
-
-              <Text style={styles.inputLabel}>Account</Text>
-              <View style={styles.accountSelector}>
-                {accounts.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[
-                      styles.accountOption,
-                      selectedAccountId === acc.id && styles.accountOptionSelected,
-                    ]}
-                    onPress={() => setSelectedAccountId(acc.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.accountOptionText,
-                        selectedAccountId === acc.id && styles.accountOptionTextSelected,
-                      ]}
-                    >
-                      {acc.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.modalButtonCancel]}
-                  onPress={() => {
-                    setShowAddIncome(false);
-                    setAmount('');
-                    setNote('');
-                  }}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.modalButtonSave]}
-                  onPress={handleSaveIncome}
-                >
-                  <Text style={styles.modalButtonTextPrimary}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
+    <Screen
+      title={longDate(date)}
+      right={
+        <HardButton
+          label="Done"
+          variant="ghost"
+          onPress={onClose}
+          accessibilityLabel="Close day detail"
+        />
+      }
+    >
+      {/* Day KPIs: spent / account after / envelope left (§4.3). */}
+      <View style={styles.kpiRow}>
+        <Kpi label="Spent" amount={spentToday} kind="spend" />
+        <Kpi label={spendingAccount ? `${spendingAccount.name} after` : 'Account after'} amount={accountAfter} kind="plain" />
+        <Kpi label="Envelope left" amount={envelopeLeft} kind="income" />
       </View>
-    </Modal>
+
+      {/* Ruled transaction list: press/long-press → context menu. */}
+      <SectionLabel>Transactions</SectionLabel>
+      <RuledList<TransactionRecord>
+        data={dayTxns}
+        keyExtractor={(t) => t.id}
+        renderRow={(t) => (
+          <Pressable
+            onPress={() => setMenuTxn(t)}
+            onLongPress={() => setMenuTxn(t)}
+            delayLongPress={350}
+            accessibilityRole="button"
+            accessibilityLabel={txnA11yLabel(t, catById, acctById)}
+            accessibilityHint="Opens edit, recategorize and delete actions"
+          >
+            <TxnRow txn={t} cat={catById(t.categoryId)} acctById={acctById} />
+          </Pressable>
+        )}
+      />
+
+      <Row style={styles.addRow}>
+        <HardButton
+          label="+ Expense"
+          onPress={() => setAddKind('expense')}
+          accessibilityLabel="Add an expense to this day"
+        />
+        <HardButton
+          label="+ Income"
+          variant="ghost"
+          onPress={() => setAddKind('income')}
+          accessibilityLabel="Add income to this day"
+        />
+      </Row>
+
+      {/* Long-press context menu: edit / recategorize / delete (no confirms — undo). */}
+      <Sheet
+        visible={menuTxn !== null}
+        onClose={() => setMenuTxn(null)}
+        title={menuTxn ? (catById(menuTxn.categoryId)?.name ?? 'Transaction') : ''}
+      >
+        <HardButton
+          label="Edit"
+          variant="ghost"
+          onPress={() => {
+            setEditTxn(menuTxn);
+            setMenuTxn(null);
+          }}
+          accessibilityLabel="Edit this transaction"
+        />
+        <HardButton
+          label="Delete"
+          variant="danger"
+          onPress={() => {
+            const t = menuTxn;
+            setMenuTxn(null);
+            if (t) void handleDelete(t);
+          }}
+          accessibilityLabel="Delete this transaction, with undo"
+        />
+      </Sheet>
+
+      {editTxn ? (
+        <EditSheet
+          key={editTxn.id}
+          txn={editTxn}
+          categories={categories}
+          onClose={() => setEditTxn(null)}
+          onSave={async (patch) => {
+            await store.editTransaction(editTxn.id, patch);
+            setEditTxn(null);
+          }}
+        />
+      ) : null}
+
+      {addKind === 'expense' ? (
+        <AddExpenseSheet
+          categories={categories}
+          onClose={() => setAddKind(null)}
+          onSave={async (amount, categoryId, note) => {
+            await store.addExpense({
+              accountId: spendingAccount.id,
+              categoryId,
+              amount,
+              date,
+              note,
+            });
+            setAddKind(null);
+          }}
+        />
+      ) : null}
+
+      {addKind === 'income' ? (
+        <AddIncomeSheet
+          sources={incomeSources}
+          onClose={() => setAddKind(null)}
+          onSave={async (sourceId, amount) => {
+            await store.addIncome({ sourceId, date, amount });
+            setAddKind(null);
+          }}
+        />
+      ) : null}
+    </Screen>
   );
-};
+}
+
+// --- rows --------------------------------------------------------------------
+function txnA11yLabel(
+  t: TransactionRecord,
+  catById: (id: string) => CategoryConfig | undefined,
+  acctById: (id: string) => AccountConfig | undefined,
+): string {
+  if (t.kind === 'income') {
+    const splits = (t.incomeSplit ?? [])
+      .map((leg) => `${formatCents(leg.amount)} to ${acctById(leg.accountId)?.name ?? 'account'}`)
+      .join(', ');
+    return `Income, ${t.note ?? 'income'}, ${formatCents(t.amount)}${splits ? `, split ${splits}` : ''}`;
+  }
+  const cat = catById(t.categoryId);
+  return `${t.kind === 'expense' ? 'Expense' : 'Transfer'}, ${cat?.name ?? ''}, ${formatCents(t.amount)}${t.note ? `, ${t.note}` : ''}`;
+}
+
+function TxnRow({
+  txn,
+  cat,
+  acctById,
+}: {
+  txn: TransactionRecord;
+  cat: CategoryConfig | undefined;
+  acctById: (id: string) => AccountConfig | undefined;
+}) {
+  const isIncome = txn.kind === 'income';
+  const isTransfer = txn.kind === 'transfer_in' || txn.kind === 'transfer_out';
+  const title = isIncome ? (txn.note ?? 'Income') : (cat?.name ?? 'Uncategorized');
+  return (
+    <View>
+      <Row style={styles.txnRow}>
+        {cat && !isIncome ? <CategoryChip colorKey={cat.colorKey} /> : null}
+        <View style={styles.txnMeta}>
+          <Text style={styles.txnTitle}>{title}</Text>
+          {!isIncome && txn.note ? <Text style={styles.txnNote}>{txn.note}</Text> : null}
+          {isTransfer ? (
+            <Text style={styles.txnNote}>
+              {txn.kind === 'transfer_in' ? 'Transfer in' : 'Transfer out'}
+            </Text>
+          ) : null}
+        </View>
+        <MoneyText
+          amount={txn.amount}
+          kind={isIncome || txn.kind === 'transfer_in' ? 'income' : 'spend'}
+          signed={isIncome}
+        />
+      </Row>
+      {/* Inline split display on income rows (§4.3). */}
+      {isIncome && (txn.incomeSplit ?? []).length > 1 ? (
+        <View style={styles.splitBlock}>
+          {(txn.incomeSplit ?? []).map((leg) => (
+            <Row key={leg.accountId} style={styles.splitRow}>
+              <Text style={styles.splitLabel}>{acctById(leg.accountId)?.name ?? 'Account'}</Text>
+              <MoneyText amount={leg.amount} size={typo.caption.fontSize} />
+            </Row>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function Kpi({ label, amount, kind }: { label: string; amount: Cents; kind: 'plain' | 'income' | 'spend' }) {
+  return (
+    <View
+      style={styles.kpi}
+      accessible
+      accessibilityLabel={`${label}: ${formatCents(amount)}`}
+    >
+      <Text style={styles.kpiLabel} numberOfLines={1}>
+        {label}
+      </Text>
+      <MoneyText amount={amount} kind={kind} size={typo.body.fontSize + 2} />
+    </View>
+  );
+}
+
+// --- forms ---------------------------------------------------------------------
+function MoneyField({
+  value,
+  onChangeText,
+  autoFocus,
+  label = 'Amount',
+}: {
+  value: string;
+  onChangeText: (t: string) => void;
+  autoFocus?: boolean;
+  label?: string;
+}) {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      keyboardType="decimal-pad"
+      placeholder="0.00"
+      placeholderTextColor={color.textMuted}
+      autoFocus={autoFocus}
+      accessibilityLabel={label}
+      style={styles.input}
+    />
+  );
+}
+
+function CategoryPicker({
+  categories,
+  selected,
+  onSelect,
+}: {
+  categories: CategoryConfig[];
+  selected: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <View style={styles.pickerWrap}>
+      {categories.map((c) => (
+        <Pressable
+          key={c.id}
+          onPress={() => onSelect(c.id)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: c.id === selected }}
+          accessibilityLabel={`Category ${c.name}${c.id === selected ? ', selected' : ''}`}
+          style={[styles.pickerItem, c.id === selected && styles.pickerItemSelected]}
+        >
+          <CategoryChip colorKey={c.colorKey} />
+          <Text style={styles.pickerLabel}>{c.name}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function EditSheet({
+  txn,
+  categories,
+  onClose,
+  onSave,
+}: {
+  txn: TransactionRecord;
+  categories: CategoryConfig[];
+  onClose: () => void;
+  onSave: (patch: { amount: Cents; categoryId: string; note: string }) => void;
+}) {
+  const [amountText, setAmountText] = useState(toDecimalString(txn.amount));
+  const [note, setNote] = useState(txn.note ?? '');
+  const [catId, setCatId] = useState(txn.categoryId);
+  const parsed = tryParseCents(amountText);
+  const isExpense = txn.kind === 'expense';
+  return (
+    <Sheet visible onClose={onClose} title="Edit transaction">
+      <SectionLabel>Amount</SectionLabel>
+      <MoneyField value={amountText} onChangeText={setAmountText} autoFocus />
+      {isExpense ? (
+        <>
+          <SectionLabel>Category</SectionLabel>
+          <CategoryPicker categories={categories} selected={catId} onSelect={setCatId} />
+        </>
+      ) : null}
+      <SectionLabel>Note</SectionLabel>
+      <TextInput
+        value={note}
+        onChangeText={setNote}
+        placeholder="Note (optional)"
+        placeholderTextColor={color.textMuted}
+        accessibilityLabel="Note"
+        style={styles.input}
+      />
+      <Row style={styles.formActions}>
+        <HardButton
+          label="Save"
+          disabled={parsed === null || parsed <= 0}
+          onPress={() => {
+            if (parsed !== null && parsed > 0) onSave({ amount: parsed, categoryId: catId, note });
+          }}
+          accessibilityLabel="Save changes"
+        />
+      </Row>
+    </Sheet>
+  );
+}
+
+function AddExpenseSheet({
+  categories,
+  onClose,
+  onSave,
+}: {
+  categories: CategoryConfig[];
+  onClose: () => void;
+  onSave: (amount: Cents, categoryId: string, note?: string) => void;
+}) {
+  const spendable = categories.filter((c) => c.envelope !== null || c.fixed);
+  const [amountText, setAmountText] = useState('');
+  const [note, setNote] = useState('');
+  const [catId, setCatId] = useState(spendable[0]?.id ?? '');
+  const parsed = tryParseCents(amountText);
+  const valid = parsed !== null && parsed > 0 && catId !== '';
+  return (
+    <Sheet visible onClose={onClose} title="Add expense">
+      <SectionLabel>Amount</SectionLabel>
+      <MoneyField value={amountText} onChangeText={setAmountText} autoFocus />
+      <SectionLabel>Category</SectionLabel>
+      <CategoryPicker categories={spendable} selected={catId} onSelect={setCatId} />
+      <SectionLabel>Note</SectionLabel>
+      <TextInput
+        value={note}
+        onChangeText={setNote}
+        placeholder="Note (optional)"
+        placeholderTextColor={color.textMuted}
+        accessibilityLabel="Note"
+        style={styles.input}
+      />
+      <Row style={styles.formActions}>
+        <HardButton
+          label="Add expense"
+          disabled={!valid}
+          onPress={() => {
+            if (valid && parsed !== null) onSave(parsed, catId, note || undefined);
+          }}
+          accessibilityLabel="Save the new expense"
+        />
+      </Row>
+    </Sheet>
+  );
+}
+
+function AddIncomeSheet({
+  sources,
+  onClose,
+  onSave,
+}: {
+  sources: IncomeSourceConfig[];
+  onClose: () => void;
+  onSave: (sourceId: string, amount?: Cents) => void;
+}) {
+  const [sourceId, setSourceId] = useState(sources[0]?.id ?? '');
+  const source = sources.find((s) => s.id === sourceId);
+  const [amountText, setAmountText] = useState('');
+  const parsed = tryParseCents(amountText);
+  const override = amountText.trim() !== '';
+  const valid = sourceId !== '' && (!override || (parsed !== null && parsed > 0));
+  return (
+    <Sheet visible onClose={onClose} title="Add income">
+      <SectionLabel>Source</SectionLabel>
+      <View style={styles.pickerWrap}>
+        {sources.map((s) => (
+          <Pressable
+            key={s.id}
+            onPress={() => setSourceId(s.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: s.id === sourceId }}
+            accessibilityLabel={`Income source ${s.name}, usually ${formatCents(s.amount)}${s.id === sourceId ? ', selected' : ''}`}
+            style={[styles.pickerItem, s.id === sourceId && styles.pickerItemSelected]}
+          >
+            <Text style={styles.pickerLabel}>{s.name}</Text>
+            <Text style={styles.pickerAmount}>{formatCents(s.amount)}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <SectionLabel>Amount (leave blank for the usual)</SectionLabel>
+      <MoneyField
+        value={amountText}
+        onChangeText={setAmountText}
+        label={source ? `Amount, defaults to ${formatCents(source.amount)}` : 'Amount'}
+      />
+      <Row style={styles.formActions}>
+        <HardButton
+          label="Add income"
+          disabled={!valid}
+          onPress={() => {
+            if (valid) onSave(sourceId, override && parsed !== null ? parsed : undefined);
+          }}
+          accessibilityLabel="Save the income"
+        />
+      </Row>
+    </Sheet>
+  );
+}
 
 const styles = StyleSheet.create({
-  container: {
+  kpiRow: {
+    flexDirection: 'row',
+    gap: space.sm,
+    marginTop: space.sm,
+  },
+  kpi: {
     flex: 1,
-    backgroundColor: colors.background,
+    borderTopWidth: pixel.hairlineWidth * 2,
+    borderTopColor: color.border,
+    paddingTop: space.sm,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  kpiLabel: {
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
+    textTransform: typo.sectionLabel.textTransform,
+    marginBottom: space.xs,
+  },
+  txnRow: {
     justifyContent: 'space-between',
-    padding: theme.spacing.md,
-    backgroundColor: colors.surface,
   },
-  backButton: {
-    width: 40,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-  },
-  content: {
+  txnMeta: {
     flex: 1,
+    marginLeft: space.sm,
   },
-  section: {
-    padding: theme.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.card,
+  txnTitle: {
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.text.secondary,
-    marginBottom: theme.spacing.sm,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  addButtonText: {
-    color: colors.accent.primary,
-    fontSize: 14,
-  },
-  transactionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: theme.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.card,
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionNote: {
-    fontSize: 16,
-    color: colors.text.primary,
-  },
-  transactionAccount: {
-    fontSize: 12,
-    color: colors.text.disabled,
+  txnNote: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
     marginTop: 2,
   },
-  transactionAmountPositive: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
-    color: colors.status.success,
+  splitBlock: {
+    marginTop: space.xs,
+    marginLeft: space.md,
+    borderLeftWidth: pixel.hairlineWidth,
+    borderLeftColor: color.hairline,
+    paddingLeft: space.sm,
   },
-  emptyText: {
-    fontSize: 14,
-    color: colors.text.disabled,
-    fontStyle: 'italic',
-    paddingVertical: theme.spacing.sm,
-  },
-  categoryCard: {
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
+  splitRow: {
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
+    paddingVertical: 2,
   },
-  categoryName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.text.primary,
+  splitLabel: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
   },
-  categoryBudget: {
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: colors.text.secondary,
-  },
-  progressBarContainer: {
-    height: 4,
-    backgroundColor: colors.card,
-    borderRadius: 2,
-    marginBottom: theme.spacing.sm,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  expenseRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  expenseNote: {
-    fontSize: 14,
-    color: colors.text.secondary,
-  },
-  expenseAmount: {
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: colors.text.primary,
-  },
-  addExpenseButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: theme.spacing.sm,
-  },
-  addExpenseText: {
-    fontSize: 14,
-    color: colors.accent.primary,
-  },
-  summaryCard: {
-    backgroundColor: colors.surface,
-    padding: theme.spacing.md,
-    margin: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: 4,
-  },
-  summaryAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
-    color: colors.text.primary,
-    marginBottom: theme.spacing.md,
-  },
-  summaryAmountPositive: {
-    color: colors.status.success,
-  },
-  summaryAmountNegative: {
-    color: colors.status.error,
-  },
-  summaryDetails: {
-    gap: 8,
-    marginBottom: theme.spacing.md,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  summaryDetailLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
-  },
-  summaryDetailValue: {
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: colors.text.primary,
-  },
-  accountBalancesSection: {
-    borderTopWidth: 1,
-    borderTopColor: colors.card,
-    paddingTop: theme.spacing.md,
-  },
-  accountBalancesLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: theme.spacing.sm,
-  },
-  accountBalanceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  accountName: {
-    fontSize: 14,
-    color: colors.text.primary,
-  },
-  accountBalance: {
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: colors.text.primary,
-    fontWeight: 'bold',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: '90%',
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.lg,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginBottom: theme.spacing.md,
+  addRow: {
+    marginTop: space.md,
   },
   input: {
-    backgroundColor: colors.card,
-    borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing.md,
-    fontSize: 16,
-    color: colors.text.primary,
-    marginBottom: theme.spacing.md,
+    backgroundColor: color.surfaceDeep,
+    borderWidth: pixel.hairlineWidth,
+    borderColor: color.border,
+    color: color.text,
+    fontSize: typo.body.fontSize + 4,
+    fontVariant: [...typo.tabularNums.fontVariant],
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm + space.xs,
   },
-  inputLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: theme.spacing.sm,
-  },
-  accountSelector: {
+  pickerWrap: {
     flexDirection: 'row',
-    gap: theme.spacing.sm,
-    marginBottom: theme.spacing.md,
+    flexWrap: 'wrap',
+    gap: space.sm,
   },
-  accountOption: {
-    flex: 1,
-    padding: theme.spacing.md,
-    backgroundColor: colors.card,
-    borderRadius: theme.borderRadius.sm,
-    alignItems: 'center',
-  },
-  accountOptionSelected: {
-    backgroundColor: colors.accent.primary,
-  },
-  accountOptionText: {
-    fontSize: 14,
-    color: colors.text.secondary,
-  },
-  accountOptionTextSelected: {
-    color: colors.background,
-    fontWeight: 'bold',
-  },
-  modalButtons: {
+  pickerItem: {
     flexDirection: 'row',
-    gap: theme.spacing.sm,
-  },
-  modalButton: {
-    flex: 1,
-    padding: theme.spacing.md,
-    borderRadius: theme.borderRadius.sm,
     alignItems: 'center',
+    gap: space.xs,
+    paddingVertical: space.xs,
+    paddingHorizontal: space.sm,
+    borderWidth: pixel.hairlineWidth,
+    borderColor: color.hairline,
+    backgroundColor: color.surfaceDeep,
   },
-  modalButtonCancel: {
-    backgroundColor: colors.card,
+  pickerItemSelected: {
+    borderColor: color.accent,
+    backgroundColor: color.surface,
   },
-  modalButtonSave: {
-    backgroundColor: colors.accent.primary,
+  pickerLabel: {
+    color: color.text,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.body.fontWeight,
   },
-  modalButtonText: {
-    fontSize: 16,
-    color: colors.text.primary,
+  pickerAmount: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    fontVariant: [...typo.tabularNums.fontVariant],
   },
-  modalButtonTextPrimary: {
-    fontSize: 16,
-    color: colors.background,
-    fontWeight: 'bold',
+  formActions: {
+    marginTop: space.lg,
   },
 });
+
+export default DailyDetailScreen;

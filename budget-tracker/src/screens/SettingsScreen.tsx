@@ -1,491 +1,159 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  Alert,
-  Share,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, theme } from '../theme/colors';
-import { useBudgetStore } from '../store';
-import { formatCurrency } from '../utils/calculations';
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
+import React from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import * as tokens from '../theme/tokens';
+import { formatCents } from '../lib/money';
+import { RuledList } from '../components/kit';
+import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
+import { useStore } from '../providers/StoreProvider';
+import { useAppShell } from '../providers/AppShell';
+import { todayISO } from '../format/dates';
+import type { AccountConfig } from '../types/contracts';
 
-const SettingsScreen = () => {
-  const { accounts, categories, updateAccount, updateCategory, getAccountBalance } =
-    useBudgetStore();
+const { color, space } = tokens;
+const typo = tokens.type;
 
-  const [editingAccount, setEditingAccount] = useState<string | null>(null);
-  const [editingCategory, setEditingCategory] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
+interface SetupLink {
+  id: string;
+  title: string;
+  subtitle: string;
+  /** Team 2 owns the destination; wired at merge. */
+  team2Route: string;
+}
 
-  const handleEditAccount = (accountId: string, currentBalance: number) => {
-    setEditingAccount(accountId);
-    setEditValue(currentBalance.toString());
-  };
+const SETUP_LINKS: SetupLink[] = [
+  { id: 'accounts', title: 'Accounts', subtitle: 'Add, rename, balances', team2Route: 'setup/accounts' },
+  { id: 'income', title: 'Income sources', subtitle: 'Amounts, schedules, split bars', team2Route: 'setup/income' },
+  { id: 'envelopes', title: 'Envelopes & categories', subtitle: 'Create, rename, re-budget', team2Route: 'setup/envelopes' },
+  { id: 'savings', title: 'Savings target', subtitle: 'Monthly goal for Duck Goal 3', team2Route: 'setup/savings' },
+  { id: 'chapter', title: 'New chapter', subtitle: 'Archive this setup, keep the flock', team2Route: 'setup/new-chapter' },
+];
 
-  const handleSaveAccount = async () => {
-    if (!editingAccount) return;
-    const newBalance = parseFloat(editValue);
-    if (isNaN(newBalance)) {
-      Alert.alert('Invalid Amount', 'Please enter a valid number');
-      return;
-    }
+export function SettingsScreen() {
+  const store = useStore();
+  const { showUndo } = useAppShell();
+  const today = todayISO();
+  const accounts = store.listAccounts();
+  const chapter = store.getActiveChapter();
 
-    await updateAccount(editingAccount, {
-      startingBalance: newBalance,
-    });
-
-    setEditingAccount(null);
-    setEditValue('');
-  };
-
-  const handleEditCategory = (categoryId: string, currentBudget: number) => {
-    setEditingCategory(categoryId);
-    setEditValue(currentBudget.toString());
-  };
-
-  const handleSaveCategory = async () => {
-    if (!editingCategory) return;
-    const newBudget = parseFloat(editValue);
-    if (isNaN(newBudget) || newBudget < 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid positive number');
-      return;
-    }
-
-    await updateCategory(editingCategory, {
-      plannedMonthly: newBudget,
-      plannedWeekly: newBudget / 4.33,
-    });
-
-    setEditingCategory(null);
-    setEditValue('');
-  };
-
-  const exportData = async () => {
-    try {
-      const data = {
-        accounts,
-        categories,
-        exportedAt: new Date().toISOString(),
-      };
-
-      const jsonString = JSON.stringify(data, null, 2);
-      const fileName = `budget_backup_${new Date().toISOString().split('T')[0]}.json`;
-      const fileUri = FileSystem.documentDirectory + fileName;
-
-      await FileSystem.writeAsStringAsync(fileUri, jsonString);
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri);
-      } else {
-        Alert.alert('Success', `Data exported to: ${fileUri}`);
-      }
-    } catch (error) {
-      Alert.alert('Export Failed', 'Could not export data');
-      console.error(error);
-    }
+  const openTeam2 = (item: SetupLink) => {
+    // Placeholder until Team 2's setup wizard is merged in.
+    showUndo(`"${item.title}" opens Team 2's setup flow at merge.`);
   };
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Accounts Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>ACCOUNTS</Text>
-        {accounts.map((account) => {
-          const currentBalance = getAccountBalance(account.id);
-          return (
-            <View key={account.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{account.name}</Text>
-                <TouchableOpacity
-                  onPress={() => handleEditAccount(account.id, account.startingBalance)}
-                >
-                  <Ionicons name="pencil" size={20} color={colors.accent.primary} />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.cardSubtitle}>{account.type}</Text>
-              <View style={styles.balanceRow}>
-                <Text style={styles.balanceLabel}>Starting Balance:</Text>
-                <Text style={styles.balanceAmount}>
-                  {formatCurrency(account.startingBalance)}
-                </Text>
-              </View>
-              <View style={styles.balanceRow}>
-                <Text style={styles.balanceLabel}>Current Balance:</Text>
-                <Text style={[styles.balanceAmount, styles.currentBalance]}>
-                  {formatCurrency(currentBalance)}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
-      </View>
-
-      {/* Categories Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>EXPENSE CATEGORIES</Text>
-        {categories.map((category) => (
-          <View key={category.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.categoryTitleRow}>
-                <View style={[styles.categoryDot, { backgroundColor: category.color }]} />
-                <Text style={styles.cardTitle}>{category.name}</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => handleEditCategory(category.id, category.plannedMonthly)}
+    <Screen title="Settings">
+      <SectionLabel>Accounts</SectionLabel>
+      <RuledList<AccountConfig>
+        data={accounts}
+        keyExtractor={(a) => a.id}
+        renderRow={(a) => (
+          <Row
+            style={styles.acctRow}
+          >
+            <View style={styles.acctMeta}>
+              <Text
+                style={styles.rowTitle}
+                accessibilityLabel={`${a.name}${a.institution ? `, ${a.institution}` : ''}, ${a.kind} account, balance ${formatCents(store.getAccountBalance(a.id, today))}`}
               >
-                <Ionicons name="pencil" size={20} color={colors.accent.primary} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.budgetRow}>
-              <Text style={styles.budgetLabel}>Monthly Budget:</Text>
-              <Text style={styles.budgetAmount}>
-                {formatCurrency(category.plannedMonthly)}
+                {a.name}
+              </Text>
+              <Text style={styles.rowSub}>
+                {a.institution ? `${a.institution} · ` : ''}
+                {a.kind}
               </Text>
             </View>
-            {category.plannedWeekly && (
-              <View style={styles.budgetRow}>
-                <Text style={styles.budgetLabel}>Weekly Budget:</Text>
-                <Text style={styles.budgetAmount}>
-                  {formatCurrency(category.plannedWeekly)}
-                </Text>
+            <MoneyText amount={store.getAccountBalance(a.id, today)} />
+          </Row>
+        )}
+      />
+
+      <SectionLabel>Setup</SectionLabel>
+      <RuledList<SetupLink>
+        data={SETUP_LINKS}
+        keyExtractor={(l) => l.id}
+        renderRow={(l) => (
+          <Pressable
+            onPress={() => openTeam2(l)}
+            accessibilityRole="button"
+            accessibilityLabel={`${l.title}. ${l.subtitle}. Opens setup.`}
+          >
+            <Row style={styles.linkRow}>
+              <View style={styles.acctMeta}>
+                <Text style={styles.rowTitle}>{l.title}</Text>
+                <Text style={styles.rowSub}>{l.subtitle}</Text>
               </View>
-            )}
-            {category.recurring && (
-              <View style={styles.recurringBadge}>
-                <Ionicons name="repeat" size={14} color={colors.accent.secondary} />
-                <Text style={styles.recurringText}>
-                  Recurring on day {category.recurringDay}
-                </Text>
-              </View>
-            )}
-          </View>
-        ))}
-      </View>
+              <Text style={styles.chevron}>{'>'}</Text>
+            </Row>
+          </Pressable>
+        )}
+      />
 
-      {/* Data Management */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>DATA</Text>
-        <TouchableOpacity style={styles.actionCard} onPress={exportData}>
-          <Ionicons name="download-outline" size={24} color={colors.accent.primary} />
-          <View style={styles.actionText}>
-            <Text style={styles.actionTitle}>Export Data</Text>
-            <Text style={styles.actionDescription}>
-              Backup your accounts and categories
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.text.disabled} />
-        </TouchableOpacity>
-      </View>
+      <SectionLabel>App</SectionLabel>
+      <InfoRow label="App" value="Ducks in a Row" />
+      <InfoRow label="Version" value="2.0.0 (rebuild)" />
+      <InfoRow label="Chapter" value={chapter.name} />
+      <InfoRow label="Theme" value="Midnight" />
+      <InfoRow label="Data" value="Dev fake store" />
 
-      {/* Preferences */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>PREFERENCES</Text>
-        <View style={styles.preferenceCard}>
-          <Ionicons name="moon" size={24} color={colors.accent.primary} />
-          <View style={styles.preferenceText}>
-            <Text style={styles.preferenceTitle}>Theme</Text>
-            <Text style={styles.preferenceValue}>Dark Mode (Always On)</Text>
-          </View>
-        </View>
-
-        <View style={styles.preferenceCard}>
-          <Ionicons name="notifications" size={24} color={colors.accent.primary} />
-          <View style={styles.preferenceText}>
-            <Text style={styles.preferenceTitle}>Notifications</Text>
-            <Text style={styles.preferenceValue}>Enabled</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Edit Account Modal */}
-      <Modal
-        visible={editingAccount !== null}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setEditingAccount(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Starting Balance</Text>
-            <Text style={styles.modalSubtitle}>
-              {accounts.find((a) => a.id === editingAccount)?.name}
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Starting Balance"
-              placeholderTextColor={colors.text.disabled}
-              keyboardType="decimal-pad"
-              value={editValue}
-              onChangeText={setEditValue}
-              autoFocus
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => {
-                  setEditingAccount(null);
-                  setEditValue('');
-                }}
-              >
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSave]}
-                onPress={handleSaveAccount}
-              >
-                <Text style={styles.modalButtonTextPrimary}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Edit Category Modal */}
-      <Modal
-        visible={editingCategory !== null}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setEditingCategory(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Monthly Budget</Text>
-            <Text style={styles.modalSubtitle}>
-              {categories.find((c) => c.id === editingCategory)?.name}
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Monthly Budget"
-              placeholderTextColor={colors.text.disabled}
-              keyboardType="decimal-pad"
-              value={editValue}
-              onChangeText={setEditValue}
-              autoFocus
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => {
-                  setEditingCategory(null);
-                  setEditValue('');
-                }}
-              >
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSave]}
-                onPress={handleSaveCategory}
-              >
-                <Text style={styles.modalButtonTextPrimary}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </ScrollView>
+      <Text style={styles.footnote}>
+        Running on the Team 3 dev store. Real data lands when Team 1's store merges; setup links
+        light up when Team 2's wizard merges.
+      </Text>
+    </Screen>
   );
-};
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <Row style={styles.infoRow}>
+      <Text style={styles.rowSub}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </Row>
+  );
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  section: {
-    padding: theme.spacing.md,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.text.secondary,
-    marginBottom: theme.spacing.sm,
-    textTransform: 'uppercase',
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-  },
-  cardHeader: {
-    flexDirection: 'row',
+  acctRow: {
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    color: colors.text.disabled,
-    textTransform: 'capitalize',
-    marginBottom: theme.spacing.sm,
-  },
-  balanceRow: {
-    flexDirection: 'row',
+  linkRow: {
     justifyContent: 'space-between',
-    marginTop: 4,
   },
-  balanceLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
+  acctMeta: {
+    flex: 1,
   },
-  balanceAmount: {
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: colors.text.primary,
+  rowTitle: {
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
   },
-  currentBalance: {
-    fontWeight: 'bold',
-    color: colors.accent.primary,
+  rowSub: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    marginTop: 2,
   },
-  categoryTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
+  chevron: {
+    color: color.textMuted,
+    fontSize: typo.title.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    marginLeft: space.md,
   },
-  categoryDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  budgetRow: {
-    flexDirection: 'row',
+  infoRow: {
     justifyContent: 'space-between',
-    marginTop: 4,
+    paddingVertical: space.sm,
   },
-  budgetLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
+  infoValue: {
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
   },
-  budgetAmount: {
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: colors.text.primary,
-  },
-  recurringBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: theme.spacing.sm,
-    paddingTop: theme.spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.card,
-  },
-  recurringText: {
-    fontSize: 12,
-    color: colors.accent.secondary,
-  },
-  actionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    gap: theme.spacing.md,
-  },
-  actionText: {
-    flex: 1,
-  },
-  actionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text.primary,
-    marginBottom: 2,
-  },
-  actionDescription: {
-    fontSize: 12,
-    color: colors.text.secondary,
-  },
-  preferenceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    gap: theme.spacing.md,
-  },
-  preferenceText: {
-    flex: 1,
-  },
-  preferenceTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text.primary,
-    marginBottom: 2,
-  },
-  preferenceValue: {
-    fontSize: 12,
-    color: colors.text.secondary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: '90%',
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.lg,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginBottom: 4,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: theme.spacing.md,
-  },
-  input: {
-    backgroundColor: colors.card,
-    borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing.md,
-    fontSize: 16,
-    color: colors.text.primary,
-    marginBottom: theme.spacing.md,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-  },
-  modalButton: {
-    flex: 1,
-    padding: theme.spacing.md,
-    borderRadius: theme.borderRadius.sm,
-    alignItems: 'center',
-  },
-  modalButtonCancel: {
-    backgroundColor: colors.card,
-  },
-  modalButtonSave: {
-    backgroundColor: colors.accent.primary,
-  },
-  modalButtonText: {
-    fontSize: 16,
-    color: colors.text.primary,
-  },
-  modalButtonTextPrimary: {
-    fontSize: 16,
-    color: colors.background,
-    fontWeight: 'bold',
+  footnote: {
+    color: color.textMuted,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    marginTop: space.lg,
+    lineHeight: 18,
   },
 });
 
