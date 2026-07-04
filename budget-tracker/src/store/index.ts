@@ -28,6 +28,7 @@ import {
   ZERO,
   type Cents,
 } from '../lib/money';
+import { paydaysBetween as schedulePaydaysBetween } from '../lib/schedule';
 import type {
   AccountConfig,
   CarryoverEntry,
@@ -390,45 +391,9 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     return balance;
   };
 
-  /** Local payday projection. TODO(team2): delegate to src/lib/schedule.ts PaydaysBetween. */
-  const paydaysBetween = (schedule: IncomeSchedule, range: DateRange): ISODate[] => {
-    const out: ISODate[] = [];
-    const { kind, anchorDate, semimonthlyDays } = schedule;
-    if (kind === 'weekly' || kind === 'biweekly') {
-      const step = kind === 'weekly' ? 7 : 14;
-      // Walk backward/forward from anchor onto the range.
-      let d = anchorDate;
-      while (d > range.from) d = addDays(d, -step);
-      while (d < range.from) d = addDays(d, step);
-      for (; d <= range.to; d = addDays(d, step)) out.push(d);
-    } else if (kind === 'monthly') {
-      const day = Number(anchorDate.slice(8, 10));
-      let [y, m] = [Number(range.from.slice(0, 4)), Number(range.from.slice(5, 7))];
-      for (let i = 0; i < 400; i++) {
-        const dim = new Date(y, m, 0).getDate();
-        const iso = `${y}-${String(m).padStart(2, '0')}-${String(Math.min(day, dim)).padStart(2, '0')}`;
-        if (iso > range.to) break;
-        if (iso >= range.from) out.push(iso);
-        m++;
-        if (m > 12) { m = 1; y++; }
-      }
-    } else if (kind === 'semimonthly') {
-      const days = semimonthlyDays ?? [1, 15];
-      let [y, m] = [Number(range.from.slice(0, 4)), Number(range.from.slice(5, 7))];
-      for (let i = 0; i < 400; i++) {
-        const dim = new Date(y, m, 0).getDate();
-        for (const day of days) {
-          const iso = `${y}-${String(m).padStart(2, '0')}-${String(Math.min(day, dim)).padStart(2, '0')}`;
-          if (iso >= range.from && iso <= range.to) out.push(iso);
-        }
-        const last = `${y}-${String(m).padStart(2, '0')}-28`;
-        if (last > range.to) break;
-        m++;
-        if (m > 12) { m = 1; y++; }
-      }
-    }
-    return out.sort();
-  };
+  // Payday projection delegates to Team 2's schedule engine (strict
+  // calendar validation, DST-immune epoch-day arithmetic).
+  const paydaysBetween = schedulePaydaysBetween;
 
   // -- refresh: reload every cache from committed DB, rebuild shim views ----
   const refresh = async (): Promise<void> => {
