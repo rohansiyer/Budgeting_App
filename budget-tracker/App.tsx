@@ -13,6 +13,9 @@ import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
 import { createStoreSetupWriter } from './src/setup/storeSetupWriter';
 import { DuckResultsGate } from './src/ducks/DuckResultsGate';
+import { LockScreen } from './src/security/LockScreen';
+import { useAutoLock } from './src/security/useAutoLock';
+import { isAppLockEnabled } from './src/security/lockSettings';
 import { color, space } from './src/theme/tokens';
 
 const navigationRef = createNavigationContainerRef<Record<string, undefined>>();
@@ -35,6 +38,13 @@ type BootState = { phase: 'booting' } | { phase: 'ready' } | { phase: 'error'; m
 
 export default function App() {
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
+  const [locked, setLocked] = useState(false);
+  useAutoLock(() => setLocked(true));
+  useEffect(() => {
+    void isAppLockEnabled().then((enabled) => {
+      if (enabled) setLocked(true); // cold start behind the lock
+    });
+  }, []);
 
   const bootstrap = useCallback(async () => {
     setBoot({ phase: 'booting' });
@@ -83,6 +93,14 @@ export default function App() {
           </>
         )}
       </View>
+    );
+  }
+
+  if (locked) {
+    return (
+      <SafeAreaProvider>
+        <LockScreen onUnlock={() => setLocked(false)} />
+      </SafeAreaProvider>
     );
   }
 

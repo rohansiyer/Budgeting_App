@@ -16,6 +16,15 @@ module.exports = {
   },
   moduleNameMapper: {
     '^expo-sqlite$': '<rootDir>/src/__mocks__/expo-sqlite.ts',
+    '^expo-file-system$': '<rootDir>/src/__mocks__/expo-file-system.ts',
+    '^expo-sharing$': '<rootDir>/src/__mocks__/expo-sharing.ts',
+    '^expo-document-picker$': '<rootDir>/src/__mocks__/expo-document-picker.ts',
+    '^expo-crypto$': '<rootDir>/src/__mocks__/expo-crypto.ts',
+    '^expo-secure-store$': '<rootDir>/src/__mocks__/expo-secure-store.ts',
+    '^expo-local-authentication$': '<rootDir>/src/__mocks__/expo-local-authentication.ts',
+    '^expo-notifications$': '<rootDir>/src/__mocks__/expo-notifications.ts',
+    '^@react-native-async-storage/async-storage$':
+      '<rootDir>/node_modules/@react-native-async-storage/async-storage/jest/async-storage-mock.js',
   },
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

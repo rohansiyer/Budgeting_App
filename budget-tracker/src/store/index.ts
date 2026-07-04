@@ -167,7 +167,7 @@ interface CarryoverRow {
 let txDepth = 0;
 let savepointSeq = 0;
 
-async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
   const raw = getRawDb();
   const nested = txDepth > 0;
   const sp = nested ? `sp_${++savepointSeq}` : null;
