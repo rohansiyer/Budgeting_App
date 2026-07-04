@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "runtimeVersion": "exposdk:51.0.0"
+      "runtimeVersion": "exposdk:54.0.0"
     },
     "android": {
       "adaptiveIcon": {
@@ -30,7 +30,7 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ],
-      "runtimeVersion": "exposdk:51.0.0"
+      "runtimeVersion": "exposdk:54.0.0"
     },
     "web": {
       "favicon": "./assets/favicon.png"

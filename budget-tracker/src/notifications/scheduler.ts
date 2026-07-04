@@ -5,6 +5,7 @@
  * re-checking, they just silently no-op (return false) when gated.
  */
 import * as Notifications from 'expo-notifications';
+import { SchedulableTriggerInputTypes } from 'expo-notifications';
 
 import { ensureAndroidChannel, getPermissionState } from './permissions';
 import { isNotificationKindEnabled } from './settings';
@@ -66,7 +67,7 @@ export async function scheduleBillReminder(now: Date = new Date()): Promise<bool
       title: 'Bills due this month',
       body: 'Check your fixed bills for the month ahead.',
     },
-    trigger: { date: nextBillReminderDate(now) },
+    trigger: { type: SchedulableTriggerInputTypes.DATE, date: nextBillReminderDate(now) },
   });
   return true;
 }
@@ -89,7 +90,7 @@ export async function schedulePaydayNote(date: string, amountLabel?: string): Pr
       title: 'Payday!',
       body: amountLabel ? `${amountLabel} is landing today.` : 'Income is landing today.',
     },
-    trigger: { date: fireAt },
+    trigger: { type: SchedulableTriggerInputTypes.DATE, date: fireAt },
   });
   return true;
 }
