@@ -1,160 +1,83 @@
-import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
-import * as tokens from '../theme/tokens';
-import { formatCents } from '../lib/money';
-import { RuledList } from '../components/kit';
-import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
-import { useStore } from '../providers/StoreProvider';
-import { useAppShell } from '../providers/AppShell';
-import { todayISO } from '../format/dates';
-import type { AccountConfig } from '../types/contracts';
+import React, { useCallback, useState } from 'react';
+import { Alert } from 'react-native';
 
-const { color, space } = tokens;
-const typo = tokens.type;
+import { SettingsRoot } from './settings/SettingsRoot';
+import { BackupScreen } from './settings/BackupScreen';
+import { SecurityScreen } from './settings/SecurityScreen';
+import { NotificationsScreen } from './settings/NotificationsScreen';
+import { AboutScreen } from './settings/AboutScreen';
+import {
+  NEW_CHAPTER_CONFIRM_TITLE,
+  NEW_CHAPTER_CONFIRM_MESSAGE,
+  RootSettingsItem,
+  SetupMode,
+  SettingsRouteName,
+} from './settings/config';
 
-interface SetupLink {
-  id: string;
-  title: string;
-  subtitle: string;
-  /** Team 2 owns the destination; wired at merge. */
-  team2Route: string;
+export type { SetupMode } from './settings/config';
+
+/**
+ * Typed seam the orchestrator wires to the root Setup route at merge (Team
+ * 2's setup wizard). 'edit' opens the existing setup for editing; 'newChapter'
+ * opens it after the user has confirmed archiving the current one.
+ */
+export type OnOpenSetup = (mode: SetupMode) => void;
+
+export interface SettingsScreenProps {
+  onOpenSetup?: OnOpenSetup;
 }
 
-const SETUP_LINKS: SetupLink[] = [
-  { id: 'accounts', title: 'Accounts', subtitle: 'Add, rename, balances', team2Route: 'setup/accounts' },
-  { id: 'income', title: 'Income sources', subtitle: 'Amounts, schedules, split bars', team2Route: 'setup/income' },
-  { id: 'envelopes', title: 'Envelopes & categories', subtitle: 'Create, rename, re-budget', team2Route: 'setup/envelopes' },
-  { id: 'savings', title: 'Savings target', subtitle: 'Monthly goal for Duck Goal 3', team2Route: 'setup/savings' },
-  { id: 'chapter', title: 'New chapter', subtitle: 'Archive this setup, keep the flock', team2Route: 'setup/new-chapter' },
-];
+// wired by orchestrator to the root Setup route at merge
+const noopOpenSetup: OnOpenSetup = () => {};
 
-export function SettingsScreen() {
-  const store = useStore();
-  const { showUndo } = useAppShell();
-  const today = todayISO();
-  const accounts = store.listAccounts();
-  const chapter = store.getActiveChapter();
+/**
+ * Settings tab. Renders its own small self-contained "stack" — plain React
+ * state driving which subscreen is on top, no navigator library involved —
+ * so Backup/Security/Notifications/About can be pushed and popped without
+ * touching src/navigation/RootNavigator.tsx or App.tsx, which are owned by a
+ * different in-flight agent for this release.
+ */
+export function SettingsScreen({ onOpenSetup = noopOpenSetup }: SettingsScreenProps) {
+  const [route, setRoute] = useState<SettingsRouteName>('root');
 
-  const openTeam2 = (item: SetupLink) => {
-    // Placeholder until Team 2's setup wizard is merged in.
-    showUndo(`"${item.title}" opens Team 2's setup flow at merge.`);
-  };
+  const goRoot = useCallback(() => setRoute('root'), []);
 
-  return (
-    <Screen title="Settings">
-      <SectionLabel>Accounts</SectionLabel>
-      <RuledList<AccountConfig>
-        data={accounts}
-        keyExtractor={(a) => a.id}
-        renderRow={(a) => (
-          <Row
-            style={styles.acctRow}
-          >
-            <View style={styles.acctMeta}>
-              <Text
-                style={styles.rowTitle}
-                accessibilityLabel={`${a.name}${a.institution ? `, ${a.institution}` : ''}, ${a.kind} account, balance ${formatCents(store.getAccountBalance(a.id, today))}`}
-              >
-                {a.name}
-              </Text>
-              <Text style={styles.rowSub}>
-                {a.institution ? `${a.institution} · ` : ''}
-                {a.kind}
-              </Text>
-            </View>
-            <MoneyText amount={store.getAccountBalance(a.id, today)} />
-          </Row>
-        )}
-      />
-
-      <SectionLabel>Setup</SectionLabel>
-      <RuledList<SetupLink>
-        data={SETUP_LINKS}
-        keyExtractor={(l) => l.id}
-        renderRow={(l) => (
-          <Pressable
-            onPress={() => openTeam2(l)}
-            accessibilityRole="button"
-            accessibilityLabel={`${l.title}. ${l.subtitle}. Opens setup.`}
-          >
-            <Row style={styles.linkRow}>
-              <View style={styles.acctMeta}>
-                <Text style={styles.rowTitle}>{l.title}</Text>
-                <Text style={styles.rowSub}>{l.subtitle}</Text>
-              </View>
-              <Text style={styles.chevron}>{'>'}</Text>
-            </Row>
-          </Pressable>
-        )}
-      />
-
-      <SectionLabel>App</SectionLabel>
-      <InfoRow label="App" value="Ducks in a Row" />
-      <InfoRow label="Version" value="2.0.0 (rebuild)" />
-      <InfoRow label="Chapter" value={chapter.name} />
-      <InfoRow label="Theme" value="Midnight" />
-      <InfoRow label="Data" value="Dev fake store" />
-
-      <Text style={styles.footnote}>
-        Running on the Team 3 dev store. Real data lands when Team 1's store merges; setup links
-        light up when Team 2's wizard merges.
-      </Text>
-    </Screen>
+  const handleSelect = useCallback(
+    (id: RootSettingsItem['id']) => {
+      switch (id) {
+        case 'setup':
+          onOpenSetup('edit');
+          break;
+        case 'newChapter':
+          Alert.alert(NEW_CHAPTER_CONFIRM_TITLE, NEW_CHAPTER_CONFIRM_MESSAGE, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Start new chapter', onPress: () => onOpenSetup('newChapter') },
+          ]);
+          break;
+        case 'backup':
+        case 'security':
+        case 'notifications':
+        case 'about':
+          setRoute(id);
+          break;
+      }
+    },
+    [onOpenSetup],
   );
-}
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <Row style={styles.infoRow}>
-      <Text style={styles.rowSub}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
-    </Row>
-  );
+  switch (route) {
+    case 'backup':
+      return <BackupScreen onBack={goRoot} />;
+    case 'security':
+      return <SecurityScreen onBack={goRoot} />;
+    case 'notifications':
+      return <NotificationsScreen onBack={goRoot} />;
+    case 'about':
+      return <AboutScreen onBack={goRoot} />;
+    case 'root':
+    default:
+      return <SettingsRoot onSelect={handleSelect} />;
+  }
 }
-
-const styles = StyleSheet.create({
-  acctRow: {
-    justifyContent: 'space-between',
-  },
-  linkRow: {
-    justifyContent: 'space-between',
-  },
-  acctMeta: {
-    flex: 1,
-  },
-  rowTitle: {
-    color: color.text,
-    fontSize: typo.body.fontSize,
-    fontWeight: typo.body.fontWeight,
-  },
-  rowSub: {
-    color: color.textSecondary,
-    fontSize: typo.caption.fontSize,
-    fontWeight: typo.caption.fontWeight,
-    marginTop: 2,
-  },
-  chevron: {
-    color: color.textMuted,
-    fontSize: typo.title.fontSize,
-    fontWeight: typo.caption.fontWeight,
-    marginLeft: space.md,
-  },
-  infoRow: {
-    justifyContent: 'space-between',
-    paddingVertical: space.sm,
-  },
-  infoValue: {
-    color: color.text,
-    fontSize: typo.body.fontSize,
-    fontWeight: typo.body.fontWeight,
-  },
-  footnote: {
-    color: color.textMuted,
-    fontSize: typo.caption.fontSize,
-    fontWeight: typo.caption.fontWeight,
-    marginTop: space.lg,
-    lineHeight: 18,
-  },
-});
 
 export default SettingsScreen;
