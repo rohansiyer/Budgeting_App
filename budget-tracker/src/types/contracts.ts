@@ -1,5 +1,5 @@
 /**
- * WAVE-0 CONTRACT — Shared domain types
+ * WAVE-0 CONTRACT — Shared domain types (rev 2, post-review)
  *
  * Teams build against these signatures. Changing a contract requires an
  * orchestrator-approved commit touching this file; drift found at a merge
@@ -16,6 +16,10 @@ export type ISODate = string;
 export type MonthKey = string;
 /** ISODate of the Monday starting a budget week */
 export type WeekStart = ISODate;
+export interface DateRange {
+  from: ISODate;
+  to: ISODate; // inclusive
+}
 
 // ---------------------------------------------------------------------------
 // Setup / configurability (Team 2 owns implementations)
@@ -31,7 +35,15 @@ export interface IncomeSchedule {
   semimonthlyDays?: [number, number];
 }
 
-export interface IncomeSplit {
+/**
+ * Payday projection — Team 2 implements in src/lib/schedule.ts; Team 3
+ * renders the results (Home payday bar, Calendar mint rings).
+ */
+export type PaydaysBetween = (schedule: IncomeSchedule, range: DateRange) => ISODate[];
+
+/** NOTE: legacy `IncomeSplit`/`IncomeConfig` in src/types/index.ts are
+ * deprecated and deleted by Team 1's retrofit. Import ONLY these. */
+export interface IncomeSplitConfig {
   accountId: string;
   /** Non-negative weight; splits are applied via money.allocate (cent-conserving). */
   ratio: number;
@@ -42,14 +54,30 @@ export interface IncomeSourceConfig {
   name: string;
   amount: Cents;
   schedule: IncomeSchedule;
-  splits: IncomeSplit[];
+  splits: IncomeSplitConfig[];
 }
 
-export interface EnvelopeConfig {
-  /** categoryId of a variable-spend category */
+export interface AccountConfig {
+  id: string;
+  name: string;
+  institution: string | null;
+  kind: 'spending' | 'savings';
+}
+
+/**
+ * Categories cover ALL spend. Variable-spend categories additionally have
+ * an envelope (budget + carryover). Fixed categories (rent, utilities…)
+ * have `envelope: null` and are evaluated by Duck Goal 1, not meters.
+ */
+export interface CategoryConfig {
   id: string;
   name: string;
   colorKey: CategoryColorKey;
+  fixed: boolean;
+  envelope: EnvelopeConfig | null;
+}
+
+export interface EnvelopeConfig {
   period: 'weekly' | 'monthly';
   budget: Cents;
   /** Monday-prompt default for leftovers. */
@@ -69,48 +97,53 @@ export interface Chapter {
 // ---------------------------------------------------------------------------
 
 export type CarryoverKind =
-  | 'roll_in' // + to this week, from last week's leftover
-  | 'sweep_to_savings' // leftover leaves the envelope system to savings
+  | 'roll_out' // − from source week (leftover leaves)
+  | 'roll_in' // + to destination week (paired 1:1 with a roll_out)
+  | 'sweep_to_savings' // − leftover leaves the envelope system to savings
   | 'borrow_in' // + to this week, taken from next week
-  | 'borrow_repay'; // − from this week, repaying last week's borrow
+  | 'borrow_repay'; // − from next week (paired 1:1 with a borrow_in)
 
 export interface CarryoverEntry {
   id: string;
-  envelopeId: string;
+  categoryId: string;
   /** Week whose budget this entry adjusts. */
   weekStart: WeekStart;
   kind: CarryoverKind;
-  /** Always positive; sign is implied by kind (roll_in/borrow_in add, others subtract). */
+  /** Always positive; sign is implied by kind ('_in' adds, others subtract). */
   amount: Cents;
-  /** Week the money came from / goes to (the other side of the transfer). */
-  counterpartWeekStart: WeekStart;
+  /** The other side of the transfer (paired entry's weekStart); null for sweeps. */
+  counterpartWeekStart: WeekStart | null;
+  /** Links the two entries of a roll/borrow pair. Null for sweeps. */
+  pairId: string | null;
   /** Month the SPEND is attributed to for duck evaluation (duck guard §5.4). */
   attributionMonth: MonthKey;
   createdAt: string;
 }
 
 /**
- * CONSERVATION LAW (adversary-tested): for any envelope and any pair of
- * linked entries, amounts match exactly; total budget across all weeks
- * equals configured budget × weeks ± sweeps. Borrow caps: counterpart is
- * always the immediately following week, and total borrow_in for a week
- * ≤ 50% of that following week's configured budget.
+ * CONSERVATION LAW (adversary-tested): paired entries (roll_out/roll_in,
+ * borrow_in/borrow_repay) share a pairId and have EQUAL amounts, so summed
+ * budget across all weeks equals configured budget × weeks − sweeps.
+ * Borrow caps: counterpart is always the immediately following week, and
+ * total borrow_in for a week ≤ 50% of that following week's configured budget.
  */
 
 export interface EnvelopeWeekState {
-  envelopeId: string;
+  categoryId: string;
   weekStart: WeekStart;
   configuredBudget: Cents;
   rolledIn: Cents;
+  rolledOut: Cents;
+  sweptOut: Cents;
   borrowedIn: Cents;
   repaying: Cents;
   spent: Cents;
-  /** configured + rolledIn + borrowedIn − repaying − spent */
+  /** configured + rolledIn + borrowedIn − rolledOut − sweptOut − repaying − spent */
   remaining: Cents;
 }
 
 // ---------------------------------------------------------------------------
-// Duck System (Team 4 owns engine; Team 1 owns tables)
+// Duck System (Team 4 owns engine; Team 1 owns tables + read port)
 // ---------------------------------------------------------------------------
 
 export interface GoalResult {
@@ -141,6 +174,27 @@ export interface Duck {
   earnedMonth: MonthKey;
 }
 
+/**
+ * Month-granular read port the DuckEngine evaluates against. Team 1
+ * implements it on the store; Team 4 consumes it. All totals apply the
+ * duck guard: spend covered by a cross-month borrow counts toward the
+ * CarryoverEntry.attributionMonth, not the calendar month of the txn.
+ */
+export interface EvaluationReadPort {
+  /** Per-category spend for the month (attribution-adjusted) + that month's budget basis (configured × weeks in month + net rolls). */
+  getMonthCategoryTotals(month: MonthKey): Promise<
+    Array<{ categoryId: string; fixed: boolean; spent: Cents; budget: Cents | null }>
+  >;
+  getMonthIncomeTotal(month: MonthKey): Promise<Cents>;
+  /** Transfers into savings-kind accounts + sweeps, for the savings-rate goal. */
+  getMonthSavingsTotal(month: MonthKey): Promise<Cents>;
+  /** Recurring fixed bills expected vs confirmed-paid for the month. */
+  getMonthFixedBillStatus(month: MonthKey): Promise<{ expected: number; paid: number }>;
+  getCarryoverEntries(query: { month?: MonthKey; categoryId?: string }): Promise<CarryoverEntry[]>;
+  /** Months with any activity, oldest first — the evaluation backlog basis. */
+  getActiveMonths(chapterId: string): Promise<MonthKey[]>;
+}
+
 export interface DuckEngine {
   /**
    * Evaluate every unevaluated completed month IN ORDER for the active
@@ -153,39 +207,82 @@ export interface DuckEngine {
 }
 
 // ---------------------------------------------------------------------------
-// Store actions (Team 1 implements; all teams call)
+// Store actions + read surface (Team 1 implements; all teams call)
 // ---------------------------------------------------------------------------
 
 export interface AtomicDb {
-  /** Every multi-row mutation runs inside this. Rollback on throw. */
-  withTransaction<T>(fn: () => T): T;
+  /** Every multi-row mutation runs inside this (async drizzle transaction). Rollback on throw. */
+  withTransaction<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+/** Undo window for destructive actions. undo() after expiry resolves false. */
+export const UNDO_WINDOW_MS = 6000;
+
+export interface TransactionRecord {
+  id: string;
+  accountId: string;
+  categoryId: string;
+  amount: Cents; // positive = outflow for expenses; income rows are positive inflows with kind
+  kind: 'expense' | 'income' | 'transfer_out' | 'transfer_in';
+  date: ISODate;
+  note: string | null;
+  /** For income: the source + per-account split amounts (display inline). */
+  incomeSplit?: Array<{ accountId: string; amount: Cents }>;
 }
 
 export interface StoreContract {
-  // transactions
+  // --- mutations -----------------------------------------------------------
   addExpense(input: {
     accountId: string;
-    envelopeId: string;
+    categoryId: string; // any category, fixed or enveloped
     amount: Cents;
     date: ISODate;
     note?: string;
   }): Promise<string>;
   addIncome(input: { sourceId: string; date: ISODate; amount?: Cents }): Promise<string>;
-  editTransaction(id: string, patch: Partial<{ amount: Cents; envelopeId: string; note: string }>): Promise<void>;
-  /** Soft-delete with undo window; permanent after commitUndoDeadline. */
-  deleteTransaction(id: string): Promise<{ undo: () => Promise<void> }>;
-  transfer(input: { fromAccountId: string; toAccountId: string; amount: Cents; date: ISODate }): Promise<string>;
+  editTransaction(
+    id: string,
+    patch: Partial<{ amount: Cents; categoryId: string; note: string }>,
+  ): Promise<void>;
+  /** Soft-delete; permanent after UNDO_WINDOW_MS. */
+  deleteTransaction(id: string): Promise<{ undo: () => Promise<boolean>; expiresAt: number }>;
+  transfer(input: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: Cents;
+    date: ISODate;
+  }): Promise<string>;
 
-  // carryover
-  rollForward(envelopeId: string, fromWeek: WeekStart): Promise<void>;
-  sweepToSavings(envelopeId: string, fromWeek: WeekStart, savingsAccountId: string): Promise<void>;
+  // --- carryover -----------------------------------------------------------
+  rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;
+  sweepToSavings(categoryId: string, fromWeek: WeekStart, savingsAccountId: string): Promise<void>;
   /** Throws if cap exceeded (one week ahead, ≤50% of next week's budget). */
-  borrowFromNextWeek(envelopeId: string, week: WeekStart, amount: Cents): Promise<void>;
+  borrowFromNextWeek(categoryId: string, week: WeekStart, amount: Cents): Promise<void>;
 
-  // selectors
-  getEnvelopeWeekState(envelopeId: string, week: WeekStart): EnvelopeWeekState;
+  // --- read surface (screens + engine) --------------------------------------
+  listAccounts(): AccountConfig[];
+  listCategories(): CategoryConfig[];
+  listIncomeSources(): IncomeSourceConfig[];
+  getActiveChapter(): Chapter;
+
+  getTransactions(range: DateRange): TransactionRecord[];
+  /** date → net outflow, for week bars + calendar heatmap (income excluded). */
+  getDaySpendTotals(range: DateRange): Map<ISODate, Cents>;
+  getPaydays(range: DateRange): ISODate[]; // union over income sources, via Team 2's PaydaysBetween
+
+  getEnvelopeWeekState(categoryId: string, week: WeekStart): EnvelopeWeekState;
+  /** Sum of enveloped remaining for the week — the Home hero number. */
   getSafeToSpend(week: WeekStart): Cents;
   getAccountBalance(accountId: string, asOf: ISODate): Cents;
+  /** Pond dual-donut: per-category plan vs month-to-date actual. */
+  getPlanVsActual(month: MonthKey): Array<{
+    categoryId: string;
+    planned: Cents;
+    actual: Cents;
+  }>;
+
+  /** Month-granular read port for the DuckEngine (see EvaluationReadPort). */
+  evaluation: EvaluationReadPort;
 }
 
 // ---------------------------------------------------------------------------

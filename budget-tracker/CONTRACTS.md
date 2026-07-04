@@ -32,6 +32,13 @@ team agents** — propose changes to the orchestrator instead.
 8. **IDs**: use a single `generateId()` in `src/lib/ids.ts` (Team 1 creates it —
    collision-safe, not `Date.now()+Math.random()`).
 9. Keep the app bootable in Expo Go at every commit.
+10. **Legacy type shadowing:** the income/analytics types in `src/types/index.ts`
+    (`IncomeSplit`, `IncomeConfig`, `DailyTotal`, …) are deprecated; Team 1 deletes
+    them in the retrofit. Import domain types ONLY from `src/types/contracts.ts`.
+11. Contract files live inside team-owned directories (`money.ts` in Team 1's
+    `src/lib`, `tokens.ts` in Team 3's `src/theme`). Teams may ADD sibling files
+    freely but must route edits to the contract files themselves through the
+    orchestrator.
 
 ## Team ownership map
 
