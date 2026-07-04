@@ -29,9 +29,9 @@ export type IncomeScheduleKind = 'weekly' | 'biweekly' | 'semimonthly' | 'monthl
 
 export interface IncomeSchedule {
   kind: IncomeScheduleKind;
-  /** A known payday the schedule is anchored to (weekly/biweekly/monthly). */
+  /** A known payday the schedule is anchored to. IGNORED for semimonthly (which uses only semimonthlyDays). */
   anchorDate: ISODate;
-  /** Days of month for semimonthly (e.g. [1, 15]); clamped to month length. */
+  /** Days of month for semimonthly (e.g. [1, 15]); clamped per month to month length. */
   semimonthlyDays?: [number, number];
 }
 
@@ -62,6 +62,9 @@ export interface AccountConfig {
   name: string;
   institution: string | null;
   kind: 'spending' | 'savings';
+  /** Opening balance at openedOn; the basis for getAccountBalance. */
+  startingBalance: Cents;
+  openedOn: ISODate;
 }
 
 /**
@@ -195,6 +198,28 @@ export interface EvaluationReadPort {
   getActiveMonths(chapterId: string): Promise<MonthKey[]>;
 }
 
+/**
+ * Persistence surface for issued evaluations + the flock. Team 1 implements
+ * on the store (duck tables); Team 4's engine consumes it. `commit` runs
+ * inside AtomicDb.withTransaction and NEVER mutates or deletes an issued
+ * evaluation (verdict finality). Starter duck: the ENGINE self-seeds the
+ * single starting duck (iff no evaluations and empty flock) — Team 1 does
+ * NOT seed ducks at chapter creation.
+ */
+export interface DuckPersistencePort {
+  loadState(chapterId: string): Promise<{
+    evaluations: DuckEvaluation[];
+    /** The live flock. Its length IS the current duck count. */
+    ducks: Duck[];
+    accessoryTier: number;
+  }>;
+  commit(
+    chapterId: string,
+    batch: { newEvaluations: DuckEvaluation[]; ducks: Duck[]; accessoryTier: number },
+  ): Promise<void>;
+  renameDuck(duckId: string, name: string): Promise<void>;
+}
+
 export interface DuckEngine {
   /**
    * Evaluate every unevaluated completed month IN ORDER for the active
@@ -203,6 +228,14 @@ export interface DuckEngine {
    * existing evaluation are never re-evaluated.
    */
   evaluatePendingMonths(now: ISODate): Promise<DuckEvaluation[]>;
+  /**
+   * Same, plus the non-persisted big-win flag (≥20% under budget in ALL
+   * envelopes) — the official happy-dance signal. Celebration only, never
+   * a mechanical effect.
+   */
+  evaluatePendingMonthsDetailed(
+    now: ISODate,
+  ): Promise<Array<{ evaluation: DuckEvaluation; bigWin: boolean }>>;
   getFlock(): Promise<{ ducks: Duck[]; accessoryTier: number }>;
 }
 
@@ -252,6 +285,21 @@ export interface StoreContract {
     amount: Cents;
     date: ISODate;
   }): Promise<string>;
+
+  // --- config mutations (Setup wizard / Settings write through these) -------
+  createAccount(input: {
+    name: string;
+    institution: string | null;
+    kind: 'spending' | 'savings';
+    startingBalance: Cents;
+    openedOn: ISODate;
+  }): Promise<AccountConfig>;
+  renameAccount(accountId: string, name: string): Promise<void>;
+  createIncomeSource(input: Omit<IncomeSourceConfig, 'id'>): Promise<IncomeSourceConfig>;
+  createCategory(input: Omit<CategoryConfig, 'id'>): Promise<CategoryConfig>;
+  updateEnvelope(categoryId: string, envelope: EnvelopeConfig | null): Promise<void>;
+  createChapter(input: { name: string; startedAt: ISODate }): Promise<Chapter>;
+  archiveChapter(chapterId: string, archivedAt: ISODate): Promise<void>;
 
   // --- carryover -----------------------------------------------------------
   rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;
