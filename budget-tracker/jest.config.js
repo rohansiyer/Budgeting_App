@@ -3,13 +3,9 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
-  // Skip database and store tests by default - they require native SQLite environment
-  // To run all tests including integration tests: npm test -- --testPathIgnorePatterns=""
-  testPathIgnorePatterns: [
-    '/node_modules/',
-    'src/db/__tests__/',
-    'src/store/__tests__/',
-  ],
+  // db/store suites are UN-HIDDEN (design v2 §2.5). They run against a real
+  // in-memory SQLite via the node:sqlite-backed expo-sqlite mock.
+  testPathIgnorePatterns: ['/node_modules/'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   transformIgnorePatterns: [
     'node_modules/(?!(expo-sqlite|expo|@expo|drizzle-orm)/)',
