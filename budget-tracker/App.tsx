@@ -6,7 +6,13 @@ import { Button, PaperProvider } from 'react-native-paper';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
+// TODO(team1): swap for the real StoreContract-backed SetupWriter once
+// the store retrofit lands; this in-memory writer keeps the app bootable
+// in Expo Go in the meantime but does not persist the default chapter.
+import { createInMemorySetupWriter } from './src/setup/inMemorySetupWriter';
 import { colors } from './src/theme/colors';
+
+const setupWriter = createInMemorySetupWriter();
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 function AppContent() {
@@ -19,7 +25,7 @@ function AppContent() {
       setInitError(null);
       setIsRetrying(false);
       await initDatabase();
-      await seedInitialData();
+      await seedInitialData(setupWriter);
       setIsReady(true);
     } catch (error) {
       console.error('Failed to initialize app:', error);
