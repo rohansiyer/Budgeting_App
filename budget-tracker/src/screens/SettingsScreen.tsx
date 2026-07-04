@@ -1,128 +1,159 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { colors, space, type, metrics } from '../theme/tokens';
-import { PixelBox, RuledList } from '../components/kit';
-import { Screen, SectionLabel } from '../components/Primitives';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import * as tokens from '../theme/tokens';
+import { formatCents } from '../lib/money';
+import { RuledList } from '../components/kit';
+import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
+import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
+import { todayISO } from '../format/dates';
+import type { AccountConfig } from '../types/contracts';
 
-interface LinkItem {
-  key: string;
+const { color, space } = tokens;
+const typo = tokens.type;
+
+interface SetupLink {
+  id: string;
   title: string;
   subtitle: string;
   /** Team 2 owns the destination; wired at merge. */
-  team2Route?: string;
+  team2Route: string;
 }
 
-const SETUP_LINKS: LinkItem[] = [
-  { key: 'accounts', title: 'Accounts', subtitle: 'PNC Spending · DCU Savings', team2Route: 'setup/Accounts' },
-  { key: 'income', title: 'Income & paycheck split', subtitle: 'Weekly paycheck, tutoring', team2Route: 'setup/Income' },
-  { key: 'categories', title: 'Categories & budgets', subtitle: 'Envelopes and plans', team2Route: 'setup/Categories' },
-  { key: 'recurring', title: 'Recurring bills', subtitle: 'Monthly fixed expenses', team2Route: 'setup/Recurring' },
-  { key: 'notifications', title: 'Notifications', subtitle: 'Reminders and timing', team2Route: 'setup/Notifications' },
+const SETUP_LINKS: SetupLink[] = [
+  { id: 'accounts', title: 'Accounts', subtitle: 'Add, rename, balances', team2Route: 'setup/accounts' },
+  { id: 'income', title: 'Income sources', subtitle: 'Amounts, schedules, split bars', team2Route: 'setup/income' },
+  { id: 'envelopes', title: 'Envelopes & categories', subtitle: 'Create, rename, re-budget', team2Route: 'setup/envelopes' },
+  { id: 'savings', title: 'Savings target', subtitle: 'Monthly goal for Duck Goal 3', team2Route: 'setup/savings' },
+  { id: 'chapter', title: 'New chapter', subtitle: 'Archive this setup, keep the flock', team2Route: 'setup/new-chapter' },
 ];
 
 export function SettingsScreen() {
+  const store = useStore();
   const { showUndo } = useAppShell();
+  const today = todayISO();
+  const accounts = store.listAccounts();
+  const chapter = store.getActiveChapter();
 
-  const openTeam2 = (item: LinkItem) => {
-    // Placeholder until Team 2's setup flow is merged in.
-    showUndo(`${item.title} opens in setup (Team 2) at merge.`);
+  const openTeam2 = (item: SetupLink) => {
+    // Placeholder until Team 2's setup wizard is merged in.
+    showUndo(`"${item.title}" opens Team 2's setup flow at merge.`);
   };
 
   return (
     <Screen title="Settings">
-      <SectionLabel>Setup</SectionLabel>
-      <PixelBox padding={space.md}>
-        <RuledList<LinkItem>
-          data={SETUP_LINKS}
-          onPressItem={openTeam2}
-          itemAccessibilityLabel={(i) => `${i.title}. ${i.subtitle}. Opens setup.`}
-          renderItem={(i) => (
-            <View style={styles.linkRow}>
-              <View style={styles.linkText}>
-                <Text style={styles.linkTitle}>{i.title}</Text>
-                <Text style={styles.linkSub}>{i.subtitle}</Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
+      <SectionLabel>Accounts</SectionLabel>
+      <RuledList<AccountConfig>
+        data={accounts}
+        keyExtractor={(a) => a.id}
+        renderRow={(a) => (
+          <Row
+            style={styles.acctRow}
+          >
+            <View style={styles.acctMeta}>
+              <Text
+                style={styles.rowTitle}
+                accessibilityLabel={`${a.name}${a.institution ? `, ${a.institution}` : ''}, ${a.kind} account, balance ${formatCents(store.getAccountBalance(a.id, today))}`}
+              >
+                {a.name}
+              </Text>
+              <Text style={styles.rowSub}>
+                {a.institution ? `${a.institution} · ` : ''}
+                {a.kind}
+              </Text>
             </View>
-          )}
-        />
-      </PixelBox>
+            <MoneyText amount={store.getAccountBalance(a.id, today)} />
+          </Row>
+        )}
+      />
+
+      <SectionLabel>Setup</SectionLabel>
+      <RuledList<SetupLink>
+        data={SETUP_LINKS}
+        keyExtractor={(l) => l.id}
+        renderRow={(l) => (
+          <Pressable
+            onPress={() => openTeam2(l)}
+            accessibilityRole="button"
+            accessibilityLabel={`${l.title}. ${l.subtitle}. Opens setup.`}
+          >
+            <Row style={styles.linkRow}>
+              <View style={styles.acctMeta}>
+                <Text style={styles.rowTitle}>{l.title}</Text>
+                <Text style={styles.rowSub}>{l.subtitle}</Text>
+              </View>
+              <Text style={styles.chevron}>{'>'}</Text>
+            </Row>
+          </Pressable>
+        )}
+      />
 
       <SectionLabel>App</SectionLabel>
-      <PixelBox padding={space.lg}>
-        <InfoRow label="App" value="Ducks in a Row" />
-        <InfoRow label="Version" value="2.0.0 (rebuild)" ruled />
-        <InfoRow label="Theme" value="Midnight" ruled />
-        <InfoRow label="Data" value="Dev fake store" ruled />
-      </PixelBox>
+      <InfoRow label="App" value="Ducks in a Row" />
+      <InfoRow label="Version" value="2.0.0 (rebuild)" />
+      <InfoRow label="Chapter" value={chapter.name} />
+      <InfoRow label="Theme" value="Midnight" />
+      <InfoRow label="Data" value="Dev fake store" />
 
       <Text style={styles.footnote}>
-        Running on the Team 3 dev store. Real data lands when Team 1's store is merged.
+        Running on the Team 3 dev store. Real data lands when Team 1's store merges; setup links
+        light up when Team 2's wizard merges.
       </Text>
     </Screen>
   );
 }
 
-function InfoRow({ label, value, ruled }: { label: string; value: string; ruled?: boolean }) {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={[styles.infoRow, ruled && styles.infoRuled]}>
-      <Text style={styles.infoLabel}>{label}</Text>
+    <Row style={styles.infoRow}>
+      <Text style={styles.rowSub}>{label}</Text>
       <Text style={styles.infoValue}>{value}</Text>
-    </View>
+    </Row>
   );
 }
 
 const styles = StyleSheet.create({
-  linkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  acctRow: {
+    justifyContent: 'space-between',
   },
-  linkText: {
+  linkRow: {
+    justifyContent: 'space-between',
+  },
+  acctMeta: {
     flex: 1,
   },
-  linkTitle: {
-    color: colors.text.primary,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
-    fontWeight: type.weight.medium,
+  rowTitle: {
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
   },
-  linkSub: {
-    color: colors.text.secondary,
-    fontFamily: type.family.text,
-    fontSize: type.size.caption,
+  rowSub: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
     marginTop: 2,
   },
   chevron: {
-    color: colors.text.muted,
-    fontSize: type.size.title,
+    color: color.textMuted,
+    fontSize: typo.title.fontSize,
+    fontWeight: typo.caption.fontWeight,
     marginLeft: space.md,
   },
   infoRow: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: space.md,
-  },
-  infoRuled: {
-    borderTopWidth: metrics.hairline,
-    borderTopColor: colors.border.hairline,
-  },
-  infoLabel: {
-    color: colors.text.secondary,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
+    paddingVertical: space.sm,
   },
   infoValue: {
-    color: colors.text.primary,
-    fontFamily: type.family.mono,
-    fontSize: type.size.body,
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
   },
   footnote: {
-    color: colors.text.muted,
-    fontFamily: type.family.text,
-    fontSize: type.size.caption,
-    marginTop: space.xl,
-    lineHeight: 20,
+    color: color.textMuted,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    marginTop: space.lg,
+    lineHeight: 18,
   },
 });
 

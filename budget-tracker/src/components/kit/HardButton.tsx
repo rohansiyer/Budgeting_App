@@ -1,40 +1,31 @@
 import React, { useState } from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
-import { colors, metrics, space, type, layout } from '../../theme/tokens';
+import * as tokens from '../../theme/tokens';
 import type { HardButtonProps } from './types';
 
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
+
 /**
- * Chunky square button with a 3px hard offset shadow. Pressing shifts the face
- * down+right by exactly the shadow offset so it visually sinks into its shadow.
- * The shift is a discrete step (not eased), so it is fine under reduced motion.
+ * Square button with a hard 3px offset shadow (§3). Pressing shifts the face
+ * down+right by exactly the shadow offset so it sinks into the shadow — a
+ * discrete step, no tweening, safe under reduced motion.
  */
 export function HardButton({
   label,
   onPress,
   variant = 'primary',
   disabled = false,
-  leading,
-  fullWidth = false,
-  style,
-  textStyle,
   accessibilityLabel,
-  accessibilityHint,
-  testID,
 }: HardButtonProps) {
   const [pressed, setPressed] = useState(false);
 
   const faceColor =
-    variant === 'primary'
-      ? colors.accent.base
-      : variant === 'danger'
-      ? colors.status.spend
-      : colors.bg.raised;
-  const labelColor =
-    variant === 'ghost' ? colors.text.primary : colors.text.onAccent;
-  const borderColor =
-    variant === 'ghost' ? colors.border.strong : colors.shadow;
+    variant === 'primary' ? color.accent : variant === 'danger' ? color.danger : color.surface;
+  const labelColor = variant === 'ghost' ? color.text : color.bg;
+  const borderColor = variant === 'ghost' ? color.border : color.bg;
 
-  const offset = metrics.hardShadow;
+  const offset = pixel.shadowOffset;
   const active = pressed && !disabled;
 
   return (
@@ -45,28 +36,20 @@ export function HardButton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
-      accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityHint={accessibilityHint}
-      testID={testID}
-      style={[
-        styles.root,
-        fullWidth && styles.fullWidth,
-        { opacity: disabled ? 0.5 : 1 },
-        style,
-      ]}
+      accessibilityLabel={accessibilityLabel}
+      style={[styles.root, disabled && styles.disabled]}
     >
-      {/* Shadow layer (static, offset down+right behind the face). */}
+      {/* Shadow layer: pure black, offset down+right, never blurred. */}
       <View
         style={[
           styles.shadow,
           {
-            backgroundColor: colors.shadow,
             opacity: active ? 0 : 1,
             transform: [{ translateX: offset }, { translateY: offset }],
           },
         ]}
       />
-      {/* Face. Sinks into the shadow when pressed. */}
+      {/* Face: sinks into the shadow while pressed. */}
       <View
         style={[
           styles.face,
@@ -80,8 +63,7 @@ export function HardButton({
           },
         ]}
       >
-        {leading ? <View style={styles.leading}>{leading}</View> : null}
-        <Text style={[styles.label, { color: labelColor }, textStyle]} numberOfLines={1}>
+        <Text style={[styles.label, { color: labelColor }]} numberOfLines={1}>
           {label}
         </Text>
       </View>
@@ -92,34 +74,29 @@ export function HardButton({
 const styles = StyleSheet.create({
   root: {
     position: 'relative',
-    alignSelf: 'flex-start',
-    // Reserve room for the offset shadow so layout doesn't clip it.
-    marginRight: metrics.hardShadow,
-    marginBottom: metrics.hardShadow,
+    // Reserve room for the offset shadow so siblings don't clip it.
+    marginRight: pixel.shadowOffset,
+    marginBottom: pixel.shadowOffset,
   },
-  fullWidth: {
-    alignSelf: 'stretch',
+  disabled: {
+    opacity: 0.45,
   },
   shadow: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: metrics.radius,
+    // Hard shadow: the darkest token (near-black bg), offset, never blurred.
+    backgroundColor: color.bg,
   },
   face: {
-    minHeight: layout.touchTarget,
-    borderWidth: metrics.hairline,
-    borderRadius: metrics.radius,
-    paddingHorizontal: space.lg,
-    flexDirection: 'row',
+    minHeight: 48, // minimum tap target
+    borderWidth: pixel.hairlineWidth,
+    paddingHorizontal: space.md,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  leading: {
-    marginRight: space.sm,
+    flexDirection: 'row',
   },
   label: {
-    fontFamily: type.family.text,
-    fontSize: type.size.label,
-    fontWeight: type.weight.bold,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.title.fontWeight,
     letterSpacing: 0.5,
   },
 });

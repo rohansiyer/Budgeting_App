@@ -2,25 +2,34 @@ import React, { createContext, useContext, useSyncExternalStore, ReactNode } fro
 import type { StoreContract } from '../types/contracts';
 
 /**
- * Injects a StoreContract implementation into the tree. Dev boots with the fake
- * (src/dev/fakeStore.ts); at merge the orchestrator swaps in Team 1's adapter —
- * no screen changes because everything is typed against StoreContract.
+ * Reactive wrapper AROUND StoreContract (per orchestrator: reactivity is a
+ * Team 3 UI concern, not part of the contract). Any StoreContract can be
+ * lifted into the tree by pairing it with a change-notification source.
  */
-const StoreCtx = createContext<StoreContract | null>(null);
+export interface StoreChangeSource {
+  /** Notify on any committed mutation. Returns an unsubscribe. */
+  subscribe(listener: () => void): () => void;
+  /** Monotonic snapshot version; changes on every committed mutation. */
+  getVersion(): number;
+}
+
+export type ReactiveStore = StoreContract & StoreChangeSource;
+
+const StoreCtx = createContext<ReactiveStore | null>(null);
 
 export function StoreProvider({
   store,
   children,
 }: {
-  store: StoreContract;
+  store: ReactiveStore;
   children: ReactNode;
 }) {
   return <StoreCtx.Provider value={store}>{children}</StoreCtx.Provider>;
 }
 
 /**
- * Returns the store and subscribes the caller to mutations, so any screen that
- * calls a read method re-renders when the underlying data changes.
+ * Returns the store and subscribes the caller to mutations, so any screen
+ * that calls the sync read surface re-renders when the data changes.
  */
 export function useStore(): StoreContract {
   const store = useContext(StoreCtx);

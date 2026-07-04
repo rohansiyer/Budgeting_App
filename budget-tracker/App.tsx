@@ -7,25 +7,27 @@ import { AppErrorBoundary } from './src/components/AppErrorBoundary';
 import { StoreProvider } from './src/providers/StoreProvider';
 import { AppShellProvider } from './src/providers/AppShell';
 import { fakeStore } from './src/dev/fakeStore';
-import { colors } from './src/theme/tokens';
+import { color } from './src/theme/tokens';
 
-// Midnight-themed navigation container background.
+// Midnight-themed navigation container (tokens only).
 const navTheme = {
   ...DefaultTheme,
+  dark: true,
   colors: {
     ...DefaultTheme.colors,
-    background: colors.bg.base,
-    card: colors.bg.panel,
-    text: colors.text.primary,
-    border: colors.border.hairline,
-    primary: colors.accent.base,
+    background: color.bg,
+    card: color.surface,
+    text: color.text,
+    border: color.border,
+    primary: color.accent,
   },
 };
 
 /**
- * Team 3 dev entry. Boots against the in-memory fake store so every screen runs
- * in Expo Go today. TODO(orchestrator): swap `fakeStore` for Team 1's store
- * adapter at merge — no other change required (everything is StoreContract).
+ * Team 3 dev entry. Boots against the in-memory fake store so every screen
+ * runs in Expo Go today. TODO(orchestrator): swap `fakeStore` for Team 1's
+ * store (wrapped in the same ReactiveStore change-source) at merge — no other
+ * change required, everything is typed against StoreContract.
  */
 export default function App() {
   return (

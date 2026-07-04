@@ -1,154 +1,124 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { colors, metrics, space, type, layout } from '../../theme/tokens';
+import { View, StyleSheet } from 'react-native';
+import * as tokens from '../../theme/tokens';
+import { cents, formatCents } from '../../lib/money';
 import type { BlockMeterProps } from './types';
-import type { EnvelopeState } from '../../types/contracts';
 
-function stateColor(state: EnvelopeState, override?: string): string {
-  if (override) return override;
-  return colors.envelope[state] ?? colors.envelope.normal;
-}
+const { color, pixel } = tokens;
 
-function stateWord(state: EnvelopeState): string {
-  switch (state) {
-    case 'bonus':
-      return 'bonus';
-    case 'debt':
-      return 'behind';
-    case 'overflow':
-      return 'over';
-    case 'borrowed':
-      return 'borrowed';
-    case 'rolled':
-      return 'rolled over';
-    default:
-      return 'on track';
-  }
-}
+type CellKind =
+  | 'empty' // unspent base budget
+  | 'fill' // spent, fine (mint)
+  | 'warn' // spent, ≥ warnAt of available (amber)
+  | 'over' // filled danger block (overflow)
+  | 'bonus-empty' // rolled-in bonus, unspent (outlined mint)
+  | 'bonus-fill' // rolled-in bonus, consumed (filled, mint outline)
+  | 'debt'; // hollowed danger block (repaying / borrowed against)
 
 /**
- * Segmented block meter. Fills `blocks` cells left-to-right by value/max, with a
- * 3px gap. Overflow adds amber cells past the plan; bonus/rolled carryover shows
- * as tinted leading cells; debt shows a hanging red cell. Colour-only meaning is
- * always mirrored in the accessibilityValue + a visible value line.
+ * Segmented envelope meter (§3): floor(budget/blockValue) base blocks,
+ * outlined bonus blocks for rolled-in amounts, hollowed danger blocks for
+ * borrow repayments, and a filled danger block on overflow. 3px segment gap.
+ * Announces via accessibilityValue; host screens must also mirror the
+ * color-only meaning in text.
  */
 export function BlockMeter({
-  value,
-  max,
-  blocks = 8,
-  state = 'normal',
-  carryover = 0,
-  fillColor,
-  height = layout.blockMeter.height,
-  label,
-  valueText,
-  style,
+  budget,
+  spent,
+  blockValue,
+  bonus,
+  debt,
+  warnAt = 0.9,
   accessibilityLabel,
-  testID,
 }: BlockMeterProps) {
-  const safeMax = max > 0 ? max : 1;
-  const ratio = value / safeMax;
-  const filled = Math.max(0, Math.min(blocks, Math.round(ratio * blocks)));
-  const overflowed = state === 'overflow' || value > max;
-  const overflowCells = overflowed
-    ? Math.min(blocks, Math.max(1, Math.round((value - max) / safeMax * blocks)))
-    : 0;
+  const bv = Math.max(1, blockValue);
+  const baseCount = Math.max(1, Math.floor(budget / bv));
+  const bonusCount = bonus && bonus > 0 ? Math.max(1, Math.round(bonus / bv)) : 0;
+  const debtCount = debt && debt > 0 ? Math.max(1, Math.round(debt / bv)) : 0;
 
-  const activeColor = stateColor(state, fillColor);
+  const available = cents(budget + (bonus ?? 0));
+  const spendable = baseCount + bonusCount;
+  // How many spendable blocks the spend consumes (integer count, not money).
+  const spentBlocks =
+    available > 0
+      ? Math.min(spendable, Math.max(0, Math.round((spent / available) * spendable)))
+      : spendable;
+  const overflowed = spent > available;
+  const warned = !overflowed && available > 0 && spent >= warnAt * available;
 
-  const cells = Array.from({ length: blocks }, (_, i) => {
-    const isFilled = i < filled;
-    // Past-plan overflow cells re-tint the trailing filled cells amber.
-    const isOverflow = overflowed && i >= blocks - overflowCells;
-    let bg: string = colors.bg.sunken;
-    if (isOverflow) bg = colors.envelope.overflow;
-    else if (isFilled) bg = activeColor;
-    return (
-      <View
-        key={i}
-        style={[
-          styles.cell,
-          {
-            backgroundColor: bg,
-            borderColor: isFilled || isOverflow ? bg : colors.border.hairline,
-            marginRight: i === blocks - 1 ? 0 : metrics.blockGap,
-          },
-        ]}
-      />
-    );
-  });
+  const cells: CellKind[] = [];
+  for (let i = 0; i < baseCount; i++) {
+    if (i < spentBlocks) cells.push(overflowed ? 'over' : warned ? 'warn' : 'fill');
+    else cells.push('empty');
+  }
+  for (let i = 0; i < bonusCount; i++) {
+    const idx = baseCount + i;
+    cells.push(idx < spentBlocks ? 'bonus-fill' : 'bonus-empty');
+  }
+  if (overflowed) cells.push('over');
+  for (let i = 0; i < debtCount; i++) cells.push('debt');
 
-  const autoValueText = `$${Math.round(value)} of $${Math.round(max)} · ${stateWord(state)}`;
-  const shownText = valueText ?? autoValueText;
-  const a11yLabel =
-    accessibilityLabel ?? `${label ? label + ', ' : ''}${shownText}`;
+  const remaining = cents(available - spent);
+  const valueText =
+    remaining >= 0
+      ? `${formatCents(remaining)} left of ${formatCents(available)}`
+      : `${formatCents(cents(-remaining))} over ${formatCents(available)}`;
 
   return (
-    <View style={style} testID={testID}>
-      {label ? (
-        <View style={styles.labelRow}>
-          <Text style={styles.label} numberOfLines={1}>
-            {label}
-          </Text>
-          {carryover !== 0 ? (
-            <Text
-              style={[
-                styles.carryover,
-                { color: carryover > 0 ? colors.status.income : colors.status.spend },
-              ]}
-            >
-              {carryover > 0 ? '+' : '−'}${Math.abs(Math.round(carryover))}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
-      <View
-        style={[styles.track, { height }]}
-        accessibilityRole="progressbar"
-        accessibilityLabel={a11yLabel}
-        accessibilityValue={{ min: 0, max: Math.round(max), now: Math.round(value) }}
-      >
-        {cells}
-      </View>
-      <Text style={styles.valueText}>{shownText}</Text>
+    <View
+      style={styles.track}
+      accessibilityRole="progressbar"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityValue={{
+        min: 0,
+        max: available,
+        now: Math.min(spent, available),
+        text: valueText,
+      }}
+    >
+      {cells.map((kind, i) => (
+        <View
+          key={i}
+          style={[
+            styles.cell,
+            cellStyle(kind),
+            i < cells.length - 1 && { marginRight: pixel.blockGap },
+          ]}
+        />
+      ))}
     </View>
   );
 }
 
+function cellStyle(kind: CellKind) {
+  switch (kind) {
+    case 'fill':
+      return { backgroundColor: color.accent, borderColor: color.accent };
+    case 'warn':
+      return { backgroundColor: color.warn, borderColor: color.warn };
+    case 'over':
+      return { backgroundColor: color.danger, borderColor: color.danger };
+    case 'bonus-empty':
+      return { backgroundColor: color.surfaceDeep, borderColor: color.accent };
+    case 'bonus-fill':
+      return { backgroundColor: color.accent, borderColor: color.text };
+    case 'debt':
+      return { backgroundColor: color.surfaceDeep, borderColor: color.danger };
+    case 'empty':
+    default:
+      return { backgroundColor: color.surfaceDeep, borderColor: color.border };
+  }
+}
+
 const styles = StyleSheet.create({
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: space.xs,
-  },
-  label: {
-    color: colors.text.primary,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
-    fontWeight: type.weight.medium,
-    flexShrink: 1,
-  },
-  carryover: {
-    fontFamily: type.family.mono,
-    fontSize: type.size.caption,
-    fontWeight: type.weight.bold,
-    marginLeft: space.sm,
-  },
   track: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    height: pixel.blockHeight,
   },
   cell: {
     flex: 1,
-    borderWidth: metrics.hairline,
-    borderRadius: metrics.radius,
-  },
-  valueText: {
-    marginTop: space.xs,
-    color: colors.text.secondary,
-    fontFamily: type.family.mono,
-    fontSize: type.size.caption,
+    borderWidth: pixel.hairlineWidth,
   },
 });
 

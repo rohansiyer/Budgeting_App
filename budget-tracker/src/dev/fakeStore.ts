@@ -1,62 +1,54 @@
 /**
- * In-memory fake implementing StoreContract.
+ * In-memory fake implementing the canonical StoreContract (rev 3) plus the
+ * ReactiveStore change-source wrapper that Team 3's StoreProvider consumes.
  *
- * TODO(orchestrator): remove at merge — Team 1's real store adapter replaces
- * this. It exists so every Team 3 screen runs in Expo Go today with plausible,
- * self-consistent sample data (one month, July 2026).
+ * TODO(orchestrator): remove at merge — Team 1's real store replaces this.
+ * It exists so every Team 3 screen runs in Expo Go today with plausible,
+ * self-consistent sample data (current month, seeded deterministically).
+ *
+ * Money: everything here is integer Cents via src/lib/money.ts — no floats
+ * in money paths (CONTRACTS.md rule 1).
  */
+import {
+  Cents,
+  cents,
+  ZERO,
+  addCents,
+  subCents,
+  sumCents,
+  maxCents,
+  allocate,
+} from '../lib/money';
 import type {
   StoreContract,
-  Txn,
-  ISODate,
-  ColorKey,
-  CategoryRef,
-  DaySpend,
-  SafeToSpend,
+  TransactionRecord,
+  AccountConfig,
+  CategoryConfig,
+  IncomeSourceConfig,
+  Chapter,
+  CarryoverEntry,
   EnvelopeWeekState,
-  DayDetail,
-  DayKpi,
-  PlanVsActualSlice,
-  GoalTracker,
-  AddExpenseInput,
-  AddIncomeInput,
-  EditTxnPatch,
+  EvaluationReadPort,
+  ISODate,
+  MonthKey,
+  WeekStart,
+  DateRange,
 } from '../types/contracts';
+import { UNDO_WINDOW_MS } from '../types/contracts';
+import type { ReactiveStore } from '../providers/StoreProvider';
+import {
+  todayISO,
+  addDaysISO,
+  dayOfWeek,
+  weekStartOf,
+  weekRange,
+  monthKeyOf,
+  monthRange,
+  eachDay,
+  toISO,
+} from '../format/dates';
 
-// --- date helpers (TZ-safe, string based) ---------------------------------
-function pad(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`;
-}
-function parts(iso: ISODate): [number, number, number] {
-  const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
-  return [y, m, d];
-}
-function iso(y: number, m: number, d: number): ISODate {
-  return `${y}-${pad(m)}-${pad(d)}`;
-}
-function addDays(isoDate: ISODate, n: number): ISODate {
-  const [y, m, d] = parts(isoDate);
-  const dt = new Date(Date.UTC(y, m - 1, d + n));
-  return iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
-}
-/** 0 = Sunday … 6 = Saturday */
-function dow(isoDate: ISODate): number {
-  const [y, m, d] = parts(isoDate);
-  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-}
-function startOfWeek(isoDate: ISODate): ISODate {
-  const wd = dow(isoDate); // Monday-based week
-  const back = wd === 0 ? 6 : wd - 1;
-  return addDays(isoDate, -back);
-}
-function monthKey(isoDate: ISODate): string {
-  return isoDate.slice(0, 7);
-}
-function daysInMonth(y: number, m: number): number {
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
-}
-
-// --- deterministic pseudo-random ------------------------------------------
+// --- deterministic pseudo-random --------------------------------------------
 function mulberry(seed: number): () => number {
   let a = seed;
   return () => {
@@ -69,189 +61,380 @@ function mulberry(seed: number): () => number {
 }
 
 let idSeq = 1000;
+/** Fake-local id mint. The real app uses src/lib/ids.ts (Team 1). */
 function nextId(prefix: string): string {
   idSeq += 1;
   return `${prefix}_${idSeq}`;
 }
 
-interface CatMeta extends CategoryRef {
-  fixed: boolean;
-  recurringDay?: number;
-  weeklyPlan?: number;
+// --- seed data ---------------------------------------------------------------
+const TODAY = todayISO();
+const THIS_WEEK = weekStartOf(TODAY);
+const PREV_WEEK = addDaysISO(THIS_WEEK, -7);
+const NEXT_WEEK = addDaysISO(THIS_WEEK, 7);
+
+interface FakeState {
+  chapter: Chapter;
+  accounts: AccountConfig[];
+  incomeSources: IncomeSourceConfig[];
+  categories: CategoryConfig[];
+  /** Expected monthly amount for fixed categories (plan basis for the Pond). */
+  fixedPlan: Map<string, Cents>;
+  txns: TransactionRecord[];
+  carryover: CarryoverEntry[];
+  /** Soft-deleted txns awaiting the undo window. */
+  trash: Map<string, TransactionRecord>;
 }
 
-const TODAY: ISODate = '2026-07-04';
-const PNC = 'acct_pnc';
-const DCU = 'acct_dcu';
-
-const CATEGORIES: CatMeta[] = [
-  { id: 'cat_rent', name: 'Rent', colorKey: 'rent', planned: 975, fixed: true, recurringDay: 1 },
-  { id: 'cat_util', name: 'Utilities', colorKey: 'utilities', planned: 150, fixed: true, recurringDay: 1 },
-  { id: 'cat_car', name: 'Car Payment', colorKey: 'car', planned: 400, fixed: true, recurringDay: 1 },
-  { id: 'cat_ins', name: 'Insurance', colorKey: 'insurance', planned: 90, fixed: true, recurringDay: 1 },
-  { id: 'cat_gas', name: 'Gas', colorKey: 'gas', planned: 173, fixed: false, weeklyPlan: 40 },
-  { id: 'cat_food', name: 'Food', colorKey: 'food', planned: 200, fixed: false, weeklyPlan: 50 },
-  { id: 'cat_fun', name: 'Fun Money', colorKey: 'fun', planned: 400, fixed: false, weeklyPlan: 100 },
-];
-
-function catById(id: string | null): CatMeta | undefined {
-  return CATEGORIES.find((c) => c.id === id);
+function ym(isoDate: ISODate): [number, number] {
+  const [y, m] = isoDate.split('-').map((n) => parseInt(n, 10));
+  return [y, m];
 }
 
-// --- sample transaction seed ----------------------------------------------
-function seedTxns(): Txn[] {
+/** Most recent Wednesday on/before today — a plausible weekly anchor. */
+function anchorWednesday(): ISODate {
+  let d = TODAY;
+  while (dayOfWeek(d) !== 3) d = addDaysISO(d, -1);
+  return d;
+}
+
+function seed(): FakeState {
+  const spending: AccountConfig = {
+    id: nextId('acct'),
+    name: 'Everyday Spending',
+    institution: 'PNC',
+    kind: 'spending',
+    startingBalance: cents(81063),
+    openedOn: addDaysISO(TODAY, -90),
+  };
+  const savings: AccountConfig = {
+    id: nextId('acct'),
+    name: 'Rainy Day Savings',
+    institution: 'DCU',
+    kind: 'savings',
+    startingBalance: cents(34742),
+    openedOn: addDaysISO(TODAY, -90),
+  };
+
+  const paycheck: IncomeSourceConfig = {
+    id: nextId('inc'),
+    name: 'Paycheck',
+    amount: cents(115805),
+    schedule: { kind: 'weekly', anchorDate: anchorWednesday() },
+    splits: [
+      { accountId: spending.id, ratio: 70 },
+      { accountId: savings.id, ratio: 30 },
+    ],
+  };
+  const tutoring: IncomeSourceConfig = {
+    id: nextId('inc'),
+    name: 'Tutoring',
+    amount: cents(12000),
+    schedule: { kind: 'monthly', anchorDate: toISO(...ym(TODAY), 3) },
+    splits: [{ accountId: spending.id, ratio: 1 }],
+  };
+
+  const mkCat = (
+    name: string,
+    colorKey: CategoryConfig['colorKey'],
+    fixed: boolean,
+    weeklyBudget: Cents | null,
+  ): CategoryConfig => ({
+    id: nextId('cat'),
+    name,
+    colorKey,
+    fixed,
+    envelope:
+      weeklyBudget === null
+        ? null
+        : { period: 'weekly', budget: weeklyBudget, carryoverDefault: 'ask' },
+  });
+
+  const rent = mkCat('Rent', 'violet', true, null);
+  const utilities = mkCat('Utilities', 'violet', true, null);
+  const carPayment = mkCat('Car Payment', 'violet', true, null);
+  const food = mkCat('Food', 'amber', false, cents(5000));
+  const gas = mkCat('Gas & Transit', 'blue', false, cents(4000));
+  const fun = mkCat('Fun', 'pink', false, cents(10000));
+  const savingsCat = mkCat('Savings', 'mint', true, null);
+  const categories = [rent, utilities, carPayment, food, gas, fun, savingsCat];
+
+  const fixedPlan = new Map<string, Cents>([
+    [rent.id, cents(97500)],
+    [utilities.id, cents(15000)],
+    [carPayment.id, cents(40000)],
+  ]);
+
+  const txns: TransactionRecord[] = [];
   const rnd = mulberry(20260704);
-  const out: Txn[] = [];
-  const [y, m] = parts(TODAY);
-  const dim = daysInMonth(y, m);
+  const mr = monthRange(TODAY);
 
-  // Fixed bills on the 1st (calendar coral spikes).
-  for (const c of CATEGORIES.filter((c) => c.fixed)) {
-    out.push({
+  // Fixed bills on the 1st (the calendar coral spike).
+  for (const [catId, amount] of [
+    [rent.id, cents(97500)],
+    [utilities.id, cents(15000)],
+    [carPayment.id, cents(40000)],
+  ] as Array<[string, Cents]>) {
+    txns.push({
       id: nextId('txn'),
-      date: iso(y, m, 1),
+      accountId: spending.id,
+      categoryId: catId,
+      amount,
       kind: 'expense',
-      amount: c.planned,
-      categoryId: c.id,
-      categoryName: c.name,
-      colorKey: c.colorKey,
-      accountId: PNC,
-      note: `${c.name} — monthly`,
-      isFixed: true,
+      date: mr.from,
+      note: 'Monthly bill',
     });
   }
 
-  // Weekly paychecks on Wednesdays (split PNC/DCU).
-  for (let d = 1; d <= dim; d++) {
-    const date = iso(y, m, d);
-    if (dow(date) === 3 && date <= TODAY) {
-      const parent = nextId('inc');
-      out.push({
-        id: nextId('txn'), date, kind: 'income', amount: 810.63,
-        categoryId: null, categoryName: 'Paycheck', colorKey: 'other',
-        accountId: PNC, note: 'Weekly paycheck', splitParentId: parent,
-      });
-      out.push({
-        id: nextId('txn'), date, kind: 'income', amount: 347.42,
-        categoryId: null, categoryName: 'Paycheck', colorKey: 'other',
-        accountId: DCU, note: 'Weekly paycheck — savings', splitParentId: parent,
+  // Weekly paychecks on Wednesdays up to today, split via allocate().
+  for (const d of eachDay({ from: mr.from, to: TODAY })) {
+    if (dayOfWeek(d) === 3) {
+      const parts = allocate(paycheck.amount, paycheck.splits.map((sp) => sp.ratio));
+      txns.push({
+        id: nextId('txn'),
+        accountId: spending.id,
+        categoryId: savingsCat.id,
+        amount: paycheck.amount,
+        kind: 'income',
+        date: d,
+        note: paycheck.name,
+        incomeSplit: paycheck.splits.map((sp, i) => ({ accountId: sp.accountId, amount: parts[i] })),
       });
     }
   }
 
-  // Variable spending on days up to today.
-  const variable = CATEGORIES.filter((c) => !c.fixed);
-  for (let d = 1; d <= dim; d++) {
-    const date = iso(y, m, d);
-    if (date > TODAY) continue;
-    const count = Math.floor(rnd() * 3); // 0..2 expenses
+  // Tutoring income on the 3rd, if it has happened yet this month.
+  const third = toISO(...ym(TODAY), 3);
+  if (third <= TODAY) {
+    txns.push({
+      id: nextId('txn'),
+      accountId: spending.id,
+      categoryId: savingsCat.id,
+      amount: tutoring.amount,
+      kind: 'income',
+      date: third,
+      note: tutoring.name,
+      incomeSplit: [{ accountId: spending.id, amount: tutoring.amount }],
+    });
+  }
+
+  // Deterministic variable spending up to today.
+  const variable = [food, gas, fun];
+  for (const d of eachDay({ from: mr.from, to: TODAY })) {
+    const count = Math.floor(rnd() * 3); // 0..2 per day
     for (let i = 0; i < count; i++) {
       const c = variable[Math.floor(rnd() * variable.length)];
-      const base = c.colorKey === 'fun' ? 12 + rnd() * 45 : 6 + rnd() * 28;
-      out.push({
+      const base = c === fun ? 800 + Math.floor(rnd() * 4200) : 400 + Math.floor(rnd() * 2600);
+      txns.push({
         id: nextId('txn'),
-        date,
-        kind: 'expense',
-        amount: Math.round(base * 100) / 100,
+        accountId: spending.id,
         categoryId: c.id,
-        categoryName: c.name,
-        colorKey: c.colorKey,
-        accountId: PNC,
-        note: undefined,
+        amount: cents(base),
+        kind: 'expense',
+        date: d,
+        note: null,
       });
     }
   }
 
-  // A little tutoring income mid-month.
-  out.push({
-    id: nextId('txn'), date: iso(y, m, 3), kind: 'income', amount: 120,
-    categoryId: null, categoryName: 'Tutoring', colorKey: 'other',
-    accountId: PNC, note: 'Tutoring session',
+  // Push Food over budget this week so overflow + borrow UI is exercised.
+  txns.push({
+    id: nextId('txn'),
+    accountId: spending.id,
+    categoryId: food.id,
+    amount: cents(3450),
+    kind: 'expense',
+    date: THIS_WEEK <= TODAY ? TODAY : THIS_WEEK,
+    note: 'Grocery restock',
   });
 
-  return out;
+  // Carryover entries demonstrating meter states (conservation-legal pairs).
+  const carryover: CarryoverEntry[] = [];
+  const pair = (
+    categoryId: string,
+    kindA: CarryoverEntry['kind'],
+    kindB: CarryoverEntry['kind'],
+    weekA: WeekStart,
+    weekB: WeekStart,
+    amount: Cents,
+  ) => {
+    const pairId = nextId('pair');
+    const now = new Date().toISOString();
+    carryover.push(
+      {
+        id: nextId('co'), categoryId, weekStart: weekA, kind: kindA, amount,
+        counterpartWeekStart: weekB, pairId, attributionMonth: monthKeyOf(weekA), createdAt: now,
+      },
+      {
+        id: nextId('co'), categoryId, weekStart: weekB, kind: kindB, amount,
+        counterpartWeekStart: weekA, pairId, attributionMonth: monthKeyOf(weekA), createdAt: now,
+      },
+    );
+  };
+  // Gas: $12.40 rolled in from last week (outlined bonus blocks).
+  pair(gas.id, 'roll_out', 'roll_in', PREV_WEEK, THIS_WEEK, cents(1240));
+  // Fun: borrowed $20 from next week (coral overflow now, hollow repayment next week).
+  pair(fun.id, 'borrow_in', 'borrow_repay', THIS_WEEK, NEXT_WEEK, cents(2000));
+
+  return {
+    chapter: {
+      id: nextId('ch'),
+      name: 'First Chapter',
+      startedAt: addDaysISO(TODAY, -90),
+      archivedAt: null,
+    },
+    accounts: [spending, savings],
+    incomeSources: [paycheck, tutoring],
+    categories,
+    fixedPlan,
+    txns,
+    carryover,
+    trash: new Map(),
+  };
 }
 
-// --- envelope demo state (covers every carryover state) --------------------
-function seedEnvelopes(): EnvelopeWeekState[] {
-  return [
-    {
-      categoryId: 'cat_gas', name: 'Gas', colorKey: 'gas',
-      planned: 40, spent: 22, remaining: 30, carryover: 12,
-      borrowedFromNext: 0, state: 'bonus', blocks: 8,
-    },
-    {
-      categoryId: 'cat_food', name: 'Food', colorKey: 'food',
-      planned: 50, spent: 63, remaining: -13, carryover: 0,
-      borrowedFromNext: 0, state: 'overflow', blocks: 8,
-    },
-    {
-      categoryId: 'cat_fun', name: 'Fun Money', colorKey: 'fun',
-      planned: 140, spent: 55, remaining: 85, carryover: 0,
-      borrowedFromNext: 40, state: 'borrowed', blocks: 8,
-    },
-    {
-      categoryId: 'cat_coffee', name: 'Coffee', colorKey: 'other',
-      planned: 20, spent: 15, remaining: -3, carryover: -8,
-      borrowedFromNext: 0, state: 'debt', blocks: 6,
-    },
-    {
-      categoryId: 'cat_transit', name: 'Transit', colorKey: 'utilities',
-      planned: 30, spent: 5, remaining: 25, carryover: 5,
-      borrowedFromNext: 0, state: 'rolled', blocks: 6,
-    },
-  ];
-}
-
-// --- money helpers ---------------------------------------------------------
-function parseDecimal(text: string): number | null {
-  const cleaned = text.replace(/[$,\s]/g, '');
-  if (cleaned === '' || cleaned === '.') return null;
-  if (!/^\d*\.?\d{0,2}$/.test(cleaned)) return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
-}
-function formatMoney(amount: number): string {
-  const neg = amount < 0;
-  const abs = Math.abs(amount);
-  const [whole, frac] = abs.toFixed(2).split('.');
-  const withCommas = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${neg ? '−' : ''}$${withCommas}.${frac}`;
-}
-
-// --- the store -------------------------------------------------------------
-export function createFakeStore(): StoreContract {
-  let txns = seedTxns();
-  let envelopes = seedEnvelopes();
-  let weeklyResetDone = false;
+// --- store -------------------------------------------------------------------
+export function createFakeStore(): ReactiveStore {
+  const s = seed();
   let version = 1;
-  const goal: GoalTracker = { id: 'goal_ef', name: 'Emergency Fund', target: 3500, saved: 1240 };
   const listeners = new Set<() => void>();
-
   const bump = () => {
     version += 1;
     listeners.forEach((l) => l());
   };
 
-  const expensesOn = (date: ISODate) =>
-    txns.filter((t) => t.date === date && t.kind === 'expense');
-  const incomeOn = (date: ISODate) =>
-    txns.filter((t) => t.date === date && t.kind === 'income');
+  const catById = (id: string) => s.categories.find((c) => c.id === id);
 
-  const daySpend = (date: ISODate, maxSpent: number): DaySpend => {
-    const spent = expensesOn(date).reduce((s, t) => s + t.amount, 0);
-    const income = incomeOn(date).reduce((s, t) => s + t.amount, 0);
+  const expensesIn = (range: DateRange) =>
+    s.txns.filter((t) => t.kind === 'expense' && t.date >= range.from && t.date <= range.to);
+
+  const carryFor = (categoryId: string, week: WeekStart) =>
+    s.carryover.filter((e) => e.categoryId === categoryId && e.weekStart === week);
+
+  const sumKind = (entries: CarryoverEntry[], kind: CarryoverEntry['kind']): Cents =>
+    sumCents(entries.filter((e) => e.kind === kind).map((e) => e.amount));
+
+  const envelopeState = (categoryId: string, week: WeekStart): EnvelopeWeekState => {
+    const cat = catById(categoryId);
+    const configuredBudget = cat?.envelope?.budget ?? ZERO;
+    const entries = carryFor(categoryId, week);
+    const rolledIn = sumKind(entries, 'roll_in');
+    const rolledOut = sumKind(entries, 'roll_out');
+    const sweptOut = sumKind(entries, 'sweep_to_savings');
+    const borrowedIn = sumKind(entries, 'borrow_in');
+    const repaying = sumKind(entries, 'borrow_repay');
+    const spent = sumCents(
+      expensesIn(weekRange(week))
+        .filter((t) => t.categoryId === categoryId)
+        .map((t) => t.amount),
+    );
+    const remaining = subCents(
+      addCents(addCents(configuredBudget, rolledIn), borrowedIn),
+      addCents(addCents(addCents(rolledOut, sweptOut), repaying), spent),
+    );
     return {
-      date,
+      categoryId,
+      weekStart: week,
+      configuredBudget,
+      rolledIn,
+      rolledOut,
+      sweptOut,
+      borrowedIn,
+      repaying,
       spent,
-      income,
-      isPayday: income > 0 && incomeOn(date).some((t) => t.note?.includes('paycheck')),
-      hasFixedSpike: expensesOn(date).some((t) => t.isFixed),
-      intensity: maxSpent > 0 ? Math.min(1, spent / maxSpent) : 0,
+      remaining,
     };
   };
 
+  const enveloped = () => s.categories.filter((c) => c.envelope !== null);
+
+  const monthCategorySpent = (categoryId: string, month: MonthKey): Cents => {
+    // Duck guard: shift spend covered by cross-month borrows to attributionMonth.
+    const base = sumCents(
+      s.txns
+        .filter(
+          (t) => t.kind === 'expense' && t.categoryId === categoryId && monthKeyOf(t.date) === month,
+        )
+        .map((t) => t.amount),
+    );
+    let adjusted = base;
+    for (const e of s.carryover) {
+      if (e.categoryId !== categoryId || e.kind !== 'borrow_in') continue;
+      const borrowMonth = monthKeyOf(e.weekStart);
+      if (e.attributionMonth === borrowMonth) continue;
+      if (borrowMonth === month) adjusted = subCents(adjusted, e.amount);
+      if (e.attributionMonth === month) adjusted = addCents(adjusted, e.amount);
+    }
+    return maxCents(adjusted, ZERO);
+  };
+
+  const weeksInMonth = (month: MonthKey): number => {
+    const mr = monthRange(`${month}-01`);
+    return eachDay(mr).filter((d) => dayOfWeek(d) === 1).length;
+  };
+
+  const evaluation: EvaluationReadPort = {
+    async getMonthCategoryTotals(month) {
+      return s.categories.map((c) => ({
+        categoryId: c.id,
+        fixed: c.fixed,
+        spent: monthCategorySpent(c.id, month),
+        budget: c.envelope
+          ? cents(c.envelope.budget * (c.envelope.period === 'weekly' ? weeksInMonth(month) : 1))
+          : s.fixedPlan.get(c.id) ?? null,
+      }));
+    },
+    async getMonthIncomeTotal(month) {
+      return sumCents(
+        s.txns
+          .filter((t) => t.kind === 'income' && monthKeyOf(t.date) === month)
+          .map((t) => t.amount),
+      );
+    },
+    async getMonthSavingsTotal(month) {
+      const savingsIds = new Set(s.accounts.filter((a) => a.kind === 'savings').map((a) => a.id));
+      const transfers = sumCents(
+        s.txns
+          .filter(
+            (t) =>
+              t.kind === 'transfer_in' && savingsIds.has(t.accountId) && monthKeyOf(t.date) === month,
+          )
+          .map((t) => t.amount),
+      );
+      const splitsToSavings = sumCents(
+        s.txns
+          .filter((t) => t.kind === 'income' && monthKeyOf(t.date) === month)
+          .flatMap((t) => t.incomeSplit ?? [])
+          .filter((leg) => savingsIds.has(leg.accountId))
+          .map((leg) => leg.amount),
+      );
+      return addCents(transfers, splitsToSavings);
+    },
+    async getMonthFixedBillStatus(month) {
+      const fixedCats = s.categories.filter((c) => c.fixed && s.fixedPlan.has(c.id));
+      const paid = fixedCats.filter((c) =>
+        s.txns.some(
+          (t) => t.kind === 'expense' && t.categoryId === c.id && monthKeyOf(t.date) === month,
+        ),
+      ).length;
+      return { expected: fixedCats.length, paid };
+    },
+    async getCarryoverEntries(query) {
+      return s.carryover.filter(
+        (e) =>
+          (query.month === undefined || monthKeyOf(e.weekStart) === query.month) &&
+          (query.categoryId === undefined || e.categoryId === query.categoryId),
+      );
+    },
+    async getActiveMonths() {
+      const months = Array.from(new Set(s.txns.map((t) => monthKeyOf(t.date))));
+      months.sort();
+      return months;
+    },
+  };
+
   return {
+    // --- reactivity (ReactiveStore wrapper, NOT part of StoreContract) ------
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -259,237 +442,317 @@ export function createFakeStore(): StoreContract {
     getVersion() {
       return version;
     },
-    getToday() {
-      return TODAY;
-    },
-    getGreetingName() {
-      return 'Rohan';
-    },
-    getCategories() {
-      return CATEGORIES.map(({ id, name, colorKey, planned }) => ({ id, name, colorKey, planned }));
+
+    // --- mutations -----------------------------------------------------------
+    async addExpense(input) {
+      const id = nextId('txn');
+      s.txns = [
+        {
+          id,
+          accountId: input.accountId,
+          categoryId: input.categoryId,
+          amount: input.amount,
+          kind: 'expense',
+          date: input.date,
+          note: input.note ?? null,
+        },
+        ...s.txns,
+      ];
+      bump();
+      return id;
     },
 
-    getSafeToSpend(anchor = TODAY) {
-      const weekStart = startOfWeek(anchor);
-      const weekPlan = envelopes.reduce((s, e) => s + e.planned, 0);
-      let spentThisWeek = 0;
-      for (let i = 0; i < 7; i++) {
-        const d = addDays(weekStart, i);
-        if (d > anchor) break;
-        spentThisWeek += expensesOn(d)
-          .filter((t) => !t.isFixed)
-          .reduce((s, t) => s + t.amount, 0);
+    async addIncome(input) {
+      const source = s.incomeSources.find((i) => i.id === input.sourceId);
+      if (!source) throw new Error(`Unknown income source: ${input.sourceId}`);
+      const amount = input.amount ?? source.amount;
+      const parts = allocate(amount, source.splits.map((sp) => sp.ratio));
+      const primaryAccount = source.splits[0]?.accountId ?? s.accounts[0].id;
+      const incomeCat = s.categories[s.categories.length - 1];
+      const id = nextId('txn');
+      s.txns = [
+        {
+          id,
+          accountId: primaryAccount,
+          categoryId: incomeCat.id,
+          amount,
+          kind: 'income',
+          date: input.date,
+          note: source.name,
+          incomeSplit: source.splits.map((sp, i) => ({ accountId: sp.accountId, amount: parts[i] })),
+        },
+        ...s.txns,
+      ];
+      bump();
+      return id;
+    },
+
+    async editTransaction(id, patch) {
+      s.txns = s.txns.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              amount: patch.amount ?? t.amount,
+              categoryId: patch.categoryId ?? t.categoryId,
+              note: patch.note !== undefined ? patch.note : t.note,
+            }
+          : t,
+      );
+      bump();
+    },
+
+    async deleteTransaction(id) {
+      const target = s.txns.find((t) => t.id === id);
+      const expiresAt = Date.now() + UNDO_WINDOW_MS;
+      if (target) {
+        s.trash.set(id, target);
+        s.txns = s.txns.filter((t) => t.id !== id);
+        bump();
+        setTimeout(() => s.trash.delete(id), UNDO_WINDOW_MS);
       }
-      const amount = Math.max(0, weekPlan - spentThisWeek);
-      const daysLeft = Math.max(1, 7 - (dow(anchor) === 0 ? 6 : dow(anchor) - 1));
       return {
-        amount,
-        periodLabel: 'left to spend this week',
-        perDay: amount / daysLeft,
-        daysLeft,
+        expiresAt,
+        undo: async () => {
+          const trashed = s.trash.get(id);
+          if (!trashed || Date.now() > expiresAt) return false;
+          s.trash.delete(id);
+          s.txns = [trashed, ...s.txns];
+          bump();
+          return true;
+        },
       };
     },
 
-    getDaySpendTotals(startDate, days) {
-      const raw: ISODate[] = [];
-      for (let i = 0; i < days; i++) raw.push(addDays(startDate, i));
-      const maxSpent = Math.max(
-        1,
-        ...raw.map((d) => expensesOn(d).reduce((s, t) => s + t.amount, 0))
-      );
-      return raw.map((d) => daySpend(d, maxSpent));
+    async transfer(input) {
+      const outId = nextId('txn');
+      const anyCat = s.categories[0];
+      s.txns = [
+        {
+          id: outId, accountId: input.fromAccountId, categoryId: anyCat.id,
+          amount: input.amount, kind: 'transfer_out', date: input.date, note: null,
+        },
+        {
+          id: nextId('txn'), accountId: input.toAccountId, categoryId: anyCat.id,
+          amount: input.amount, kind: 'transfer_in', date: input.date, note: null,
+        },
+        ...s.txns,
+      ];
+      bump();
+      return outId;
     },
 
-    getPaydays(monthAnchor) {
-      const [y, m] = parts(monthAnchor);
-      const dim = daysInMonth(y, m);
-      const out: ISODate[] = [];
-      for (let d = 1; d <= dim; d++) {
-        const date = iso(y, m, d);
-        if (dow(date) === 3) out.push(date);
+    // --- config mutations ----------------------------------------------------
+    async createAccount(input) {
+      const acct: AccountConfig = { id: nextId('acct'), ...input };
+      s.accounts = [...s.accounts, acct];
+      bump();
+      return acct;
+    },
+    async renameAccount(accountId, name) {
+      s.accounts = s.accounts.map((a) => (a.id === accountId ? { ...a, name } : a));
+      bump();
+    },
+    async createIncomeSource(input) {
+      const src: IncomeSourceConfig = { id: nextId('inc'), ...input };
+      s.incomeSources = [...s.incomeSources, src];
+      bump();
+      return src;
+    },
+    async createCategory(input) {
+      const cat: CategoryConfig = { id: nextId('cat'), ...input };
+      s.categories = [...s.categories, cat];
+      bump();
+      return cat;
+    },
+    async updateEnvelope(categoryId, envelope) {
+      s.categories = s.categories.map((c) => (c.id === categoryId ? { ...c, envelope } : c));
+      bump();
+    },
+    async createChapter(input) {
+      const ch: Chapter = {
+        id: nextId('ch'), name: input.name, startedAt: input.startedAt, archivedAt: null,
+      };
+      s.chapter = ch;
+      bump();
+      return ch;
+    },
+    async archiveChapter(chapterId, archivedAt) {
+      if (s.chapter.id === chapterId) s.chapter = { ...s.chapter, archivedAt };
+      bump();
+    },
+
+    // --- carryover -------------------------------------------------------------
+    async rollForward(categoryId, fromWeek) {
+      const st = envelopeState(categoryId, fromWeek);
+      const leftover = maxCents(st.remaining, ZERO);
+      if (leftover === ZERO) return;
+      const toWeek = addDaysISO(fromWeek, 7);
+      const pairId = nextId('pair');
+      const now = new Date().toISOString();
+      s.carryover = [
+        ...s.carryover,
+        {
+          id: nextId('co'), categoryId, weekStart: fromWeek, kind: 'roll_out',
+          amount: leftover, counterpartWeekStart: toWeek, pairId,
+          attributionMonth: monthKeyOf(fromWeek), createdAt: now,
+        },
+        {
+          id: nextId('co'), categoryId, weekStart: toWeek, kind: 'roll_in',
+          amount: leftover, counterpartWeekStart: fromWeek, pairId,
+          attributionMonth: monthKeyOf(fromWeek), createdAt: now,
+        },
+      ];
+      bump();
+    },
+
+    async sweepToSavings(categoryId, fromWeek, savingsAccountId) {
+      const st = envelopeState(categoryId, fromWeek);
+      const leftover = maxCents(st.remaining, ZERO);
+      if (leftover === ZERO) return;
+      const now = new Date().toISOString();
+      s.carryover = [
+        ...s.carryover,
+        {
+          id: nextId('co'), categoryId, weekStart: fromWeek, kind: 'sweep_to_savings',
+          amount: leftover, counterpartWeekStart: null, pairId: null,
+          attributionMonth: monthKeyOf(fromWeek), createdAt: now,
+        },
+      ];
+      s.txns = [
+        {
+          id: nextId('txn'), accountId: savingsAccountId, categoryId,
+          amount: leftover, kind: 'transfer_in', date: TODAY, note: 'Envelope sweep',
+        },
+        ...s.txns,
+      ];
+      bump();
+    },
+
+    async borrowFromNextWeek(categoryId, week, amount) {
+      const cat = catById(categoryId);
+      const nextBudget = cat?.envelope?.budget ?? ZERO;
+      const alreadyBorrowed = sumKind(carryFor(categoryId, week), 'borrow_in');
+      const cap = cents(Math.floor(nextBudget / 2));
+      if (addCents(alreadyBorrowed, amount) > cap) {
+        throw new Error('Borrow cap exceeded: at most 50% of next week’s budget.');
+      }
+      const toWeek = addDaysISO(week, 7);
+      const pairId = nextId('pair');
+      const now = new Date().toISOString();
+      s.carryover = [
+        ...s.carryover,
+        {
+          id: nextId('co'), categoryId, weekStart: week, kind: 'borrow_in',
+          amount, counterpartWeekStart: toWeek, pairId,
+          attributionMonth: monthKeyOf(week), createdAt: now,
+        },
+        {
+          id: nextId('co'), categoryId, weekStart: toWeek, kind: 'borrow_repay',
+          amount, counterpartWeekStart: week, pairId,
+          attributionMonth: monthKeyOf(week), createdAt: now,
+        },
+      ];
+      bump();
+    },
+
+    // --- read surface ----------------------------------------------------------
+    listAccounts() {
+      return s.accounts.map((a) => ({ ...a }));
+    },
+    listCategories() {
+      return s.categories.map((c) => ({ ...c, envelope: c.envelope ? { ...c.envelope } : null }));
+    },
+    listIncomeSources() {
+      return s.incomeSources.map((i) => ({ ...i, splits: i.splits.map((sp) => ({ ...sp })) }));
+    },
+    getActiveChapter() {
+      return { ...s.chapter };
+    },
+
+    getTransactions(range) {
+      return s.txns
+        .filter((t) => t.date >= range.from && t.date <= range.to)
+        .slice()
+        .sort((a, b) => (a.date === b.date ? a.id.localeCompare(b.id) : a.date < b.date ? 1 : -1));
+    },
+
+    getDaySpendTotals(range) {
+      const out = new Map<ISODate, Cents>();
+      for (const d of eachDay(range)) out.set(d, ZERO);
+      for (const t of expensesIn(range)) {
+        out.set(t.date, addCents(out.get(t.date) ?? ZERO, t.amount));
       }
       return out;
     },
 
-    getEnvelopeWeekState() {
-      return envelopes.map((e) => ({ ...e }));
-    },
-
-    needsWeeklyReset(anchor = TODAY) {
-      // Demo: a reset is available once the week has any rolled/carryover state.
-      return !weeklyResetDone;
-    },
-
-    getMonthHeatmap(monthAnchor) {
-      const [y, m] = parts(monthAnchor);
-      const dim = daysInMonth(y, m);
-      const dates: ISODate[] = [];
-      for (let d = 1; d <= dim; d++) dates.push(iso(y, m, d));
-      const maxSpent = Math.max(
-        1,
-        ...dates.map((d) => expensesOn(d).reduce((s, t) => s + t.amount, 0))
-      );
-      return dates.map((d) => daySpend(d, maxSpent));
-    },
-
-    getDayDetail(date) {
-      const dayTxns = txns
-        .filter((t) => t.date === date)
-        .slice()
-        .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'income' ? -1 : 1));
-      const income = dayTxns.filter((t) => t.kind === 'income').reduce((s, t) => s + t.amount, 0);
-      const spend = dayTxns.filter((t) => t.kind === 'expense').reduce((s, t) => s + t.amount, 0);
-      const kpis: DayKpi[] = [
-        { label: 'In', value: income, kind: 'income' },
-        { label: 'Out', value: spend, kind: 'spend' },
-        { label: 'Net', value: income - spend, kind: 'net' },
-      ];
-      const detail: DayDetail = { date, kpis, transactions: dayTxns };
-      return detail;
-    },
-
-    getPlanVsActual(monthAnchor = TODAY) {
-      const mk = monthKey(monthAnchor);
-      return CATEGORIES.map<PlanVsActualSlice>((c) => {
-        const actual = txns
-          .filter((t) => t.kind === 'expense' && t.categoryId === c.id && monthKey(t.date) === mk)
-          .reduce((s, t) => s + t.amount, 0);
-        return {
-          categoryId: c.id,
-          name: c.name,
-          colorKey: c.colorKey,
-          planned: c.planned,
-          actual: Math.round(actual * 100) / 100,
-        };
-      });
-    },
-
-    getGoal() {
-      return { ...goal };
-    },
-
-    addExpense(input: AddExpenseInput) {
-      const c = catById(input.categoryId);
-      txns = [
-        {
-          id: nextId('txn'),
-          date: input.date,
-          kind: 'expense',
-          amount: input.amount,
-          categoryId: input.categoryId,
-          categoryName: c?.name ?? 'Other',
-          colorKey: c?.colorKey ?? 'other',
-          accountId: input.accountId ?? PNC,
-          note: input.note,
-          isFixed: false,
-        },
-        ...txns,
-      ];
-      const env = envelopes.find((e) => e.categoryId === input.categoryId);
-      if (env) {
-        env.spent += input.amount;
-        env.remaining = env.planned - env.spent;
-        if (env.remaining < 0) env.state = 'overflow';
-      }
-      bump();
-    },
-
-    addIncome(input: AddIncomeInput) {
-      const parent = nextId('inc');
-      const legs =
-        input.splits && input.splits.length > 0
-          ? input.splits
-          : [{ accountId: input.accountId ?? PNC, amount: input.amount }];
-      const created: Txn[] = legs.map((leg) => ({
-        id: nextId('txn'),
-        date: input.date,
-        kind: 'income',
-        amount: leg.amount,
-        categoryId: null,
-        categoryName: input.note ?? 'Income',
-        colorKey: 'other',
-        accountId: leg.accountId,
-        note: input.note,
-        splitParentId: legs.length > 1 ? parent : null,
-      }));
-      txns = [...created, ...txns];
-      bump();
-    },
-
-    editTransaction(id, patch: EditTxnPatch) {
-      txns = txns.map((t) => {
-        if (t.id !== id) return t;
-        const next = { ...t, ...patch };
-        if (patch.categoryId !== undefined) {
-          const c = catById(patch.categoryId);
-          next.categoryName = c?.name ?? t.categoryName;
-          next.colorKey = c?.colorKey ?? t.colorKey;
+    getPaydays(range) {
+      // Union over income sources. The real store delegates to Team 2's
+      // PaydaysBetween; the fake projects weekly/monthly anchors directly.
+      const out = new Set<ISODate>();
+      for (const src of s.incomeSources) {
+        const { kind, anchorDate, semimonthlyDays } = src.schedule;
+        for (const d of eachDay(range)) {
+          if (kind === 'weekly' && dayOfWeek(d) === dayOfWeek(anchorDate)) out.add(d);
+          else if (kind === 'biweekly' && dayOfWeek(d) === dayOfWeek(anchorDate)) {
+            const diff = Math.round(
+              (Date.parse(d) - Date.parse(anchorDate)) / (7 * 24 * 3600 * 1000),
+            );
+            if (diff % 2 === 0) out.add(d);
+          } else if (kind === 'monthly' && d.slice(8) === anchorDate.slice(8)) out.add(d);
+          else if (kind === 'semimonthly' && semimonthlyDays) {
+            const dom = parseInt(d.slice(8), 10);
+            if (dom === semimonthlyDays[0] || dom === semimonthlyDays[1]) out.add(d);
+          }
         }
-        return next;
-      });
-      bump();
-    },
-
-    deleteTransaction(id) {
-      const removed = txns.find((t) => t.id === id) ?? null;
-      if (removed) {
-        txns = txns.filter((t) => t.id !== id);
-        bump();
       }
-      return removed;
+      return Array.from(out).sort();
     },
 
-    restoreTransaction(txn) {
-      txns = [txn, ...txns];
-      bump();
+    getEnvelopeWeekState(categoryId, week) {
+      return envelopeState(categoryId, week);
     },
 
-    rollForward() {
-      // Roll positive balances into this week; clear carryover states.
-      envelopes = envelopes.map((e) => ({
-        ...e,
-        carryover: 0,
-        state: e.carryover > 0 ? 'rolled' : 'normal',
-        planned: e.carryover > 0 ? e.planned + e.carryover : e.planned,
-        remaining: (e.carryover > 0 ? e.planned + e.carryover : e.planned) - e.spent,
-      }));
-      weeklyResetDone = true;
-      bump();
-    },
-
-    sweepToSavings() {
-      // Sweep positive balances into the goal instead of rolling.
-      const swept = envelopes.reduce((s, e) => s + Math.max(0, e.carryover), 0);
-      goal.saved = Math.min(goal.target, goal.saved + swept);
-      envelopes = envelopes.map((e) => ({
-        ...e,
-        carryover: 0,
-        state: 'normal',
-        remaining: e.planned - e.spent,
-      }));
-      weeklyResetDone = true;
-      bump();
-    },
-
-    borrowFromNextWeek(categoryId, amount) {
-      envelopes = envelopes.map((e) =>
-        e.categoryId === categoryId
-          ? {
-              ...e,
-              planned: e.planned + amount,
-              remaining: e.remaining + amount,
-              borrowedFromNext: e.borrowedFromNext + amount,
-              state: 'borrowed',
-            }
-          : e
+    getSafeToSpend(week) {
+      return sumCents(
+        enveloped().map((c) => maxCents(envelopeState(c.id, week).remaining, ZERO)),
       );
-      bump();
     },
 
-    parseDecimal,
-    formatMoney,
+    getAccountBalance(accountId, asOf) {
+      const acct = s.accounts.find((a) => a.id === accountId);
+      if (!acct) return ZERO;
+      let bal = acct.startingBalance;
+      for (const t of s.txns) {
+        if (t.date > asOf) continue;
+        if (t.kind === 'income') {
+          const leg = (t.incomeSplit ?? []).find((l) => l.accountId === accountId);
+          if (leg) bal = addCents(bal, leg.amount);
+          else if (t.accountId === accountId && !t.incomeSplit) bal = addCents(bal, t.amount);
+        } else if (t.accountId !== accountId) {
+          continue;
+        } else if (t.kind === 'expense' || t.kind === 'transfer_out') {
+          bal = subCents(bal, t.amount);
+        } else if (t.kind === 'transfer_in') {
+          bal = addCents(bal, t.amount);
+        }
+      }
+      return bal;
+    },
+
+    getPlanVsActual(month) {
+      return s.categories
+        .filter((c) => c.envelope !== null || s.fixedPlan.has(c.id))
+        .map((c) => {
+          const planned = c.envelope
+            ? cents(c.envelope.budget * (c.envelope.period === 'weekly' ? weeksInMonth(month) : 1))
+            : s.fixedPlan.get(c.id) ?? ZERO;
+          return { categoryId: c.id, planned, actual: monthCategorySpent(c.id, month) };
+        });
+    },
+
+    evaluation,
   };
 }
 
-export const fakeStore: StoreContract = createFakeStore();
+export const fakeStore: ReactiveStore = createFakeStore();
 export default fakeStore;

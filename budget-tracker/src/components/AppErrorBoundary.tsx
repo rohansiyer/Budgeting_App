@@ -1,7 +1,10 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, space, type } from '../theme/tokens';
+import * as tokens from '../theme/tokens';
 import { HardButton } from './kit';
+
+const { color, space } = tokens;
+const typo = tokens.type;
 
 interface Props {
   children: ReactNode;
@@ -10,7 +13,7 @@ interface State {
   error: Error | null;
 }
 
-/** Midnight-styled error boundary (no react-native-paper). */
+/** Midnight-styled error boundary (replaces the v1 Paper-based one). */
 export class AppErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
@@ -34,7 +37,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           <Text style={styles.detail} numberOfLines={4}>
             {error.message}
           </Text>
-          <HardButton label="Try again" onPress={this.reset} />
+          <HardButton label="Try again" onPress={this.reset} accessibilityLabel="Try again" />
         </View>
       );
     }
@@ -47,28 +50,27 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.bg.base,
+    backgroundColor: color.bg,
     padding: space.xl,
   },
   title: {
-    color: colors.status.spend,
-    fontFamily: type.family.text,
-    fontSize: type.size.title,
-    fontWeight: type.weight.bold,
-    marginBottom: space.md,
+    color: color.danger,
+    fontSize: typo.title.fontSize,
+    fontWeight: typo.title.fontWeight,
+    marginBottom: space.sm,
   },
   message: {
-    color: colors.text.secondary,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
-    marginBottom: space.md,
+    color: color.textSecondary,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
+    marginBottom: space.sm,
     textAlign: 'center',
   },
   detail: {
-    color: colors.text.muted,
-    fontFamily: type.family.mono,
-    fontSize: type.size.caption,
-    marginBottom: space.xl,
+    color: color.textMuted,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    marginBottom: space.lg,
     textAlign: 'center',
   },
 });

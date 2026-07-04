@@ -1,11 +1,14 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { colors, metrics, layout, type } from '../theme/tokens';
+import * as tokens from '../theme/tokens';
 import { HomeScreen } from '../screens/HomeScreen';
 import { CalendarScreen } from '../screens/CalendarScreen';
 import { PondScreen } from '../screens/PondScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+
+const { color, pixel } = tokens;
+const typo = tokens.type;
 
 export type RootTabParamList = {
   Home: undefined;
@@ -17,19 +20,19 @@ export type RootTabParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
 /**
- * Pixel tab icon: a small square. Filled when focused, outline when not.
- * The Pond tab uses a distinct pond-coloured square as the Team 4 DuckSprite
- * placeholder — swapped for the real sprite icon at merge.
+ * Pixel tab icon: a square — filled when focused, outlined when not. The Pond
+ * tab's pond-tinted square is the placeholder for Team 4's DuckSprite icon,
+ * swapped at merge.
  */
 function TabIcon({ focused, pond }: { focused: boolean; pond?: boolean }) {
-  const fill = pond ? colors.accent.pond : colors.accent.base;
+  const tint = pond ? color.pondEdge : color.accent;
   return (
     <View
       style={[
         styles.icon,
         {
-          backgroundColor: focused ? fill : colors.transparent,
-          borderColor: focused ? fill : colors.text.muted,
+          backgroundColor: focused ? tint : color.bg,
+          borderColor: focused ? tint : color.textMuted,
         },
       ]}
     />
@@ -42,8 +45,8 @@ export const RootNavigator = () => {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: colors.text.primary,
-        tabBarInactiveTintColor: colors.text.muted,
+        tabBarActiveTintColor: color.text,
+        tabBarInactiveTintColor: color.textMuted,
         tabBarLabelStyle: styles.tabLabel,
       }}
     >
@@ -73,23 +76,22 @@ export const RootNavigator = () => {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: colors.bg.panel,
-    borderTopWidth: metrics.hairline,
-    borderTopColor: colors.border.hairline,
-    height: layout.tabBarHeight,
+    backgroundColor: color.surface,
+    borderTopWidth: pixel.hairlineWidth,
+    borderTopColor: color.border,
+    height: 60,
     paddingBottom: 6,
     paddingTop: 6,
   },
   tabLabel: {
-    fontFamily: type.family.mono,
-    fontSize: type.size.micro,
-    letterSpacing: 1,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
   },
   icon: {
     width: 16,
     height: 16,
-    borderWidth: metrics.hairline * 2,
-    borderRadius: metrics.radius,
+    borderWidth: pixel.hairlineWidth * 2,
   },
 });
 

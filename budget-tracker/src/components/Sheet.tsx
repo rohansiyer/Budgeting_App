@@ -1,11 +1,14 @@
 import React, { ReactNode } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet } from 'react-native';
-import { colors, metrics, space, type } from '../theme/tokens';
+import * as tokens from '../theme/tokens';
+
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
 
 /**
- * Bottom sheet built on Modal. Square top edge, hairline border, hard backdrop.
- * Used for the borrow-confirm sheet, add expense/income forms and the
- * transaction context menu.
+ * Bottom sheet on Modal: square top edge, hairline border, dimmed backdrop
+ * (token bg at reduced opacity — no literal colors). Hosts the borrow
+ * confirm, add/edit forms, the Monday prompt and the txn context menu.
  */
 export function Sheet({
   visible,
@@ -20,9 +23,14 @@ export function Sheet({
 }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Dismiss" />
+      <Pressable
+        style={styles.backdrop}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss"
+      />
       <View style={styles.sheet}>
-        <View style={styles.handleRow}>
+        <View style={styles.headRow}>
           <Text style={styles.title} accessibilityRole="header">
             {title}
           </Text>
@@ -44,36 +52,35 @@ export function Sheet({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.scrim,
+    backgroundColor: color.bg,
+    opacity: 0.82,
   },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.bg.panel,
-    borderTopWidth: metrics.hairline,
-    borderColor: colors.border.strong,
-    borderRadius: metrics.radius,
-    padding: space.lg,
-    paddingBottom: space.xxl,
+    backgroundColor: color.surface,
+    borderTopWidth: pixel.hairlineWidth,
+    borderColor: color.border,
+    padding: space.md,
+    paddingBottom: space.xl,
   },
-  handleRow: {
+  headRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: space.lg,
+    marginBottom: space.md,
   },
   title: {
-    color: colors.text.primary,
-    fontFamily: type.family.text,
-    fontSize: type.size.title,
-    fontWeight: type.weight.bold,
+    color: color.text,
+    fontSize: typo.title.fontSize,
+    fontWeight: typo.title.fontWeight,
   },
   close: {
-    color: colors.text.secondary,
-    fontFamily: type.family.mono,
-    fontSize: type.size.caption,
-    letterSpacing: 1.5,
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
   },
 });

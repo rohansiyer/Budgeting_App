@@ -1,107 +1,124 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { colors, space, type, metrics } from '../theme/tokens';
-import { PixelBox } from '../components/kit';
+import * as tokens from '../theme/tokens';
+import { formatCents, ZERO } from '../lib/money';
 import { Screen, SectionLabel } from '../components/Primitives';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
-import { monthTitle, dayNumber } from '../format/dates';
-import type { DaySpend, ISODate } from '../types/contracts';
+import {
+  todayISO,
+  monthRange,
+  monthTitle,
+  eachDay,
+  dayOfWeek,
+  dayNumber,
+} from '../format/dates';
+import type { ISODate } from '../types/contracts';
+
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
 
 const WEEK_HEADER = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const CELL_PCT = '14.2857%' as const;
 
-/** Monday-based weekday index (0 = Monday). */
+/** Monday-based column index (0 = Monday). */
 function mondayIndex(isoDate: ISODate): number {
-  const [y, m, d] = isoDate.split('-').map((n) => parseInt(n, 10));
-  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 Sun..6 Sat
+  const wd = dayOfWeek(isoDate);
   return wd === 0 ? 6 : wd - 1;
 }
 
 export function CalendarScreen() {
   const store = useStore();
   const { openDay } = useAppShell();
-  const today = store.getToday();
-  const heatmap = store.getMonthHeatmap(today);
-  const leadBlanks = heatmap.length > 0 ? mondayIndex(heatmap[0].date) : 0;
+  const today = todayISO();
+  const range = monthRange(today);
 
-  const cells: (DaySpend | null)[] = [
-    ...Array.from({ length: leadBlanks }, () => null),
-    ...heatmap,
-  ];
+  const days = eachDay(range);
+  const totals = store.getDaySpendTotals(range);
+  const paydays = useMemo(() => new Set(store.getPaydays(range)), [store, range.from, range.to]);
+  const fixedHitDays = useMemo(() => {
+    const fixedIds = new Set(
+      store
+        .listCategories()
+        .filter((c) => c.fixed)
+        .map((c) => c.id),
+    );
+    const out = new Set<ISODate>();
+    for (const t of store.getTransactions(range)) {
+      if (t.kind === 'expense' && fixedIds.has(t.categoryId)) out.add(t.date);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, range.from, range.to]);
+
+  const maxSpent = Math.max(1, ...Array.from(totals.values()));
+  const leadBlanks = mondayIndex(days[0]);
 
   return (
     <Screen title={monthTitle(today)}>
-      <PixelBox padding={space.lg} style={styles.calBox}>
-        <View style={styles.weekHeader}>
-          {WEEK_HEADER.map((w, i) => (
-            <Text key={i} style={styles.weekHeaderCell}>
-              {w}
-            </Text>
-          ))}
-        </View>
-        <View style={styles.grid}>
-          {cells.map((cell, i) =>
-            cell ? (
-              <DayCell
-                key={cell.date}
-                cell={cell}
-                isToday={cell.date === today}
-                onPress={() => openDay(cell.date)}
-                formatMoney={store.formatMoney}
-              />
-            ) : (
-              <View key={`blank_${i}`} style={styles.cell} />
-            )
-          )}
-        </View>
-      </PixelBox>
+      <View style={styles.weekHeader}>
+        {WEEK_HEADER.map((w, i) => (
+          <Text key={i} style={styles.weekHeaderCell}>
+            {w}
+          </Text>
+        ))}
+      </View>
+      <View style={styles.grid}>
+        {Array.from({ length: leadBlanks }, (_, i) => (
+          <View key={`blank_${i}`} style={styles.cell} />
+        ))}
+        {days.map((d) => {
+          const spent = totals.get(d) ?? ZERO;
+          const intensity = spent / maxSpent; // 0..1 display ratio only
+          const isPayday = paydays.has(d);
+          const isFixedHit = fixedHitDays.has(d);
+          const isToday = d === today;
+          return (
+            <Pressable
+              key={d}
+              style={styles.cell}
+              onPress={() => openDay(d)}
+              accessibilityRole="button"
+              accessibilityLabel={`${dayNumber(d)}: spent ${formatCents(spent)}${isPayday ? ', payday' : ''}${isFixedHit ? ', fixed bill' : ''}${isToday ? ', today' : ''}. Opens day detail.`}
+            >
+              <View
+                style={[
+                  styles.cellInner,
+                  {
+                    borderColor: isFixedHit
+                      ? color.danger
+                      : isToday
+                        ? color.text
+                        : color.hairline,
+                  },
+                ]}
+              >
+                {/* Heatmap fill: token spendFill at spend-scaled opacity. */}
+                {spent > 0 ? (
+                  <View
+                    style={[
+                      StyleSheet.absoluteFillObject,
+                      { backgroundColor: color.spendFill, opacity: 0.2 + intensity * 0.65 },
+                    ]}
+                    pointerEvents="none"
+                  />
+                ) : null}
+                <Text style={[styles.cellNum, isToday && styles.cellNumToday]}>
+                  {dayNumber(d)}
+                </Text>
+                {/* Mint payday ring. */}
+                {isPayday ? <View style={styles.paydayRing} pointerEvents="none" /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
 
       <SectionLabel>Legend</SectionLabel>
-      <PixelBox padding={space.lg}>
-        <LegendRow swatch={<View style={[styles.legendSwatch, { backgroundColor: colors.accent.base }]} />} label="Spending intensity (darker = more)" />
-        <LegendRow swatch={<View style={[styles.legendRing]} />} label="Payday" />
-        <LegendRow swatch={<View style={[styles.legendSwatch, { backgroundColor: colors.status.spend }]} />} label="Fixed bill spike" />
-      </PixelBox>
+      <LegendRow swatch={<View style={styles.legendHeat} />} label="Fill intensity = spending" />
+      <LegendRow swatch={<View style={styles.legendRing} />} label="Mint ring = payday" />
+      <LegendRow swatch={<View style={styles.legendFixed} />} label="Coral edge = fixed bill spike" />
     </Screen>
-  );
-}
-
-function DayCell({
-  cell,
-  isToday,
-  onPress,
-  formatMoney,
-}: {
-  cell: DaySpend;
-  isToday: boolean;
-  onPress: () => void;
-  formatMoney: (n: number) => string;
-}) {
-  const border = cell.hasFixedSpike
-    ? colors.status.spend
-    : isToday
-    ? colors.text.primary
-    : colors.border.hairline;
-  return (
-    <Pressable
-      style={styles.cell}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${dayNumber(cell.date)}: spent ${formatMoney(cell.spent)}${cell.isPayday ? ', payday' : ''}${cell.hasFixedSpike ? ', fixed bill' : ''}`}
-    >
-      <View style={[styles.cellInner, { borderColor: border }]}>
-        {/* intensity fill via opacity (no colour literal) */}
-        <View
-          style={[
-            StyleSheet.absoluteFillObject,
-            { backgroundColor: colors.accent.base, opacity: 0.12 + cell.intensity * 0.68 },
-          ]}
-          pointerEvents="none"
-        />
-        <Text style={[styles.cellNum, isToday && styles.cellNumToday]}>{dayNumber(cell.date)}</Text>
-        {cell.isPayday ? <View style={styles.paydayRing} pointerEvents="none" /> : null}
-      </View>
-    </Pressable>
   );
 }
 
@@ -114,23 +131,19 @@ function LegendRow({ swatch, label }: { swatch: React.ReactNode; label: string }
   );
 }
 
-const CELL_PCT = '14.2857%' as const;
-
 const styles = StyleSheet.create({
-  calBox: {
-    marginTop: space.sm,
-  },
   weekHeader: {
     flexDirection: 'row',
-    marginBottom: space.sm,
+    marginTop: space.sm,
+    marginBottom: space.xs,
   },
   weekHeaderCell: {
     width: CELL_PCT,
     textAlign: 'center',
-    color: colors.text.muted,
-    fontFamily: type.family.mono,
-    fontSize: type.size.micro,
-    letterSpacing: 1,
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
   },
   grid: {
     flexDirection: 'row',
@@ -143,54 +156,58 @@ const styles = StyleSheet.create({
   },
   cellInner: {
     flex: 1,
-    borderWidth: metrics.hairline,
-    borderRadius: metrics.radius,
-    backgroundColor: colors.bg.sunken,
+    borderWidth: pixel.hairlineWidth,
+    backgroundColor: color.surfaceDeep,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   cellNum: {
-    color: colors.text.primary,
-    fontFamily: type.family.mono,
-    fontSize: type.size.caption,
+    color: color.text,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    fontVariant: [...typo.tabularNums.fontVariant],
   },
   cellNumToday: {
-    fontWeight: type.weight.bold,
+    fontWeight: typo.title.fontWeight,
   },
   paydayRing: {
     position: 'absolute',
     bottom: 3,
-    width: 6,
-    height: 6,
-    borderRadius: metrics.radius,
-    borderWidth: metrics.hairline,
-    borderColor: colors.status.payday,
-    backgroundColor: colors.status.payday,
+    width: 7,
+    height: 7,
+    borderWidth: pixel.hairlineWidth * 2,
+    borderColor: color.accent,
   },
   legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: space.md,
+    marginBottom: space.sm,
   },
-  legendSwatch: {
-    width: 16,
-    height: 16,
-    borderRadius: metrics.radius,
-    marginRight: space.md,
+  legendHeat: {
+    width: 14,
+    height: 14,
+    backgroundColor: color.spendFill,
+    marginRight: space.sm,
   },
   legendRing: {
-    width: 16,
-    height: 16,
-    borderRadius: metrics.radius,
-    borderWidth: metrics.hairline * 2,
-    borderColor: colors.status.payday,
-    marginRight: space.md,
+    width: 14,
+    height: 14,
+    borderWidth: pixel.hairlineWidth * 2,
+    borderColor: color.accent,
+    marginRight: space.sm,
+  },
+  legendFixed: {
+    width: 14,
+    height: 14,
+    borderWidth: pixel.hairlineWidth * 2,
+    borderColor: color.danger,
+    marginRight: space.sm,
   },
   legendLabel: {
-    color: colors.text.secondary,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
+    color: color.textSecondary,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.caption.fontWeight,
   },
 });
 

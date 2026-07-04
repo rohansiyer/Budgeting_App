@@ -1,82 +1,58 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { colors, metrics, space, type } from '../../theme/tokens';
-import type { RuledListProps, RuledListItem } from './types';
+import { View, Text, StyleSheet } from 'react-native';
+import * as tokens from '../../theme/tokens';
+import type { RuledListProps } from './types';
+
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
 
 /**
- * A list ruled by 1px hairlines — no rounded cards, no elevation. Rows are
- * separated by a top border (except the first). Supports press + long-press
- * (used for the transaction context menu).
+ * Hairline-divided list (§3): rows are full-bleed, no container, no cards.
+ * Interactivity (press / long-press) lives inside `renderRow` — the list
+ * itself only rules and labels. Optional uppercase micro-label above.
  */
-export function RuledList<T extends RuledListItem>({
-  data,
-  renderItem,
-  onPressItem,
-  onLongPressItem,
-  emptyLabel = 'Nothing here yet.',
-  itemAccessibilityLabel,
-  style,
-  testID,
-}: RuledListProps<T>) {
-  if (data.length === 0) {
-    return (
-      <View style={[styles.empty, style]} testID={testID}>
-        <Text style={styles.emptyText}>{emptyLabel}</Text>
-      </View>
-    );
-  }
-
+export function RuledList<T>({ data, renderRow, keyExtractor, sectionLabel }: RuledListProps<T>) {
   return (
-    <View style={style} testID={testID}>
-      {data.map((item, index) => {
-        const interactive = Boolean(onPressItem || onLongPressItem);
-        const content = (
-          <View style={[styles.row, index > 0 && styles.ruled]}>
-            {renderItem(item, index)}
+    <View>
+      {sectionLabel ? (
+        <Text style={styles.sectionLabel} accessibilityRole="header">
+          {sectionLabel}
+        </Text>
+      ) : null}
+      {data.length === 0 ? (
+        <Text style={styles.empty}>Nothing here yet.</Text>
+      ) : (
+        data.map((item, index) => (
+          <View key={keyExtractor(item)} style={[styles.row, index > 0 && styles.ruled]}>
+            {renderRow(item, index)}
           </View>
-        );
-        if (!interactive) {
-          return <View key={item.key}>{content}</View>;
-        }
-        return (
-          <Pressable
-            key={item.key}
-            onPress={onPressItem ? () => onPressItem(item, index) : undefined}
-            onLongPress={onLongPressItem ? () => onLongPressItem(item, index) : undefined}
-            delayLongPress={350}
-            accessibilityRole="button"
-            accessibilityLabel={itemAccessibilityLabel?.(item, index)}
-            accessibilityHint={onLongPressItem ? 'Double tap to open, long press for actions' : undefined}
-            android_ripple={{ color: colors.bg.raised }}
-            style={({ pressed }) => (pressed ? styles.pressed : undefined)}
-          >
-            {content}
-          </Pressable>
-        );
-      })}
+        ))
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  sectionLabel: {
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
+    textTransform: typo.sectionLabel.textTransform,
+    marginBottom: space.sm,
+  },
   row: {
-    paddingVertical: space.md,
+    paddingVertical: space.sm + space.xs,
   },
   ruled: {
-    borderTopWidth: metrics.hairline,
-    borderTopColor: colors.border.hairline,
-  },
-  pressed: {
-    backgroundColor: colors.bg.raised,
+    borderTopWidth: pixel.hairlineWidth,
+    borderTopColor: color.hairline,
   },
   empty: {
-    paddingVertical: space.xl,
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: colors.text.muted,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
+    color: color.textMuted,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    paddingVertical: space.md,
   },
 });
 

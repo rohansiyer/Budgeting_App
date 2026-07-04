@@ -1,47 +1,64 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import type { ReactNode } from 'react';
+import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
-import { colors, metrics, space, type } from '../../theme/tokens';
-import type { DuckSlotProps } from './types';
+import * as tokens from '../../theme/tokens';
+import type { DuckSpriteProps } from './types';
+
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
 
 /**
- * TEAM 4 SEAM — the empty slot at the centre of the Pond donut.
- *
- * The Pond screen positions this absolutely inside the SVG donut hole. Team 4
- * injects their DuckSprite via `renderDuck`; until then a labelled pixel
- * placeholder square holds the space (no emoji).
+ * TEAM 4 SEAM — the duck pond in the center of the Pond donut (§4.4).
+ * Team 4's pond renderer / DuckSprite drops in via `renderDuck`, typed
+ * against the canonical DuckSpriteProps in kit/types.ts. Until merge, a
+ * labelled pond-water placeholder square holds the space. No emoji.
  */
+export interface PondCenterSlotProps {
+  size?: number;
+  duckProps?: Partial<DuckSpriteProps>;
+  /** Team 4 injects the pond/sprite renderer here at merge. */
+  renderDuck?: (props: DuckSpriteProps) => ReactNode;
+  accessibilityLabel?: string;
+  style?: StyleProp<ViewStyle>;
+}
+
 export function PondCenterSlot({
   size = 96,
   duckProps,
   renderDuck,
-  accessibilityLabel = 'Pond — your duck lives here',
+  accessibilityLabel = 'The pond — your flock lives here',
   style,
-  testID,
-}: DuckSlotProps) {
+}: PondCenterSlotProps) {
+  const spriteProps: DuckSpriteProps = {
+    accessoryTier: 0,
+    scale: size / 28,
+    animation: 'idle',
+    ...duckProps,
+  };
+
   return (
     <View
       style={[styles.root, { width: size, height: size }, style]}
-      accessibilityLabel={accessibilityLabel}
       accessible
-      testID={testID}
+      accessibilityLabel={accessibilityLabel}
     >
       {renderDuck ? (
-        renderDuck({ size, ...duckProps })
+        renderDuck(spriteProps)
       ) : (
         <View style={styles.placeholder}>
           <Svg width={size * 0.5} height={size * 0.5}>
             <Rect
-              x={0}
-              y={0}
-              width={size * 0.5}
-              height={size * 0.5}
-              fill={colors.bg.raised}
-              stroke={colors.accent.pond}
-              strokeWidth={metrics.hairline * 2}
+              x={pixel.hairlineWidth}
+              y={pixel.hairlineWidth}
+              width={size * 0.5 - pixel.hairlineWidth * 2}
+              height={size * 0.5 - pixel.hairlineWidth * 2}
+              fill={color.pondDeep}
+              stroke={color.pondEdge}
+              strokeWidth={pixel.hairlineWidth * 2}
             />
           </Svg>
-          <Text style={styles.caption}>duck</Text>
+          <Text style={styles.caption}>POND</Text>
         </View>
       )}
     </View>
@@ -59,11 +76,10 @@ const styles = StyleSheet.create({
   },
   caption: {
     marginTop: space.xs,
-    color: colors.text.muted,
-    fontFamily: type.family.mono,
-    fontSize: type.size.micro,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
   },
 });
 

@@ -9,7 +9,11 @@ import {
   TextStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, space, type } from '../theme/tokens';
+import * as tokens from '../theme/tokens';
+import { Cents, formatCents } from '../lib/money';
+
+const { color, space } = tokens;
+const typo = tokens.type;
 
 /** Full-screen scaffold: safe area + midnight background + scrolling body. */
 export function Screen({
@@ -17,19 +21,14 @@ export function Screen({
   right,
   children,
   scroll = true,
-  testID,
 }: {
   title?: string;
   right?: ReactNode;
   children: ReactNode;
   scroll?: boolean;
-  testID?: string;
 }) {
   const body = scroll ? (
-    <ScrollView
-      contentContainerStyle={styles.scrollBody}
-      showsVerticalScrollIndicator={false}
-    >
+    <ScrollView contentContainerStyle={styles.scrollBody} showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>
   ) : (
@@ -37,10 +36,12 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']} testID={testID}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       {title !== undefined ? (
-        <View style={styles.header} accessibilityRole="header">
-          <Text style={styles.headerTitle}>{title}</Text>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle} accessibilityRole="header">
+            {title}
+          </Text>
           {right}
         </View>
       ) : null}
@@ -49,86 +50,88 @@ export function Screen({
   );
 }
 
-export function SectionLabel({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
-  return <Text style={[styles.sectionLabel, style]}>{children}</Text>;
-}
-
-/** Monospace money value with income/spend/net colouring. */
-export function MoneyText({
-  amount,
-  format,
-  signed = false,
-  kind = 'plain',
-  size = type.size.body,
+export function SectionLabel({
+  children,
   style,
 }: {
-  amount: number;
-  format: (n: number) => string;
+  children: ReactNode;
+  style?: StyleProp<TextStyle>;
+}) {
+  return (
+    <Text style={[styles.sectionLabel, style]} accessibilityRole="header">
+      {children}
+    </Text>
+  );
+}
+
+/**
+ * Money value with tabular numerals and income/spend/net coloring. The ONLY
+ * string rendering of money is formatCents (money.ts) — no float math here.
+ */
+export function MoneyText({
+  amount,
+  signed = false,
+  kind = 'plain',
+  size = typo.body.fontSize,
+  style,
+}: {
+  amount: Cents;
   signed?: boolean;
   kind?: 'plain' | 'income' | 'spend' | 'net';
   size?: number;
   style?: StyleProp<TextStyle>;
 }) {
-  let color: string = colors.text.primary;
-  if (kind === 'income') color = colors.status.income;
-  else if (kind === 'spend') color = colors.status.spend;
-  else if (kind === 'net') color = amount >= 0 ? colors.status.income : colors.status.spend;
+  let tint: string = color.text;
+  if (kind === 'income') tint = color.accent;
+  else if (kind === 'spend') tint = color.danger;
+  else if (kind === 'net') tint = amount >= 0 ? color.accent : color.danger;
 
-  const prefix = signed && amount > 0 ? '+' : '';
   return (
-    <Text style={[styles.money, { color, fontSize: size }, style]}>
-      {prefix}
-      {format(amount)}
+    <Text style={[styles.money, { color: tint, fontSize: size }, style]}>
+      {formatCents(amount, { signDisplay: signed ? 'always' : 'auto' })}
     </Text>
   );
 }
 
-export function Row({
-  children,
-  style,
-}: {
-  children: ReactNode;
-  style?: StyleProp<ViewStyle>;
-}) {
+export function Row({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.row, style]}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: colors.bg.base,
+    backgroundColor: color.bg,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: space.lg,
+    paddingHorizontal: space.md,
     paddingTop: space.sm,
     paddingBottom: space.md,
   },
   headerTitle: {
-    color: colors.text.primary,
-    fontFamily: type.family.text,
-    fontSize: type.size.title,
-    fontWeight: type.weight.bold,
-    letterSpacing: 0.5,
+    color: color.text,
+    fontSize: typo.title.fontSize,
+    fontWeight: typo.title.fontWeight,
+    letterSpacing: 0.3,
   },
   scrollBody: {
-    paddingHorizontal: space.lg,
-    paddingBottom: space.huge,
+    paddingHorizontal: space.md,
+    paddingBottom: space.xl * 2,
   },
   sectionLabel: {
-    color: colors.text.secondary,
-    fontFamily: type.family.mono,
-    fontSize: type.size.caption,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    marginTop: space.xl,
-    marginBottom: space.md,
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
+    textTransform: typo.sectionLabel.textTransform,
+    marginTop: space.lg,
+    marginBottom: space.sm,
   },
   money: {
-    fontFamily: type.family.mono,
-    fontWeight: type.weight.bold,
+    fontWeight: typo.title.fontWeight,
+    fontVariant: [...typo.tabularNums.fontVariant],
   },
   row: {
     flexDirection: 'row',

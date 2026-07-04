@@ -1,175 +1,173 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
-import { colors, categoryColors, metrics, space, type } from '../theme/tokens';
+import React, { useState } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import * as tokens from '../theme/tokens';
+import { Cents, formatCents, sumCents, toDecimalString, ZERO } from '../lib/money';
 import { PixelBox, HardButton, RuledList, CategoryChip } from '../components/kit';
-import { Screen, SectionLabel, MoneyText } from '../components/Primitives';
+import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { Sheet } from '../components/Sheet';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
-import { longDate } from '../format/dates';
-import type { Txn, ISODate, ColorKey } from '../types/contracts';
+import { tryParseCents } from '../format/moneyInput';
+import { longDate, weekStartOf } from '../format/dates';
+import type {
+  ISODate,
+  TransactionRecord,
+  CategoryConfig,
+  IncomeSourceConfig,
+  AccountConfig,
+} from '../types/contracts';
 
-type RuledTxn = Txn & { key: string };
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
 
 export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: () => void }) {
   const store = useStore();
   const { showUndo } = useAppShell();
-  const detail = store.getDayDetail(date);
 
-  const [menuTxn, setMenuTxn] = useState<Txn | null>(null);
-  const [editTxn, setEditTxn] = useState<Txn | null>(null);
+  const categories = store.listCategories();
+  const accounts = store.listAccounts();
+  const incomeSources = store.listIncomeSources();
+  const catById = (id: string) => categories.find((c) => c.id === id);
+  const acctById = (id: string) => accounts.find((a) => a.id === id);
+  const spendingAccount = accounts.find((a) => a.kind === 'spending') ?? accounts[0];
+
+  const dayTxns = store.getTransactions({ from: date, to: date });
+  const spentToday = sumCents(
+    dayTxns.filter((t) => t.kind === 'expense').map((t) => t.amount),
+  );
+  const accountAfter = spendingAccount
+    ? store.getAccountBalance(spendingAccount.id, date)
+    : ZERO;
+  const envelopeLeft = store.getSafeToSpend(weekStartOf(date));
+
+  const [menuTxn, setMenuTxn] = useState<TransactionRecord | null>(null);
+  const [editTxn, setEditTxn] = useState<TransactionRecord | null>(null);
   const [addKind, setAddKind] = useState<'expense' | 'income' | null>(null);
 
-  const incomeTxns = detail.transactions.filter((t) => t.kind === 'income');
-  const expenseTxns = detail.transactions.filter((t) => t.kind === 'expense');
-
-  // Group income legs by split parent for the inline-split display.
-  const incomeGroups = useMemo(() => groupIncome(incomeTxns), [incomeTxns]);
+  const handleDelete = async (t: TransactionRecord) => {
+    const { undo } = await store.deleteTransaction(t.id);
+    const catName = catById(t.categoryId)?.name ?? 'transaction';
+    showUndo(`Deleted ${t.kind === 'income' ? (t.note ?? 'income') : catName}`, async () => {
+      const ok = await undo();
+      if (!ok) showUndo('Too late — the undo window closed.');
+    });
+  };
 
   return (
     <Screen
       title={longDate(date)}
       right={
-        <HardButton label="Done" variant="ghost" onPress={onClose} accessibilityLabel="Close day" />
+        <HardButton
+          label="Done"
+          variant="ghost"
+          onPress={onClose}
+          accessibilityLabel="Close day detail"
+        />
       }
     >
-      {/* 3 KPIs */}
+      {/* Day KPIs: spent / account after / envelope left (§4.3). */}
       <View style={styles.kpiRow}>
-        {detail.kpis.map((k) => (
-          <PixelBox key={k.label} padding={space.md} style={styles.kpi}>
-            <Text style={styles.kpiLabel}>{k.label}</Text>
-            <MoneyText
-              amount={k.value}
-              format={store.formatMoney}
-              kind={k.kind}
-              signed={k.kind === 'net'}
-              size={type.size.label}
-            />
-          </PixelBox>
-        ))}
+        <Kpi label="Spent" amount={spentToday} kind="spend" />
+        <Kpi label={spendingAccount ? `${spendingAccount.name} after` : 'Account after'} amount={accountAfter} kind="plain" />
+        <Kpi label="Envelope left" amount={envelopeLeft} kind="income" />
       </View>
 
-      {/* Income with inline splits */}
-      <SectionLabel>Income</SectionLabel>
-      {incomeGroups.length === 0 ? (
-        <Text style={styles.empty}>No income logged.</Text>
-      ) : (
-        incomeGroups.map((g) => (
-          <PixelBox key={g.key} padding={space.md} style={styles.incomeBox}>
-            <View style={styles.incomeHead}>
-              <Text style={styles.incomeTitle}>{g.title}</Text>
-              <MoneyText amount={g.total} format={store.formatMoney} kind="income" signed />
-            </View>
-            {g.legs.length > 1
-              ? g.legs.map((leg) => (
-                  <View key={leg.id} style={styles.splitRow}>
-                    <Text style={styles.splitLabel}>{accountName(leg.accountId)}</Text>
-                    <MoneyText amount={leg.amount} format={store.formatMoney} size={type.size.caption} />
-                  </View>
-                ))
-              : null}
-          </PixelBox>
-        ))
-      )}
-      <HardButton label="+ Add income" variant="ghost" onPress={() => setAddKind('income')} />
+      {/* Ruled transaction list: press/long-press → context menu. */}
+      <SectionLabel>Transactions</SectionLabel>
+      <RuledList<TransactionRecord>
+        data={dayTxns}
+        keyExtractor={(t) => t.id}
+        renderRow={(t) => (
+          <Pressable
+            onPress={() => setMenuTxn(t)}
+            onLongPress={() => setMenuTxn(t)}
+            delayLongPress={350}
+            accessibilityRole="button"
+            accessibilityLabel={txnA11yLabel(t, catById, acctById)}
+            accessibilityHint="Opens edit, recategorize and delete actions"
+          >
+            <TxnRow txn={t} cat={catById(t.categoryId)} acctById={acctById} />
+          </Pressable>
+        )}
+      />
 
-      {/* Expenses */}
-      <SectionLabel>Expenses</SectionLabel>
-      <PixelBox padding={space.md}>
-        <RuledList<RuledTxn>
-          data={expenseTxns.map((t) => ({ ...t, key: t.id }))}
-          emptyLabel="No expenses yet — tap add below."
-          onLongPressItem={(t) => setMenuTxn(t)}
-          onPressItem={(t) => setMenuTxn(t)}
-          itemAccessibilityLabel={(t) =>
-            `${t.categoryName}, ${store.formatMoney(t.amount)}${t.note ? ', ' + t.note : ''}. Long press for actions.`
-          }
-          renderItem={(t) => (
-            <View style={styles.txnRow}>
-              <View style={[styles.swatch, { backgroundColor: categoryColors[t.colorKey] }]} />
-              <View style={styles.txnMeta}>
-                <Text style={styles.txnCat}>{t.categoryName}</Text>
-                {t.note ? <Text style={styles.txnNote}>{t.note}</Text> : null}
-                {t.isFixed ? <Text style={styles.fixedTag}>FIXED</Text> : null}
-              </View>
-              <MoneyText amount={t.amount} format={store.formatMoney} kind="spend" />
-            </View>
-          )}
+      <Row style={styles.addRow}>
+        <HardButton
+          label="+ Expense"
+          onPress={() => setAddKind('expense')}
+          accessibilityLabel="Add an expense to this day"
         />
-      </PixelBox>
-      <HardButton label="+ Add expense" onPress={() => setAddKind('expense')} />
+        <HardButton
+          label="+ Income"
+          variant="ghost"
+          onPress={() => setAddKind('income')}
+          accessibilityLabel="Add income to this day"
+        />
+      </Row>
 
-      {/* Context menu */}
-      <Sheet visible={menuTxn !== null} onClose={() => setMenuTxn(null)} title={menuTxn?.categoryName ?? ''}>
+      {/* Long-press context menu: edit / recategorize / delete (no confirms — undo). */}
+      <Sheet
+        visible={menuTxn !== null}
+        onClose={() => setMenuTxn(null)}
+        title={menuTxn ? (catById(menuTxn.categoryId)?.name ?? 'Transaction') : ''}
+      >
         <HardButton
           label="Edit"
-          fullWidth
           variant="ghost"
           onPress={() => {
             setEditTxn(menuTxn);
             setMenuTxn(null);
           }}
+          accessibilityLabel="Edit this transaction"
         />
         <HardButton
           label="Delete"
-          fullWidth
           variant="danger"
           onPress={() => {
             const t = menuTxn;
             setMenuTxn(null);
-            if (!t) return;
-            const removed = store.deleteTransaction(t.id);
-            if (removed) {
-              showUndo(`Deleted ${removed.categoryName}`, () => store.restoreTransaction(removed));
-            }
+            if (t) void handleDelete(t);
           }}
+          accessibilityLabel="Delete this transaction, with undo"
         />
       </Sheet>
 
-      {/* Edit form */}
       {editTxn ? (
-        <EditForm
+        <EditSheet
           key={editTxn.id}
           txn={editTxn}
+          categories={categories}
           onClose={() => setEditTxn(null)}
-          onSave={(patch) => {
-            store.editTransaction(editTxn.id, patch);
+          onSave={async (patch) => {
+            await store.editTransaction(editTxn.id, patch);
             setEditTxn(null);
           }}
-          parse={store.parseDecimal}
         />
       ) : null}
 
-      {/* Add forms */}
       {addKind === 'expense' ? (
-        <AddExpenseForm
-          categories={store.getCategories()}
+        <AddExpenseSheet
+          categories={categories}
           onClose={() => setAddKind(null)}
-          parse={store.parseDecimal}
-          onSave={(amount, categoryId, note) => {
-            store.addExpense({ date, amount, categoryId, note });
+          onSave={async (amount, categoryId, note) => {
+            await store.addExpense({
+              accountId: spendingAccount.id,
+              categoryId,
+              amount,
+              date,
+              note,
+            });
             setAddKind(null);
           }}
         />
       ) : null}
+
       {addKind === 'income' ? (
-        <AddIncomeForm
+        <AddIncomeSheet
+          sources={incomeSources}
           onClose={() => setAddKind(null)}
-          parse={store.parseDecimal}
-          onSave={(amount, note, split) => {
-            store.addIncome(
-              split
-                ? {
-                    date,
-                    amount,
-                    note,
-                    splits: [
-                      { accountId: 'acct_pnc', amount: Math.round(amount * 0.7 * 100) / 100 },
-                      { accountId: 'acct_dcu', amount: Math.round(amount * 0.3 * 100) / 100 },
-                    ],
-                  }
-                : { date, amount, note }
-            );
+          onSave={async (sourceId, amount) => {
+            await store.addIncome({ sourceId, date, amount });
             setAddKind(null);
           }}
         />
@@ -178,15 +176,94 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
   );
 }
 
-// --- forms -----------------------------------------------------------------
+// --- rows --------------------------------------------------------------------
+function txnA11yLabel(
+  t: TransactionRecord,
+  catById: (id: string) => CategoryConfig | undefined,
+  acctById: (id: string) => AccountConfig | undefined,
+): string {
+  if (t.kind === 'income') {
+    const splits = (t.incomeSplit ?? [])
+      .map((leg) => `${formatCents(leg.amount)} to ${acctById(leg.accountId)?.name ?? 'account'}`)
+      .join(', ');
+    return `Income, ${t.note ?? 'income'}, ${formatCents(t.amount)}${splits ? `, split ${splits}` : ''}`;
+  }
+  const cat = catById(t.categoryId);
+  return `${t.kind === 'expense' ? 'Expense' : 'Transfer'}, ${cat?.name ?? ''}, ${formatCents(t.amount)}${t.note ? `, ${t.note}` : ''}`;
+}
+
+function TxnRow({
+  txn,
+  cat,
+  acctById,
+}: {
+  txn: TransactionRecord;
+  cat: CategoryConfig | undefined;
+  acctById: (id: string) => AccountConfig | undefined;
+}) {
+  const isIncome = txn.kind === 'income';
+  const isTransfer = txn.kind === 'transfer_in' || txn.kind === 'transfer_out';
+  const title = isIncome ? (txn.note ?? 'Income') : (cat?.name ?? 'Uncategorized');
+  return (
+    <View>
+      <Row style={styles.txnRow}>
+        {cat && !isIncome ? <CategoryChip colorKey={cat.colorKey} /> : null}
+        <View style={styles.txnMeta}>
+          <Text style={styles.txnTitle}>{title}</Text>
+          {!isIncome && txn.note ? <Text style={styles.txnNote}>{txn.note}</Text> : null}
+          {isTransfer ? (
+            <Text style={styles.txnNote}>
+              {txn.kind === 'transfer_in' ? 'Transfer in' : 'Transfer out'}
+            </Text>
+          ) : null}
+        </View>
+        <MoneyText
+          amount={txn.amount}
+          kind={isIncome || txn.kind === 'transfer_in' ? 'income' : 'spend'}
+          signed={isIncome}
+        />
+      </Row>
+      {/* Inline split display on income rows (§4.3). */}
+      {isIncome && (txn.incomeSplit ?? []).length > 1 ? (
+        <View style={styles.splitBlock}>
+          {(txn.incomeSplit ?? []).map((leg) => (
+            <Row key={leg.accountId} style={styles.splitRow}>
+              <Text style={styles.splitLabel}>{acctById(leg.accountId)?.name ?? 'Account'}</Text>
+              <MoneyText amount={leg.amount} size={typo.caption.fontSize} />
+            </Row>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function Kpi({ label, amount, kind }: { label: string; amount: Cents; kind: 'plain' | 'income' | 'spend' }) {
+  return (
+    <View
+      style={styles.kpi}
+      accessible
+      accessibilityLabel={`${label}: ${formatCents(amount)}`}
+    >
+      <Text style={styles.kpiLabel} numberOfLines={1}>
+        {label}
+      </Text>
+      <MoneyText amount={amount} kind={kind} size={typo.body.fontSize + 2} />
+    </View>
+  );
+}
+
+// --- forms ---------------------------------------------------------------------
 function MoneyField({
   value,
   onChangeText,
   autoFocus,
+  label = 'Amount',
 }: {
   value: string;
   onChangeText: (t: string) => void;
   autoFocus?: boolean;
+  label?: string;
 }) {
   return (
     <TextInput
@@ -194,169 +271,186 @@ function MoneyField({
       onChangeText={onChangeText}
       keyboardType="decimal-pad"
       placeholder="0.00"
-      placeholderTextColor={colors.text.muted}
+      placeholderTextColor={color.textMuted}
       autoFocus={autoFocus}
-      accessibilityLabel="Amount"
+      accessibilityLabel={label}
       style={styles.input}
     />
   );
 }
 
-function NoteField({ value, onChangeText }: { value: string; onChangeText: (t: string) => void }) {
-  return (
-    <TextInput
-      value={value}
-      onChangeText={onChangeText}
-      placeholder="Note (optional)"
-      placeholderTextColor={colors.text.muted}
-      accessibilityLabel="Note"
-      style={styles.input}
-    />
-  );
-}
-
-function EditForm({
-  txn,
-  onClose,
-  onSave,
-  parse,
+function CategoryPicker({
+  categories,
+  selected,
+  onSelect,
 }: {
-  txn: Txn;
-  onClose: () => void;
-  onSave: (patch: { amount: number; note: string }) => void;
-  parse: (t: string) => number | null;
+  categories: CategoryConfig[];
+  selected: string;
+  onSelect: (id: string) => void;
 }) {
-  const [amount, setAmount] = useState(String(txn.amount));
-  const [note, setNote] = useState(txn.note ?? '');
-  const parsed = parse(amount);
   return (
-    <Sheet visible onClose={onClose} title={`Edit ${txn.categoryName}`}>
-      <SectionLabel>Amount</SectionLabel>
-      <MoneyField value={amount} onChangeText={setAmount} autoFocus />
-      <SectionLabel>Note</SectionLabel>
-      <NoteField value={note} onChangeText={setNote} />
-      <View style={styles.formActions}>
-        <HardButton
-          label="Save"
-          disabled={parsed === null}
-          onPress={() => parsed !== null && onSave({ amount: parsed, note })}
-        />
-      </View>
-    </Sheet>
+    <View style={styles.pickerWrap}>
+      {categories.map((c) => (
+        <Pressable
+          key={c.id}
+          onPress={() => onSelect(c.id)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: c.id === selected }}
+          accessibilityLabel={`Category ${c.name}${c.id === selected ? ', selected' : ''}`}
+          style={[styles.pickerItem, c.id === selected && styles.pickerItemSelected]}
+        >
+          <CategoryChip colorKey={c.colorKey} />
+          <Text style={styles.pickerLabel}>{c.name}</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
-function AddExpenseForm({
+function EditSheet({
+  txn,
   categories,
   onClose,
   onSave,
-  parse,
 }: {
-  categories: { id: string; name: string; colorKey: ColorKey }[];
+  txn: TransactionRecord;
+  categories: CategoryConfig[];
   onClose: () => void;
-  onSave: (amount: number, categoryId: string, note?: string) => void;
-  parse: (t: string) => number | null;
+  onSave: (patch: { amount: Cents; categoryId: string; note: string }) => void;
 }) {
-  const [amount, setAmount] = useState('');
+  const [amountText, setAmountText] = useState(toDecimalString(txn.amount));
+  const [note, setNote] = useState(txn.note ?? '');
+  const [catId, setCatId] = useState(txn.categoryId);
+  const parsed = tryParseCents(amountText);
+  const isExpense = txn.kind === 'expense';
+  return (
+    <Sheet visible onClose={onClose} title="Edit transaction">
+      <SectionLabel>Amount</SectionLabel>
+      <MoneyField value={amountText} onChangeText={setAmountText} autoFocus />
+      {isExpense ? (
+        <>
+          <SectionLabel>Category</SectionLabel>
+          <CategoryPicker categories={categories} selected={catId} onSelect={setCatId} />
+        </>
+      ) : null}
+      <SectionLabel>Note</SectionLabel>
+      <TextInput
+        value={note}
+        onChangeText={setNote}
+        placeholder="Note (optional)"
+        placeholderTextColor={color.textMuted}
+        accessibilityLabel="Note"
+        style={styles.input}
+      />
+      <Row style={styles.formActions}>
+        <HardButton
+          label="Save"
+          disabled={parsed === null || parsed <= 0}
+          onPress={() => {
+            if (parsed !== null && parsed > 0) onSave({ amount: parsed, categoryId: catId, note });
+          }}
+          accessibilityLabel="Save changes"
+        />
+      </Row>
+    </Sheet>
+  );
+}
+
+function AddExpenseSheet({
+  categories,
+  onClose,
+  onSave,
+}: {
+  categories: CategoryConfig[];
+  onClose: () => void;
+  onSave: (amount: Cents, categoryId: string, note?: string) => void;
+}) {
+  const spendable = categories.filter((c) => c.envelope !== null || c.fixed);
+  const [amountText, setAmountText] = useState('');
   const [note, setNote] = useState('');
-  const [catId, setCatId] = useState(categories[0]?.id ?? '');
-  const parsed = parse(amount);
-  const valid = parsed !== null && catId !== '';
+  const [catId, setCatId] = useState(spendable[0]?.id ?? '');
+  const parsed = tryParseCents(amountText);
+  const valid = parsed !== null && parsed > 0 && catId !== '';
   return (
     <Sheet visible onClose={onClose} title="Add expense">
       <SectionLabel>Amount</SectionLabel>
-      <MoneyField value={amount} onChangeText={setAmount} autoFocus />
+      <MoneyField value={amountText} onChangeText={setAmountText} autoFocus />
       <SectionLabel>Category</SectionLabel>
-      <View style={styles.chipWrap}>
-        {categories.map((c) => (
-          <CategoryChip
-            key={c.id}
-            label={c.name}
-            colorKey={c.colorKey}
-            selected={c.id === catId}
-            onPress={() => setCatId(c.id)}
-            style={styles.chipItem}
-          />
-        ))}
-      </View>
+      <CategoryPicker categories={spendable} selected={catId} onSelect={setCatId} />
       <SectionLabel>Note</SectionLabel>
-      <NoteField value={note} onChangeText={setNote} />
-      <View style={styles.formActions}>
+      <TextInput
+        value={note}
+        onChangeText={setNote}
+        placeholder="Note (optional)"
+        placeholderTextColor={color.textMuted}
+        accessibilityLabel="Note"
+        style={styles.input}
+      />
+      <Row style={styles.formActions}>
         <HardButton
           label="Add expense"
           disabled={!valid}
-          onPress={() => valid && parsed !== null && onSave(parsed, catId, note || undefined)}
+          onPress={() => {
+            if (valid && parsed !== null) onSave(parsed, catId, note || undefined);
+          }}
+          accessibilityLabel="Save the new expense"
         />
-      </View>
+      </Row>
     </Sheet>
   );
 }
 
-function AddIncomeForm({
+function AddIncomeSheet({
+  sources,
   onClose,
   onSave,
-  parse,
 }: {
+  sources: IncomeSourceConfig[];
   onClose: () => void;
-  onSave: (amount: number, note: string | undefined, split: boolean) => void;
-  parse: (t: string) => number | null;
+  onSave: (sourceId: string, amount?: Cents) => void;
 }) {
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [split, setSplit] = useState(false);
-  const parsed = parse(amount);
+  const [sourceId, setSourceId] = useState(sources[0]?.id ?? '');
+  const source = sources.find((s) => s.id === sourceId);
+  const [amountText, setAmountText] = useState('');
+  const parsed = tryParseCents(amountText);
+  const override = amountText.trim() !== '';
+  const valid = sourceId !== '' && (!override || (parsed !== null && parsed > 0));
   return (
     <Sheet visible onClose={onClose} title="Add income">
-      <SectionLabel>Amount</SectionLabel>
-      <MoneyField value={amount} onChangeText={setAmount} autoFocus />
-      <SectionLabel>Note</SectionLabel>
-      <NoteField value={note} onChangeText={setNote} />
-      <View style={styles.splitToggleRow}>
-        <CategoryChip
-          label={split ? 'Split 70% PNC / 30% DCU' : 'Single account'}
-          colorKey="other"
-          selected={split}
-          onPress={() => setSplit((s) => !s)}
-        />
+      <SectionLabel>Source</SectionLabel>
+      <View style={styles.pickerWrap}>
+        {sources.map((s) => (
+          <Pressable
+            key={s.id}
+            onPress={() => setSourceId(s.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: s.id === sourceId }}
+            accessibilityLabel={`Income source ${s.name}, usually ${formatCents(s.amount)}${s.id === sourceId ? ', selected' : ''}`}
+            style={[styles.pickerItem, s.id === sourceId && styles.pickerItemSelected]}
+          >
+            <Text style={styles.pickerLabel}>{s.name}</Text>
+            <Text style={styles.pickerAmount}>{formatCents(s.amount)}</Text>
+          </Pressable>
+        ))}
       </View>
-      <View style={styles.formActions}>
+      <SectionLabel>Amount (leave blank for the usual)</SectionLabel>
+      <MoneyField
+        value={amountText}
+        onChangeText={setAmountText}
+        label={source ? `Amount, defaults to ${formatCents(source.amount)}` : 'Amount'}
+      />
+      <Row style={styles.formActions}>
         <HardButton
           label="Add income"
-          variant="primary"
-          disabled={parsed === null}
-          onPress={() => parsed !== null && onSave(parsed, note || undefined, split)}
+          disabled={!valid}
+          onPress={() => {
+            if (valid) onSave(sourceId, override && parsed !== null ? parsed : undefined);
+          }}
+          accessibilityLabel="Save the income"
         />
-      </View>
+      </Row>
     </Sheet>
   );
-}
-
-// --- helpers ---------------------------------------------------------------
-interface IncomeGroup {
-  key: string;
-  title: string;
-  total: number;
-  legs: Txn[];
-}
-function groupIncome(income: Txn[]): IncomeGroup[] {
-  const byParent = new Map<string, Txn[]>();
-  for (const t of income) {
-    const key = t.splitParentId ?? t.id;
-    const arr = byParent.get(key) ?? [];
-    arr.push(t);
-    byParent.set(key, arr);
-  }
-  return Array.from(byParent.entries()).map(([key, legs]) => ({
-    key,
-    title: legs[0].note ?? legs[0].categoryName,
-    total: legs.reduce((s, t) => s + t.amount, 0),
-    legs,
-  }));
-}
-function accountName(id: string): string {
-  if (id === 'acct_pnc') return 'PNC Spending';
-  if (id === 'acct_dcu') return 'DCU Savings';
-  return 'Account';
 }
 
 const styles = StyleSheet.create({
@@ -367,106 +461,97 @@ const styles = StyleSheet.create({
   },
   kpi: {
     flex: 1,
+    borderTopWidth: pixel.hairlineWidth * 2,
+    borderTopColor: color.border,
+    paddingTop: space.sm,
   },
   kpiLabel: {
-    color: colors.text.secondary,
-    fontFamily: type.family.mono,
-    fontSize: type.size.micro,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
+    textTransform: typo.sectionLabel.textTransform,
     marginBottom: space.xs,
   },
-  empty: {
-    color: colors.text.muted,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
-    marginBottom: space.sm,
-  },
-  incomeBox: {
-    marginBottom: space.sm,
-  },
-  incomeHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  incomeTitle: {
-    color: colors.text.primary,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
-    fontWeight: type.weight.medium,
-  },
-  splitRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: space.sm,
-    paddingTop: space.sm,
-    borderTopWidth: metrics.hairline,
-    borderTopColor: colors.border.hairline,
-  },
-  splitLabel: {
-    color: colors.text.secondary,
-    fontFamily: type.family.text,
-    fontSize: type.size.caption,
-  },
   txnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  swatch: {
-    width: 14,
-    height: 14,
-    borderRadius: metrics.radius,
-    marginRight: space.md,
+    justifyContent: 'space-between',
   },
   txnMeta: {
     flex: 1,
+    marginLeft: space.sm,
   },
-  txnCat: {
-    color: colors.text.primary,
-    fontFamily: type.family.text,
-    fontSize: type.size.body,
-    fontWeight: type.weight.medium,
+  txnTitle: {
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
   },
   txnNote: {
-    color: colors.text.secondary,
-    fontFamily: type.family.text,
-    fontSize: type.size.caption,
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
     marginTop: 2,
   },
-  fixedTag: {
-    color: colors.status.overflow,
-    fontFamily: type.family.mono,
-    fontSize: type.size.micro,
-    letterSpacing: 1,
-    marginTop: 2,
+  splitBlock: {
+    marginTop: space.xs,
+    marginLeft: space.md,
+    borderLeftWidth: pixel.hairlineWidth,
+    borderLeftColor: color.hairline,
+    paddingLeft: space.sm,
+  },
+  splitRow: {
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  splitLabel: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+  },
+  addRow: {
+    marginTop: space.md,
   },
   input: {
-    backgroundColor: colors.bg.sunken,
-    borderWidth: metrics.hairline,
-    borderColor: colors.border.strong,
-    borderRadius: metrics.radius,
-    color: colors.text.primary,
-    fontFamily: type.family.mono,
-    fontSize: type.size.label,
+    backgroundColor: color.surfaceDeep,
+    borderWidth: pixel.hairlineWidth,
+    borderColor: color.border,
+    color: color.text,
+    fontSize: typo.body.fontSize + 4,
+    fontVariant: [...typo.tabularNums.fontVariant],
     paddingHorizontal: space.md,
-    paddingVertical: space.md,
+    paddingVertical: space.sm + space.xs,
   },
-  chipWrap: {
+  pickerWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: space.sm,
   },
-  chipItem: {
-    marginBottom: space.xs,
-  },
-  splitToggleRow: {
-    marginTop: space.lg,
+  pickerItem: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    paddingVertical: space.xs,
+    paddingHorizontal: space.sm,
+    borderWidth: pixel.hairlineWidth,
+    borderColor: color.hairline,
+    backgroundColor: color.surfaceDeep,
+  },
+  pickerItemSelected: {
+    borderColor: color.accent,
+    backgroundColor: color.surface,
+  },
+  pickerLabel: {
+    color: color.text,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.body.fontWeight,
+  },
+  pickerAmount: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    fontVariant: [...typo.tabularNums.fontVariant],
   },
   formActions: {
-    marginTop: space.xl,
-    flexDirection: 'row',
+    marginTop: space.lg,
   },
 });
 
