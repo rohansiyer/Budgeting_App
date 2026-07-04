@@ -97,6 +97,7 @@ export function HomeScreen() {
                   label="To savings"
                   variant="ghost"
                   onPress={() => {
+                    if (!savingsAccount) return; // no savings account configured
                     void store.sweepToSavings(cat.id, prevWeek, savingsAccount.id);
                     showUndo(`${cat.name} leftover swept to ${savingsAccount.name}`);
                   }}

@@ -41,5 +41,13 @@ export function createStoreSetupWriter(): SetupWriter {
       return store().listCategories();
     },
     createCategory: (input) => store().createCategory(input),
+
+    updateAccount: (accountId, patch) => store().updateAccount(accountId, patch),
+    updateIncomeSource: (sourceId, patch) => store().updateIncomeSource(sourceId, patch),
+    updateCategory: async (categoryId, patch) => {
+      const { envelope, ...rest } = patch;
+      if (Object.keys(rest).length > 0) await store().updateCategory(categoryId, rest);
+      if (envelope !== undefined) await store().updateEnvelope(categoryId, envelope);
+    },
   };
 }

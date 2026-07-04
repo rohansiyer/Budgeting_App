@@ -300,6 +300,16 @@ export interface StoreContract {
   updateEnvelope(categoryId: string, envelope: EnvelopeConfig | null): Promise<void>;
   createChapter(input: { name: string; startedAt: ISODate }): Promise<Chapter>;
   archiveChapter(chapterId: string, archivedAt: ISODate): Promise<void>;
+  /** v0.2 edit-setup flow: update in place, never insert (prevents duplicate configs). */
+  updateAccount(
+    accountId: string,
+    patch: Partial<Pick<AccountConfig, 'name' | 'institution' | 'kind' | 'startingBalance'>>,
+  ): Promise<void>;
+  updateCategory(
+    categoryId: string,
+    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed'>>,
+  ): Promise<void>;
+  updateIncomeSource(sourceId: string, patch: Partial<Omit<IncomeSourceConfig, 'id'>>): Promise<void>;
 
   // --- carryover -----------------------------------------------------------
   rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;

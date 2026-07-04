@@ -106,6 +106,8 @@ describe('conservation law', () => {
   it('sweep: leftover leaves envelope system and counts toward savings', async () => {
     await freshChapter();
     const cat = await makeWeeklyEnvelope('Fun', 10000);
+    // Sweeps move real cash (v0.2): a spending source funds the transfer.
+    const checking = await makeAccount('Checking', 100000, 'spending');
     const savings = await makeAccount('Savings', 0, 'savings');
 
     await store().sweepToSavings(cat, WEEK, savings);
@@ -113,6 +115,9 @@ describe('conservation law', () => {
     expect(store().getEnvelopeWeekState(cat, WEEK).remaining).toBe(0);
     const savingsTotal = await store().evaluation.getMonthSavingsTotal('2026-01');
     expect(savingsTotal).toBe(10000);
+    // The cash actually moved (verifier finding #2 fixed):
+    expect(store().getAccountBalance(savings, '2026-01-31')).toBe(10000);
+    expect(store().getAccountBalance(checking, '2026-01-31')).toBe(90000);
   });
 });
 

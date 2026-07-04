@@ -124,5 +124,30 @@ export function createInMemorySetupWriter(): SetupWriter {
       categories.push(category);
       return category;
     },
+
+    async updateAccount(accountId, patch) {
+      const account = accounts.find((a) => a.id === accountId);
+      if (!account) throw new Error(`updateAccount: unknown account "${accountId}"`);
+      if (patch.name !== undefined) account.name = patch.name;
+      if (patch.institution !== undefined) account.institution = patch.institution;
+      if (patch.kind !== undefined) account.kind = patch.kind;
+      if (patch.startingBalance !== undefined) account.startingBalance = patch.startingBalance;
+    },
+    async updateIncomeSource(sourceId, patch) {
+      const source = incomeSources.find((i) => i.id === sourceId);
+      if (!source) throw new Error(`updateIncomeSource: unknown income source "${sourceId}"`);
+      if (patch.name !== undefined) source.name = patch.name;
+      if (patch.amount !== undefined) source.amount = patch.amount;
+      if (patch.schedule !== undefined) source.schedule = patch.schedule;
+      if (patch.splits !== undefined) source.splits = patch.splits;
+    },
+    async updateCategory(categoryId, patch) {
+      const category = categories.find((c) => c.id === categoryId);
+      if (!category) throw new Error(`updateCategory: unknown category "${categoryId}"`);
+      if (patch.name !== undefined) category.name = patch.name;
+      if (patch.colorKey !== undefined) category.colorKey = patch.colorKey;
+      if (patch.fixed !== undefined) category.fixed = patch.fixed;
+      if (patch.envelope !== undefined) category.envelope = patch.envelope;
+    },
   };
 }

@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { color, space, type as typo } from '../theme/tokens';
 import { HardButton } from '../components/kit';
 import { SetupWizard } from '../setup/SetupWizard';
+import { prefilledWizardState, type WizardState } from '../setup/wizardState';
 import { createStoreSetupWriter } from '../setup/storeSetupWriter';
 import { ensureDefaultChapter, startNewChapter } from '../setup/chapterFlow';
 import type { SaveResult } from '../setup/save';
@@ -28,7 +29,7 @@ import { goToTabs } from './navigationRef';
 
 type Phase =
   | { kind: 'preparing' }
-  | { kind: 'ready'; chapter: Chapter }
+  | { kind: 'ready'; chapter: Chapter; initialState?: WizardState }
   | { kind: 'error'; message: string };
 
 export function SetupRoute({ mode }: { mode: SetupMode }) {
@@ -52,7 +53,20 @@ export function SetupRoute({ mode }: { mode: SetupMode }) {
         // Reflect any chapter mutation in the reactive store before the wizard
         // (and the screens behind it) read.
         await useBudgetStore.getState().loadData();
-        if (alive) setPhase({ kind: 'ready', chapter });
+        // Edit mode: seed the wizard with existing config so Save updates in
+        // place instead of duplicating (v0.2 verifier finding #1).
+        let initialState: WizardState | undefined;
+        if (mode === 'edit') {
+          const [accounts, incomeSources, categories] = await Promise.all([
+            writer.listAccounts(),
+            writer.listIncomeSources(),
+            writer.listCategories(),
+          ]);
+          if (accounts.length + incomeSources.length + categories.length > 0) {
+            initialState = prefilledWizardState(chapter.name, { accounts, incomeSources, categories });
+          }
+        }
+        if (alive) setPhase({ kind: 'ready', chapter, initialState });
       } catch (e) {
         if (alive) {
           setPhase({ kind: 'error', message: e instanceof Error ? e.message : 'Could not start setup.' });
@@ -93,7 +107,12 @@ export function SetupRoute({ mode }: { mode: SetupMode }) {
       </View>
 
       {phase.kind === 'ready' ? (
-        <SetupWizard writer={writer} chapter={phase.chapter} onComplete={handleComplete} />
+        <SetupWizard
+          writer={writer}
+          chapter={phase.chapter}
+          initialState={phase.initialState}
+          onComplete={handleComplete}
+        />
       ) : phase.kind === 'error' ? (
         <View style={styles.center}>
           <Text style={styles.errorTitle}>Couldn't start setup</Text>

@@ -257,8 +257,18 @@ interface StoreState extends StoreContract {
   // asOf optional here (legacy callers pass one arg); still assignable to the
   // StoreContract's required-arg signature.
   getAccountBalance: (accountId: string, asOf?: ISODate) => Cents;
-  updateAccount: (id: string, updates: Partial<Account>) => Promise<void>;
-  updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
+  updateAccount: (
+    id: string,
+    patch: Partial<Pick<AccountConfig, 'name' | 'institution' | 'kind' | 'startingBalance'>>,
+  ) => Promise<void>;
+  updateCategory: (
+    id: string,
+    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed'>>,
+  ) => Promise<void>;
+  updateIncomeSource: (
+    id: string,
+    patch: Partial<Omit<IncomeSourceConfig, 'id'>>,
+  ) => Promise<void>;
   updateSettings: (updates: Partial<Settings>) => Promise<void>;
   addTransaction: (input: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
 }
@@ -583,14 +593,11 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           )
           .map((t) => C(t.amount)),
       );
-      const sweeps = sumCents(
-        get()
-          ._carryover.filter(
-            (e) => e.kind === 'sweep_to_savings' && e.attributionMonth === month,
-          )
-          .map((e) => C(e.amount)),
-      );
-      return C(transfersIn + sweeps);
+      // Sweeps create real transfer_in rows (see sweepToSavings), so the
+      // transfersIn term already includes them — no separate sweep term,
+      // which would double-count (Goal 3 basis: calendar-month transfers
+      // into savings-kind accounts).
+      return C(transfersIn);
     },
     async getMonthFixedBillStatus(month) {
       const fixedCats = get()._categoryRows.filter((c) => c.fixed);
@@ -1108,13 +1115,22 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       await refresh();
     },
 
-    sweepToSavings: async (categoryId, fromWeek, _savingsAccountId) => {
+    sweepToSavings: async (categoryId, fromWeek, savingsAccountId) => {
       const leftover = envelopeWeekState(categoryId, fromWeek).remaining;
       if (leftover <= 0) return;
+      assertAccountExists(savingsAccountId, 'sweepToSavings');
       const chapterId = activeChapterId();
       const now = new Date().toISOString();
+      // §5.2: a sweep RECORDS A TRANSFER toward the savings account, not just
+      // a budget-ledger entry (verifier finding #2). Source = first account
+      // that isn't the sweep target (spending preferred); single-account
+      // setups keep the budget entry only, since there's no cash to move.
+      const source =
+        get()._accountRows.find((a) => a.kind === 'spending' && a.id !== savingsAccountId) ??
+        get()._accountRows.find((a) => a.id !== savingsAccountId);
       await withTransaction(async () => {
-        getDb().insert(schema.carryoverEntries).values({
+        const db = getDb();
+        db.insert(schema.carryoverEntries).values({
           id: generateId(),
           chapterId,
           categoryId,
@@ -1126,6 +1142,29 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           attributionMonth: monthOfWeek(fromWeek),
           createdAt: now,
         }).run();
+        if (source) {
+          const groupId = generateId();
+          const legs = [
+            { accountId: source.id, kind: 'transfer_out' as const },
+            { accountId: savingsAccountId, kind: 'transfer_in' as const },
+          ];
+          for (const leg of legs) {
+            db.insert(schema.transactions).values({
+              id: generateId(),
+              chapterId,
+              accountId: leg.accountId,
+              categoryId: null,
+              amount: leftover,
+              kind: leg.kind,
+              date: fromWeek,
+              note: 'Envelope sweep',
+              groupId,
+              incomeSourceId: null,
+              createdAt: now,
+              deletedAt: null,
+            }).run();
+          }
+        }
       });
       await refresh();
     },
@@ -1237,22 +1276,71 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const at = asOf ?? fmt(new Date());
       return sumCents(get()._accountRows.map((a) => accountBalance(a.id, at)));
     },
-    updateAccount: async (id, updates) => {
+    // Config edits (v0.2 edit-setup flow). Update in place — never insert.
+    updateAccount: async (id, patch) => {
+      if (!get()._accountRows.some((a) => a.id === id)) {
+        throw new Error(`updateAccount: unknown account "${id}"`);
+      }
       await withTransaction(async () => {
         const set_: Record<string, unknown> = {};
-        if (updates.name !== undefined) set_.name = updates.name;
-        if (updates.type !== undefined) set_.kind = updates.type === 'savings' ? 'savings' : 'spending';
+        if (patch.name !== undefined) set_.name = patch.name;
+        if (patch.institution !== undefined) set_.institution = patch.institution;
+        if (patch.kind !== undefined) set_.kind = patch.kind;
+        if (patch.startingBalance !== undefined) set_.startingBalance = patch.startingBalance;
         if (Object.keys(set_).length === 0) return;
         getDb().update(schema.accounts).set(set_).where(eq(schema.accounts.id, id)).run();
       });
       await refresh();
     },
-    updateCategory: async (id, updates) => {
+    updateCategory: async (id, patch) => {
+      if (!get()._categoryRows.some((c) => c.id === id)) {
+        throw new Error(`updateCategory: unknown category "${id}"`);
+      }
       await withTransaction(async () => {
         const set_: Record<string, unknown> = {};
-        if (updates.name !== undefined) set_.name = updates.name;
+        if (patch.name !== undefined) set_.name = patch.name;
+        if (patch.colorKey !== undefined) set_.colorKey = patch.colorKey;
+        if (patch.fixed !== undefined) set_.fixed = patch.fixed ? 1 : 0;
         if (Object.keys(set_).length === 0) return;
         getDb().update(schema.categories).set(set_).where(eq(schema.categories.id, id)).run();
+      });
+      await refresh();
+    },
+    updateIncomeSource: async (id, patch) => {
+      const existing = get()._incomeSources.find((s) => s.id === id);
+      if (!existing) throw new Error(`updateIncomeSource: unknown income source "${id}"`);
+      if (patch.splits) {
+        patch.splits.forEach((sp) => assertAccountExists(sp.accountId, 'updateIncomeSource split'));
+      }
+      await withTransaction(async () => {
+        const db = getDb();
+        const set_: Record<string, unknown> = {};
+        if (patch.name !== undefined) set_.name = patch.name;
+        if (patch.amount !== undefined) set_.amount = patch.amount;
+        if (patch.schedule !== undefined) {
+          set_.scheduleKind = patch.schedule.kind;
+          set_.scheduleAnchorDate = patch.schedule.anchorDate;
+          set_.scheduleSemimonthlyDay1 = patch.schedule.semimonthlyDays?.[0] ?? null;
+          set_.scheduleSemimonthlyDay2 = patch.schedule.semimonthlyDays?.[1] ?? null;
+        }
+        if (Object.keys(set_).length > 0) {
+          db.update(schema.incomeSources).set(set_).where(eq(schema.incomeSources.id, id)).run();
+        }
+        if (patch.splits) {
+          db.delete(schema.incomeSplits).where(eq(schema.incomeSplits.sourceId, id)).run();
+          const now = new Date().toISOString();
+          patch.splits.forEach((sp) => {
+            db.insert(schema.incomeSplits)
+              .values({
+                id: generateId(),
+                sourceId: id,
+                accountId: sp.accountId,
+                ratio: sp.ratio,
+                createdAt: now,
+              })
+              .run();
+          });
+        }
       });
       await refresh();
     },

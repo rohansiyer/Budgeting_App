@@ -72,4 +72,9 @@ export interface SetupWriter {
   // --- categories / envelopes ----------------------------------------------
   listCategories(): Promise<CategoryConfig[]>;
   createCategory(input: CategoryDraftInput): Promise<CategoryConfig>;
+
+  // --- edits (v0.2): update in place, never insert --------------------------
+  updateAccount(accountId: string, patch: Partial<AccountDraftInput>): Promise<void>;
+  updateIncomeSource(sourceId: string, patch: Partial<IncomeSourceDraftInput>): Promise<void>;
+  updateCategory(categoryId: string, patch: Partial<CategoryDraftInput & { envelope: EnvelopeConfig | null }>): Promise<void>;
 }

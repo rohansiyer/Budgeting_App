@@ -16,6 +16,8 @@ export const WIZARD_STEPS: readonly WizardStep[] = ['accounts', 'income', 'envel
 export interface AccountDraft {
   /** Wizard-local key for list rendering/editing; not a store id. */
   key: string;
+  /** Set when editing an existing account — save updates instead of inserting. */
+  existingId?: string;
   name: string;
   institution: string | null;
   kind: AccountConfig['kind'];
@@ -24,6 +26,7 @@ export interface AccountDraft {
 
 export interface IncomeSourceDraft {
   key: string;
+  existingId?: string;
   name: string;
   amount: Cents;
   schedule: IncomeSchedule;
@@ -32,6 +35,7 @@ export interface IncomeSourceDraft {
 
 export interface CategoryDraft {
   key: string;
+  existingId?: string;
   name: string;
   colorKey: CategoryColorKey;
   fixed: boolean;
@@ -292,4 +296,53 @@ export function validateStep(state: WizardState, step: WizardStep): StepValidati
 
 export function canGoNext(state: WizardState): boolean {
   return validateStep(state, state.step).valid;
+}
+
+/**
+ * v0.2 edit mode: seed the wizard from existing config so "Edit setup"
+ * edits in place instead of blank-slate re-entry (which duplicated
+ * configs — verifier finding #1). Income splits are stored against real
+ * account ids; drafts reference wizard-local keys, so map them through.
+ */
+export function prefilledWizardState(
+  chapterName: string,
+  config: {
+    accounts: import('../types/contracts').AccountConfig[];
+    incomeSources: import('../types/contracts').IncomeSourceConfig[];
+    categories: import('../types/contracts').CategoryConfig[];
+  },
+): WizardState {
+  const accountIdToKey = new Map<string, string>();
+  const accounts: AccountDraft[] = config.accounts.map((a) => {
+    const key = nextDraftKey('acct');
+    accountIdToKey.set(a.id, key);
+    return {
+      key,
+      existingId: a.id,
+      name: a.name,
+      institution: a.institution,
+      kind: a.kind,
+      startingBalance: a.startingBalance,
+    };
+  });
+  const incomeSources: IncomeSourceDraft[] = config.incomeSources.map((src) => ({
+    key: nextDraftKey('inc'),
+    existingId: src.id,
+    name: src.name,
+    amount: src.amount,
+    schedule: src.schedule,
+    splits: src.splits.map((sp) => ({
+      accountId: accountIdToKey.get(sp.accountId) ?? sp.accountId,
+      ratio: sp.ratio,
+    })),
+  }));
+  const categories: CategoryDraft[] = config.categories.map((c) => ({
+    key: nextDraftKey('cat'),
+    existingId: c.id,
+    name: c.name,
+    colorKey: c.colorKey,
+    fixed: c.fixed,
+    envelope: c.envelope,
+  }));
+  return { step: 'accounts', chapterName, accounts, incomeSources, categories };
 }

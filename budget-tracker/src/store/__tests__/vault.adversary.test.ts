@@ -102,6 +102,8 @@ describe('conservation across long chains', () => {
   it('sweep a week that was rolled into: total = configured×weeks − sweeps', async () => {
     await freshChapter();
     const cat = await weeklyEnv('Fun', 10000);
+    // Sweeps move real cash (v0.2): a spending source funds the transfer.
+    await makeAccount('Chk', 100000, 'spending');
     const savings = await makeAccount('Sav', 0, 'savings');
     const weeks = [W(0), W(1), W(2)];
     await store().rollForward(cat, W(0));             // W0 10000 -> W1 (W1 now 20000)

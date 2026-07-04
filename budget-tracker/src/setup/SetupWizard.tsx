@@ -22,6 +22,7 @@ import {
   wizardReducer,
   WIZARD_STEPS,
   type WizardStep,
+  type WizardState,
 } from './wizardState';
 import type { Chapter } from '../types/contracts';
 import { AccountsStep } from './screens/AccountsStep';
@@ -41,12 +42,14 @@ export interface SetupWizardProps {
   chapter: Chapter;
   onComplete: (result: SaveResult) => void;
   initialChapterName?: string;
+  /** Prefilled state for edit mode — drafts carry existingId so Save updates in place. */
+  initialState?: WizardState;
 }
 
-export function SetupWizard({ writer, chapter, onComplete, initialChapterName }: SetupWizardProps) {
+export function SetupWizard({ writer, chapter, onComplete, initialChapterName, initialState }: SetupWizardProps) {
   const [state, dispatch] = useReducer(
     wizardReducer,
-    initialWizardState(initialChapterName ?? chapter.name),
+    initialState ?? initialWizardState(initialChapterName ?? chapter.name),
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

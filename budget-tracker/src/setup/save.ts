@@ -44,17 +44,28 @@ export async function saveSetup(
     throw new SetupValidationError(validation.errors);
   }
 
+  // v0.2 reconcile semantics: drafts carrying existingId are UPDATED in
+  // place; drafts without one are created. Removing a prefilled row from
+  // the wizard does NOT delete the stored entity (no destructive edits
+  // from the wizard in v0.2).
   const accounts: AccountConfig[] = [];
   const draftKeyToRealId = new Map<string, string>();
   for (const draft of state.accounts) {
-    const account = await writer.createAccount({
+    const input = {
       name: draft.name.trim(),
       institution: draft.institution,
       kind: draft.kind,
       startingBalance: draft.startingBalance,
-    });
-    accounts.push(account);
-    draftKeyToRealId.set(draft.key, account.id);
+    };
+    if (draft.existingId) {
+      await writer.updateAccount(draft.existingId, input);
+      accounts.push({ id: draft.existingId, openedOn: '', ...input });
+      draftKeyToRealId.set(draft.key, draft.existingId);
+    } else {
+      const account = await writer.createAccount(input);
+      accounts.push(account);
+      draftKeyToRealId.set(draft.key, account.id);
+    }
   }
 
   const incomeSources: IncomeSourceConfig[] = [];
@@ -68,24 +79,36 @@ export async function saveSetup(
       }
       return { accountId: realAccountId, ratio: split.ratio };
     });
-    const source = await writer.createIncomeSource({
+    const input = {
       name: draft.name.trim(),
       amount: draft.amount,
       schedule: draft.schedule,
       splits,
-    });
-    incomeSources.push(source);
+    };
+    if (draft.existingId) {
+      await writer.updateIncomeSource(draft.existingId, input);
+      incomeSources.push({ id: draft.existingId, ...input });
+    } else {
+      const source = await writer.createIncomeSource(input);
+      incomeSources.push(source);
+    }
   }
 
   const categories: CategoryConfig[] = [];
   for (const draft of state.categories) {
-    const category = await writer.createCategory({
+    const input = {
       name: draft.name.trim(),
       colorKey: draft.colorKey,
       fixed: draft.fixed,
       envelope: draft.envelope,
-    });
-    categories.push(category);
+    };
+    if (draft.existingId) {
+      await writer.updateCategory(draft.existingId, input);
+      categories.push({ id: draft.existingId, ...input });
+    } else {
+      const category = await writer.createCategory(input);
+      categories.push(category);
+    }
   }
 
   return { chapter, accounts, incomeSources, categories };

@@ -150,6 +150,7 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
           categories={categories}
           onClose={() => setAddKind(null)}
           onSave={async (amount, categoryId, note) => {
+            if (!spendingAccount) return; // no accounts configured yet
             await store.addExpense({
               accountId: spendingAccount.id,
               categoryId,
