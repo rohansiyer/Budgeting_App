@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "budget-tracker",
-    "slug": "budget-tracker",
+    "name": "Ducks in a Row",
+    "slug": "ducks-in-a-row",
     "owner": "asbestostiling",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#060707"
     },
     "ios": {
       "supportsTablet": true
@@ -18,14 +18,30 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#060707"
       },
-      "package": "com.anonymous.budgettracker"
+      "package": "com.anonymous.budgettracker",
+      "permissions": ["POST_NOTIFICATIONS", "USE_BIOMETRIC", "USE_FINGERPRINT"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [],
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#46E0B4"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Ducks in a Row to use Face ID to unlock the app."
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "b129ec37-4b42-44cc-a728-ad52abf096e6"
