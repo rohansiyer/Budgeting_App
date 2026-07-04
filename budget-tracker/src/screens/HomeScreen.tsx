@@ -3,6 +3,8 @@ import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { Cents, cents, formatCents, minCents, ZERO } from '../lib/money';
 import { PixelBox, BlockMeter, HardButton, CategoryChip, DuckChipSlot } from '../components/kit';
+import { DuckSprite } from '../ducks/DuckSprite';
+import { useFlock } from '../ducks/appEngine';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { Sheet } from '../components/Sheet';
 import { useStore } from '../providers/StoreProvider';
@@ -23,6 +25,7 @@ const typo = tokens.type;
 
 export function HomeScreen() {
   const store = useStore();
+  const flock = useFlock();
   const { openDay, showUndo } = useAppShell();
 
   const today = todayISO();
@@ -65,7 +68,11 @@ export function HomeScreen() {
   const [borrowFor, setBorrowFor] = useState<CategoryConfig | null>(null);
 
   return (
-    <Screen title={greeting()} right={<DuckChipSlot duckCount={1} />}>
+    <Screen title={greeting()} right={<DuckChipSlot
+          duckCount={flock?.ducks.length ?? 0}
+          duckProps={{ accessoryTier: flock?.accessoryTier ?? 0 }}
+          renderDuck={(p) => <DuckSprite {...p} />}
+        />}>
       {/* Monday reset prompt (PixelBox — it's a prompt, a game object). */}
       {leftovers.length > 0 ? (
         <PixelBox style={styles.promptBox}>

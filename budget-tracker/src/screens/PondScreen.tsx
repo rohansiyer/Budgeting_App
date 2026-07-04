@@ -3,7 +3,9 @@ import { View, Text, StyleSheet } from 'react-native';
 import Svg, { G, Circle } from 'react-native-svg';
 import * as tokens from '../theme/tokens';
 import { Cents, formatCents, sumCents, ZERO } from '../lib/money';
-import { PixelBox, RuledList, CategoryChip, PondCenterSlot } from '../components/kit';
+import { PixelBox, RuledList, CategoryChip } from '../components/kit';
+import PondView from '../ducks/PondView';
+import { useFlock } from '../ducks/appEngine';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { useStore } from '../providers/StoreProvider';
 import { todayISO, monthKeyOf, monthTitle } from '../format/dates';
@@ -27,6 +29,7 @@ interface Slice {
 
 export function PondScreen() {
   const store = useStore();
+  const flock = useFlock();
   const today = todayISO();
   const month = monthKeyOf(today);
 
@@ -56,9 +59,10 @@ export function PondScreen() {
               {renderRing(slices, totalPlanned, OUTER_R, OUTER_C, 'actual', 1)}
             </G>
           </Svg>
-          {/* TEAM 4 SEAM: the duck pond in the donut hole. */}
           <View style={styles.center} pointerEvents="box-none">
-            <PondCenterSlot size={INNER_R * 1.25} />
+            {flock ? (
+              <PondView ducks={flock.ducks} accessoryTier={flock.accessoryTier} size={INNER_R * 1.7} />
+            ) : null}
           </View>
         </View>
         <View

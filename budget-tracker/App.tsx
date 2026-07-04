@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,7 +12,10 @@ import { useBudgetStore } from './src/store';
 import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
 import { createStoreSetupWriter } from './src/setup/storeSetupWriter';
+import { DuckResultsGate } from './src/ducks/DuckResultsGate';
 import { color, space } from './src/theme/tokens';
+
+const navigationRef = createNavigationContainerRef<Record<string, undefined>>();
 
 // Midnight-themed navigation container (tokens only).
 const navTheme = {
@@ -87,10 +90,15 @@ export default function App() {
     <AppErrorBoundary>
       <SafeAreaProvider>
         <StoreProvider store={realStore}>
-          <NavigationContainer theme={navTheme}>
+          <NavigationContainer ref={navigationRef} theme={navTheme}>
             <StatusBar style="light" />
             <AppShellProvider>
               <RootNavigator />
+              <DuckResultsGate
+                onGoToPond={() => {
+                  if (navigationRef.isReady()) navigationRef.navigate('Pond');
+                }}
+              />
             </AppShellProvider>
           </NavigationContainer>
         </StoreProvider>
