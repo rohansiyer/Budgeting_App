@@ -168,9 +168,8 @@ describe('v0.2 end-to-end: a full chapter life, ducks, and backup/restore', () =
     expect(store().getAccountBalance(savings, '2026-01-19')).toBe(50000 + 70000 + 70000 + 7000);
 
     // ---------------------------------------------------------------------
-    // 9. An explicit account-to-account transfer toward savings (this DOES
-    //    move real cash, unlike the sweep above), to give the savings-rate
-    //    goal enough real transferred-in money to be met.
+    // 9. An explicit account-to-account transfer toward savings, adding to
+    //    the swept cash so the savings-rate goal is comfortably met.
     // ---------------------------------------------------------------------
     await store().transfer({ fromAccountId: checking, toAccountId: savings, amount: cents(130000), date: '2026-01-20' });
 
@@ -187,7 +186,7 @@ describe('v0.2 end-to-end: a full chapter life, ducks, and backup/restore', () =
     const income = await store().evaluation.getMonthIncomeTotal('2026-01');
     expect(income).toBe(400000);
     const savingsTotal = await store().evaluation.getMonthSavingsTotal('2026-01');
-    expect(savingsTotal).toBe(130000 + 7000); // real transfer + swept ledger entry (contract's definition)
+    expect(savingsTotal).toBe(130000 + 7000); // real transfer + sweep transfer (contract's definition)
     const bills = await store().evaluation.getMonthFixedBillStatus('2026-01');
     expect(bills).toEqual({ expected: 1, paid: 1 });
     const catTotals = await store().evaluation.getMonthCategoryTotals('2026-01');
