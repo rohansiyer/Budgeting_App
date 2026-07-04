@@ -15,6 +15,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "6.5.20",
     "@react-navigation/native": "6.1.17",
+    "@react-navigation/native-stack": "^6.11.0",
     "date-fns": "^3.6.0",
     "drizzle-orm": "^0.30.10",
     "expo": "^54.0.35",
