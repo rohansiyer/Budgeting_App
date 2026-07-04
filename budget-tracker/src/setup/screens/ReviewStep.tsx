@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { Text, View } from 'react-native';
-import { CategoryChip, HardButton, PixelBox, RuledList } from '../kit-stubs';
+import { CategoryChip, HardButton, PixelBox, RuledList } from '../../components/kit';
 import { formatCents } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import type { WizardState } from '../wizardState';

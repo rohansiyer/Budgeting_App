@@ -8,7 +8,7 @@
 import React, { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import type { Dispatch } from 'react';
-import { HardButton, PixelBox, RuledList } from '../kit-stubs';
+import { HardButton, PixelBox, RuledList } from '../../components/kit';
 import { allocate, formatCents, MoneyError, parseDecimal } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import { paydaysBetween } from '../../lib/schedule';

@@ -15,9 +15,14 @@ import { color } from '../theme/tokens';
 interface Props {
   /** Called when the user chooses "Visit the pond". */
   onGoToPond: () => void;
+  /**
+   * Called when the user chooses "Review recurring bills". Wired to a real
+   * destination (the Calendar) by App.tsx so the CTA is never a dead end.
+   */
+  onReviewBills?: () => void;
 }
 
-export function DuckResultsGate({ onGoToPond }: Props) {
+export function DuckResultsGate({ onGoToPond, onReviewBills }: Props) {
   const [results, setResults] = useState<
     ReadonlyArray<{ evaluation: DuckEvaluation; bigWin: boolean }>
   >([]);
@@ -58,7 +63,10 @@ export function DuckResultsGate({ onGoToPond }: Props) {
           setDismissed(true);
           onGoToPond();
         }}
-        onReviewBills={() => setDismissed(true)}
+        onReviewBills={() => {
+          setDismissed(true);
+          onReviewBills?.();
+        }}
       />
     </View>
   );

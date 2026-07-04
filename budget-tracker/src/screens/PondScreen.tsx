@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, Modal, TextInput, Pressable, StyleSheet } from 'react-native';
 import Svg, { G, Circle } from 'react-native-svg';
 import * as tokens from '../theme/tokens';
 import { Cents, formatCents, sumCents, ZERO } from '../lib/money';
-import { PixelBox, RuledList, CategoryChip } from '../components/kit';
+import { PixelBox, RuledList, CategoryChip, HardButton } from '../components/kit';
 import PondView from '../ducks/PondView';
 import { useFlock } from '../ducks/appEngine';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { useStore } from '../providers/StoreProvider';
+import { useBudgetStore } from '../store';
 import { todayISO, monthKeyOf, monthTitle } from '../format/dates';
-import type { CategoryConfig } from '../types/contracts';
+import type { CategoryConfig, Duck } from '../types/contracts';
 
 const { color, space, pixel } = tokens;
 const typo = tokens.type;
@@ -29,9 +30,27 @@ interface Slice {
 
 export function PondScreen() {
   const store = useStore();
-  const flock = useFlock();
+  const [flockKey, setFlockKey] = useState(0);
+  const flock = useFlock(flockKey);
+  const [naming, setNaming] = useState<Duck | null>(null);
+  const [draft, setDraft] = useState('');
   const today = todayISO();
   const month = monthKeyOf(today);
+
+  // Duck naming: tap a duck in the pond to (re)name it (§6 "name on tap").
+  const openName = (duck: Duck) => {
+    setDraft(duck.name ?? '');
+    setNaming(duck);
+  };
+  const commitName = async () => {
+    const target = naming;
+    setNaming(null);
+    if (!target) return;
+    const trimmed = draft.trim();
+    if (trimmed.length === 0) return;
+    await useBudgetStore.getState().duckPersistence.renameDuck(target.id, trimmed);
+    setFlockKey((k) => k + 1);
+  };
 
   const categories = store.listCategories();
   const slices: Slice[] = store
@@ -61,10 +80,18 @@ export function PondScreen() {
           </Svg>
           <View style={styles.center} pointerEvents="box-none">
             {flock ? (
-              <PondView ducks={flock.ducks} accessoryTier={flock.accessoryTier} size={INNER_R * 1.7} />
+              <PondView
+                ducks={flock.ducks}
+                accessoryTier={flock.accessoryTier}
+                size={INNER_R * 1.7}
+                onDuckPress={openName}
+              />
             ) : null}
           </View>
         </View>
+        {flock && flock.ducks.length > 0 ? (
+          <Text style={styles.nameHint}>Tap a duck to name it</Text>
+        ) : null}
         <View
           style={styles.totals}
           accessible
@@ -102,6 +129,46 @@ export function PondScreen() {
           </Row>
         )}
       />
+
+      {/* Name-a-duck prompt (§6). */}
+      <Modal
+        visible={naming !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNaming(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalScrim} />
+          <PixelBox style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Name this duck</Text>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="e.g. Gerald"
+              placeholderTextColor={color.textMuted}
+              style={styles.input}
+              accessibilityLabel="Duck name"
+              autoFocus
+              maxLength={24}
+            />
+            <Row style={styles.modalActions}>
+              <HardButton
+                label="Cancel"
+                variant="ghost"
+                onPress={() => setNaming(null)}
+                accessibilityLabel="Cancel naming"
+              />
+              <HardButton
+                label="Save"
+                onPress={() => {
+                  void commitName();
+                }}
+                accessibilityLabel="Save duck name"
+              />
+            </Row>
+          </PixelBox>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -307,6 +374,47 @@ const styles = StyleSheet.create({
     color: color.warn,
     fontSize: typo.caption.fontSize,
     fontWeight: typo.body.fontWeight,
+  },
+  nameHint: {
+    marginTop: space.sm,
+    color: color.textMuted,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    textAlign: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: space.lg,
+  },
+  modalScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: color.bg,
+    opacity: 0.72,
+  },
+  modalBox: {
+    width: '100%',
+  },
+  modalTitle: {
+    color: color.text,
+    fontSize: typo.title.fontSize,
+    fontWeight: typo.title.fontWeight,
+    marginBottom: space.md,
+  },
+  input: {
+    backgroundColor: color.surfaceDeep,
+    borderWidth: pixel.hairlineWidth,
+    borderColor: color.border,
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontVariant: [...typo.tabularNums.fontVariant],
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm + space.xs,
+  },
+  modalActions: {
+    marginTop: space.md,
+    gap: space.sm,
   },
 });
 
