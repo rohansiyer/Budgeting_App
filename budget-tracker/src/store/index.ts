@@ -281,6 +281,20 @@ export const useBudgetStore = create<StoreState>((set, get) => {
   const categoryRow = (categoryId: string): CategoryRow | undefined =>
     get()._categoryRows.find((c) => c.id === categoryId);
 
+  // Referential integrity at the mutation boundary: a write naming an id
+  // that doesn't exist must throw BEFORE any insert (adversary-proven:
+  // a transfer_in credited to a phantom account silently destroys money).
+  const assertAccountExists = (accountId: string, role: string): void => {
+    if (!get()._accountRows.some((a) => a.id === accountId)) {
+      throw new Error(`${role}: unknown account "${accountId}"`);
+    }
+  };
+  const assertCategoryExists = (categoryId: string): void => {
+    if (!categoryRow(categoryId)) {
+      throw new Error(`Unknown category "${categoryId}"`);
+    }
+  };
+
   /** Configured envelope budget attributable to a single week (cent-conserving). */
   const configuredWeeklyBudget = (categoryId: string, week: WeekStart): Cents => {
     const row = categoryRow(categoryId);
@@ -921,6 +935,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
 
     // ----------------------------------------------------------------- mutations
     addExpense: async (input) => {
+      assertAccountExists(input.accountId, 'addExpense');
+      assertCategoryExists(input.categoryId);
       const id = generateId();
       const chapterId = activeChapterId();
       await withTransaction(async () => {
@@ -952,6 +968,12 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const now = new Date().toISOString();
 
       const splits = source.splits.length > 0 ? source.splits : null;
+      if (splits) {
+        splits.forEach((sp) => assertAccountExists(sp.accountId, 'addIncome split'));
+      } else {
+        const fallback = get()._accountRows[0];
+        if (!fallback) throw new Error('addIncome: no accounts exist to receive income');
+      }
       await withTransaction(async () => {
         const db = getDb();
         if (splits) {
@@ -995,6 +1017,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     editTransaction: async (id, patch) => {
+      if (patch.categoryId != null) assertCategoryExists(patch.categoryId);
       await withTransaction(async () => {
         const set_: Record<string, unknown> = {};
         if (patch.amount !== undefined) set_.amount = patch.amount;
@@ -1039,6 +1062,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       if (input.fromAccountId === input.toAccountId) {
         throw new Error('transfer: source and destination accounts must differ');
       }
+      assertAccountExists(input.fromAccountId, 'transfer (from)');
+      assertAccountExists(input.toAccountId, 'transfer (to)');
       const chapterId = activeChapterId();
       const groupId = generateId();
       const now = new Date().toISOString();
