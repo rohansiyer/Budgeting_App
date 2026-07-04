@@ -8,6 +8,7 @@ import { CalendarScreen } from '../screens/CalendarScreen';
 import { PondScreen } from '../screens/PondScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { SetupRoute } from './SetupRoute';
+import { openSetup } from './navigationRef';
 import type { RootStackParamList } from './navigationRef';
 
 const { color, pixel } = tokens;
@@ -71,9 +72,10 @@ export const TabsNavigator = () => {
       />
       <Tab.Screen
         name="Settings"
-        component={SettingsScreen}
         options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} /> }}
-      />
+      >
+        {() => <SettingsScreen onOpenSetup={(mode) => openSetup(mode)} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 };
