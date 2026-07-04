@@ -1,142 +1,70 @@
+/**
+ * Database client. Drizzle owns the schema; there is NO raw DDL here anymore
+ * (CONTRACTS §2/§3). Schema is created/updated exclusively by the migration
+ * runner at init.
+ */
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 import { openDatabaseSync } from 'expo-sqlite';
 import * as schema from './schema';
+import { MIGRATIONS, SqliteMigrationRunner, type RawSqlDb } from './migrations';
 
-// Lazy-initialized database instances
-let expoDb: any = null;
-let db: any = null;
+type ExpoDb = ReturnType<typeof openDatabaseSync>;
+type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;
 
-// Get or initialize database connection
-export const getDb = () => {
+const DB_NAME = 'ducks_in_a_row.db';
+
+let expoDb: ExpoDb | null = null;
+let db: DrizzleDb | null = null;
+
+/** The drizzle instance (query builder). Throws if not initialized. */
+export const getDb = (): DrizzleDb => {
   if (!db) {
     throw new Error('Database not initialized. Call initDatabase() first.');
   }
   return db;
 };
 
-const statements = [
-      `CREATE TABLE IF NOT EXISTS accounts (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        type TEXT NOT NULL,
-        starting_balance REAL NOT NULL,
-        starting_date TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS categories (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        color TEXT NOT NULL,
-        planned_monthly REAL NOT NULL,
-        planned_weekly REAL,
-        recurring INTEGER NOT NULL,
-        recurring_day INTEGER,
-        account_id TEXT NOT NULL,
-        icon TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (account_id) REFERENCES accounts(id)
-      )`,
-      `CREATE TABLE IF NOT EXISTS transactions (
-        id TEXT PRIMARY KEY,
-        amount REAL NOT NULL,
-        type TEXT NOT NULL,
-        category_id TEXT,
-        account_id TEXT NOT NULL,
-        date TEXT NOT NULL,
-        timestamp TEXT NOT NULL,
-        note TEXT,
-        to_account_id TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (account_id) REFERENCES accounts(id),
-        FOREIGN KEY (category_id) REFERENCES categories(id),
-        FOREIGN KEY (to_account_id) REFERENCES accounts(id)
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)`,
-      `CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`,
-      `CREATE TABLE IF NOT EXISTS income_configs (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        amount REAL,
-        min_amount REAL,
-        max_amount REAL,
-        day_of_week INTEGER,
-        editable INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS income_splits (
-        id TEXT PRIMARY KEY,
-        income_config_id TEXT NOT NULL,
-        account_id TEXT NOT NULL,
-        amount REAL NOT NULL,
-        percentage REAL NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (income_config_id) REFERENCES income_configs(id),
-        FOREIGN KEY (account_id) REFERENCES accounts(id)
-      )`,
-      `CREATE TABLE IF NOT EXISTS recurring_statuses (
-        id TEXT PRIMARY KEY,
-        month TEXT NOT NULL,
-        category_id TEXT NOT NULL,
-        confirmed INTEGER NOT NULL,
-        skipped INTEGER NOT NULL,
-        amount REAL NOT NULL,
-        notification_sent INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (category_id) REFERENCES categories(id)
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_recurring_month ON recurring_statuses(month)`,
-      `CREATE TABLE IF NOT EXISTS settings (
-        id TEXT PRIMARY KEY,
-        theme TEXT NOT NULL,
-        week_start TEXT NOT NULL,
-        notifications_enabled INTEGER NOT NULL,
-        recurring_notification_time TEXT NOT NULL,
-        currency TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )`
-];
+/**
+ * The raw expo-sqlite handle. Used by the store's AtomicDb to bracket
+ * multi-row mutations with BEGIN/COMMIT/ROLLBACK on the single connection.
+ */
+export const getRawDb = (): ExpoDb => {
+  if (!expoDb) {
+    throw new Error('Database not initialized. Call initDatabase() first.');
+  }
+  return expoDb;
+};
 
-
-// Initialize database connection and tables
-// Note: Kept as async for API consistency, even though operations are synchronous
-export const initDatabase = async () => {
+/**
+ * Open the connection (if needed) and run all pending migrations. Idempotent —
+ * safe to call multiple times. Must run before any query.
+ */
+export const initDatabase = async (): Promise<void> => {
   try {
-    console.log('Opening database connection...');
-
-    // Open database if not already opened
     if (!expoDb) {
-      expoDb = openDatabaseSync('budget_tracker.db');
+      expoDb = openDatabaseSync(DB_NAME);
       db = drizzle(expoDb, { schema });
-      console.log('Database connection established');
     }
-
-    // Create tables using synchronous API
-    console.log('Creating database tables...');
-    for (const statement of statements) {
-      expoDb.runSync(statement);
-    }
-
-    console.log('Database initialized successfully');
+    const runner = new SqliteMigrationRunner(expoDb as unknown as RawSqlDb, MIGRATIONS);
+    await runner.migrateToLatest();
   } catch (error) {
-    console.error('Error initializing database:', error);
-    // Reset state on error so retry can work
+    // Reset so a retry can re-open cleanly.
     expoDb = null;
     db = null;
     throw error;
   }
 };
 
-// Check if database is initialized
-export const isDatabaseInitialized = () => {
-  return db !== null;
+export const isDatabaseInitialized = (): boolean => db !== null;
+
+/**
+ * Test-only: drop the singletons so the next initDatabase() opens a fresh
+ * database. The expo-sqlite mock hands out a new in-memory DB per open, so this
+ * gives each test suite an isolated schema.
+ */
+export const resetDatabaseForTests = (): void => {
+  expoDb = null;
+  db = null;
 };
 
-// Export db for direct use in tests (use getDb() in production code)
 export { db };
