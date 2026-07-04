@@ -41,24 +41,9 @@ export interface Category {
   updatedAt: string;
 }
 
-export interface IncomeSplit {
-  accountId: string;
-  amount: number;
-  percentage: number;
-}
-
-export interface IncomeConfig {
-  id: string;
-  type: 'weekly_paycheck' | 'tutoring' | 'other';
-  amount?: number; // For fixed income
-  minAmount?: number; // For variable income
-  maxAmount?: number; // For variable income
-  dayOfWeek?: number; // 0-6 for weekly paycheck
-  splits?: IncomeSplit[];
-  editable: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+// NOTE: `IncomeSplit` and `IncomeConfig` were removed in the v2 re-founding.
+// Import income domain types from `src/types/contracts.ts`
+// (`IncomeSourceConfig`, `IncomeSplitConfig`) instead.
 
 export interface RecurringStatus {
   id: string;
@@ -83,13 +68,14 @@ export interface Settings {
   updatedAt: string;
 }
 
-// Computed types
-export interface DailyTotal {
-  date: string;
-  income: number;
-  expenses: number;
-  net: number;
-}
+// ---------------------------------------------------------------------------
+// DEPRECATED legacy view types. These back only the Team 3-owned screens/
+// components/utils that have not yet migrated to `src/types/contracts.ts`.
+// `DailyTotal` and `MonthlyAnalytics` were unused and removed; `CategorySpending`
+// and `WeeklyBreakdown` are retained solely because `utils/calculations.ts` and
+// `components/DualLayerPieChart.tsx` still consume them. TODO(team3): delete
+// with the Pond/Analytics rewrite.
+// ---------------------------------------------------------------------------
 
 export interface WeeklyBreakdown {
   startDate: string;
@@ -118,11 +104,3 @@ export interface CategorySpending {
   percentage: number;
 }
 
-export interface MonthlyAnalytics {
-  month: string;
-  totalIncome: number;
-  totalExpenses: number;
-  savingsRate: number;
-  categorySpending: CategorySpending[];
-  accountBalances: { [accountId: string]: number };
-}
