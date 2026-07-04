@@ -1,138 +1,135 @@
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
-import { Button, PaperProvider } from 'react-native-paper';
+import { ActivityIndicator, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { AppErrorBoundary } from './src/components/AppErrorBoundary';
+import { StoreProvider } from './src/providers/StoreProvider';
+import { AppShellProvider } from './src/providers/AppShell';
+import { realStore } from './src/providers/realStore';
+import { useBudgetStore } from './src/store';
 import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
-import { colors } from './src/theme/colors';
-import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { createStoreSetupWriter } from './src/setup/storeSetupWriter';
+import { DuckResultsGate } from './src/ducks/DuckResultsGate';
+import { LockScreen } from './src/security/LockScreen';
+import { useAutoLock } from './src/security/useAutoLock';
+import { isAppLockEnabled } from './src/security/lockSettings';
+import { color, space } from './src/theme/tokens';
+import { navigationRef, openSetup, openTab } from './src/navigation/navigationRef';
 
-function AppContent() {
-  const [isReady, setIsReady] = useState(false);
-  const [initError, setInitError] = useState<string | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
+// Midnight-themed navigation container (tokens only).
+const navTheme = {
+  ...DefaultTheme,
+  dark: true,
+  colors: {
+    ...DefaultTheme.colors,
+    background: color.bg,
+    card: color.surface,
+    text: color.text,
+    border: color.border,
+    primary: color.accent,
+  },
+};
 
-  const initialize = async () => {
-    try {
-      setInitError(null);
-      setIsRetrying(false);
-      await initDatabase();
-      await seedInitialData();
-      setIsReady(true);
-    } catch (error) {
-      console.error('Failed to initialize app:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      setInitError(`Database initialization failed: ${errorMessage}`);
-    }
-  };
-
-  useEffect(() => {
-    initialize();
-  }, []);
-
-  const handleRetry = () => {
-    setIsRetrying(true);
-    initialize();
-  };
-
-  // Show error screen with retry option
-  if (initError && !isRetrying) {
-    return (
-      <PaperProvider>
-        <View style={styles.errorContainer}>
-          <View style={styles.errorContent}>
-            <ActivityIndicator size="large" color={colors.status.error} style={styles.errorIcon} />
-            <Text style={styles.errorTitle}>Initialization Failed</Text>
-            <Text style={styles.errorMessage}>{initError}</Text>
-            <View style={styles.buttonContainer}>
-              <View style={styles.retryButton}>
-                <Button mode="contained" onPress={handleRetry} buttonColor={colors.accent.primary}>
-                  Retry Initialization
-                </Button>
-              </View>
-            </View>
-          </View>
-        </View>
-      </PaperProvider>
-    );
-  }
-
-  // Show loading screen
-  if (!isReady) {
-    return (
-      <PaperProvider>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.accent.primary} />
-          <Text style={styles.loadingText}>Initializing database...</Text>
-        </View>
-      </PaperProvider>
-    );
-  }
-
-  return (
-    <PaperProvider>
-      <NavigationContainer>
-        <StatusBar style="light" />
-        <RootNavigator />
-      </NavigationContainer>
-    </PaperProvider>
-  );
-}
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-  loadingText: {
-    marginTop: 16,
-    color: colors.text.primary,
-    fontSize: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    padding: 20,
-  },
-  errorContent: {
-    alignItems: 'center',
-    maxWidth: 400,
-  },
-  errorIcon: {
-    marginBottom: 16,
-  },
-  errorTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.status.error,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: colors.text.secondary,
-    marginBottom: 24,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  buttonContainer: {
-    width: '100%',
-  },
-  retryButton: {
-    marginTop: 8,
-  },
-});
+type BootState = { phase: 'booting' } | { phase: 'ready' } | { phase: 'error'; message: string };
 
 export default function App() {
+  const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
+  const [locked, setLocked] = useState(false);
+  // First-run gate: no accounts yet ⇒ land on the setup wizard (skippable).
+  const [firstRun, setFirstRun] = useState(false);
+  useAutoLock(() => setLocked(true));
+  useEffect(() => {
+    void isAppLockEnabled().then((enabled) => {
+      if (enabled) setLocked(true); // cold start behind the lock
+    });
+  }, []);
+
+  const bootstrap = useCallback(async () => {
+    setBoot({ phase: 'booting' });
+    try {
+      await initDatabase(); // opens sqlite + runs migrations
+      await useBudgetStore.getState().loadData();
+      await seedInitialData(createStoreSetupWriter()); // ensure default chapter only
+      await useBudgetStore.getState().loadData();
+      // No accounts configured ⇒ this is a first run; open Setup once the
+      // navigator is ready (see NavigationContainer onReady below).
+      setFirstRun(useBudgetStore.getState().listAccounts().length === 0);
+      setBoot({ phase: 'ready' });
+    } catch (e) {
+      setBoot({ phase: 'error', message: e instanceof Error ? e.message : 'Failed to start' });
+    }
+  }, []);
+
+  useEffect(() => {
+    void bootstrap();
+  }, [bootstrap]);
+
+  if (boot.phase !== 'ready') {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: space.md,
+        }}
+      >
+        {boot.phase === 'booting' ? (
+          <ActivityIndicator color={color.accent} accessibilityLabel="Loading Ducks in a Row" />
+        ) : (
+          <>
+            <Text style={{ color: color.danger, fontWeight: '700' }}>Something went wrong</Text>
+            <Text style={{ color: color.textMuted, paddingHorizontal: space.xl, textAlign: 'center' }}>
+              {boot.message}
+            </Text>
+            <Text
+              accessibilityRole="button"
+              accessibilityLabel="Retry startup"
+              onPress={() => void bootstrap()}
+              style={{ color: color.accent, fontWeight: '800', padding: space.md }}
+            >
+              Retry
+            </Text>
+          </>
+        )}
+      </View>
+    );
+  }
+
+  if (locked) {
+    return (
+      <SafeAreaProvider>
+        <LockScreen onUnlock={() => setLocked(false)} />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
-    <ErrorBoundary>
-      <AppContent />
-    </ErrorBoundary>
+    <AppErrorBoundary>
+      <SafeAreaProvider>
+        <StoreProvider store={realStore}>
+          <NavigationContainer
+            ref={navigationRef}
+            theme={navTheme}
+            onReady={() => {
+              if (firstRun) openSetup('firstRun');
+            }}
+          >
+            <StatusBar style="light" />
+            <AppShellProvider>
+              <RootNavigator />
+              <DuckResultsGate
+                onGoToPond={() => openTab('Pond')}
+                onReviewBills={() => openTab('Calendar')}
+              />
+            </AppShellProvider>
+          </NavigationContainer>
+        </StoreProvider>
+      </SafeAreaProvider>
+    </AppErrorBoundary>
   );
 }

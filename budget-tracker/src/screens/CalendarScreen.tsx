@@ -1,394 +1,213 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import * as tokens from '../theme/tokens';
+import { formatCents, ZERO } from '../lib/money';
+import { Screen, SectionLabel } from '../components/Primitives';
+import { useStore } from '../providers/StoreProvider';
+import { useAppShell } from '../providers/AppShell';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, theme } from '../theme/colors';
-import { useBudgetStore } from '../store';
-import {
-  getDaysInWeek,
-  getWeekBoundaries,
-  formatWeekRange,
-  toISODate,
-  getPreviousWeek,
-  getNextWeek,
-  isToday,
-  format,
-  formatMonthYear,
-  addMonths,
-  subMonths,
-} from '../utils/dateUtils';
-import { calculateDailyTotal, formatCurrency } from '../utils/calculations';
-import { MonthlyCalendarView } from '../components/MonthlyCalendarView';
-import { DailyDetailScreen } from './DailyDetailScreen';
-import { WeeklyBreakdownScreen } from './WeeklyBreakdownScreen';
+  todayISO,
+  monthRange,
+  monthTitle,
+  eachDay,
+  dayOfWeek,
+  dayNumber,
+} from '../format/dates';
+import type { ISODate } from '../types/contracts';
 
-const CalendarScreen = () => {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [showWeeklyBreakdown, setShowWeeklyBreakdown] = useState(false);
+const { color, space, pixel } = tokens;
+const typo = tokens.type;
 
-  const { transactions, accounts, getAccountBalance, isLoading, loadData } =
-    useBudgetStore();
+const WEEK_HEADER = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const CELL_PCT = '14.2857%' as const;
 
-  useEffect(() => {
-    loadData();
-  }, []);
+/** Monday-based column index (0 = Monday). */
+function mondayIndex(isoDate: ISODate): number {
+  const wd = dayOfWeek(isoDate);
+  return wd === 0 ? 6 : wd - 1;
+}
 
-  const { start: weekStart, end: weekEnd } = getWeekBoundaries(currentDate);
-  const daysInWeek = getDaysInWeek(currentDate);
+export function CalendarScreen() {
+  const store = useStore();
+  const { openDay } = useAppShell();
+  const today = todayISO();
+  const range = monthRange(today);
 
-  const startingBalance = accounts.reduce((total, acc) => {
-    return total + getAccountBalance(acc.id, toISODate(weekStart));
-  }, 0);
-
-  const endingBalance = accounts.reduce((total, acc) => {
-    return total + getAccountBalance(acc.id, toISODate(weekEnd));
-  }, 0);
-
-  const handlePrevious = () => {
-    if (viewMode === 'week') {
-      setCurrentDate(getPreviousWeek(currentDate));
-    } else {
-      setCurrentDate(subMonths(currentDate, 1));
-    }
-  };
-
-  const handleNext = () => {
-    if (viewMode === 'week') {
-      setCurrentDate(getNextWeek(currentDate));
-    } else {
-      setCurrentDate(addMonths(currentDate, 1));
-    }
-  };
-
-  const handleToday = () => {
-    setCurrentDate(new Date());
-  };
-
-  const toggleViewMode = () => {
-    setViewMode(viewMode === 'week' ? 'month' : 'week');
-  };
-
-  const getHeaderTitle = () => {
-    if (viewMode === 'week') {
-      return formatWeekRange(weekStart, weekEnd);
-    } else {
-      return formatMonthYear(currentDate);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accent.primary} />
-      </View>
+  const days = eachDay(range);
+  const totals = store.getDaySpendTotals(range);
+  const paydays = useMemo(() => new Set(store.getPaydays(range)), [store, range.from, range.to]);
+  const fixedHitDays = useMemo(() => {
+    const fixedIds = new Set(
+      store
+        .listCategories()
+        .filter((c) => c.fixed)
+        .map((c) => c.id),
     );
-  }
+    const out = new Set<ISODate>();
+    for (const t of store.getTransactions(range)) {
+      if (t.kind === 'expense' && fixedIds.has(t.categoryId)) out.add(t.date);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, range.from, range.to]);
+
+  const maxSpent = Math.max(1, ...Array.from(totals.values()));
+  const leadBlanks = mondayIndex(days[0]);
 
   return (
-    <View style={styles.container}>
-      {/* Header with navigation */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handlePrevious} style={styles.navButton}>
-          <Ionicons name="chevron-back" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity onPress={handleToday} style={styles.todayButton}>
-              <Text style={styles.todayText}>Today</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={toggleViewMode} style={styles.viewModeButton}>
-              <Ionicons
-                name={viewMode === 'week' ? 'calendar' : 'list'}
-                size={16}
-                color={colors.accent.primary}
-              />
-              <Text style={styles.viewModeText}>
-                {viewMode === 'week' ? 'Month' : 'Week'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <TouchableOpacity onPress={handleNext} style={styles.navButton}>
-          <Ionicons name="chevron-forward" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
+    <Screen title={monthTitle(today)}>
+      <View style={styles.weekHeader}>
+        {WEEK_HEADER.map((w, i) => (
+          <Text key={i} style={styles.weekHeaderCell}>
+            {w}
+          </Text>
+        ))}
+      </View>
+      <View style={styles.grid}>
+        {Array.from({ length: leadBlanks }, (_, i) => (
+          <View key={`blank_${i}`} style={styles.cell} />
+        ))}
+        {days.map((d) => {
+          const spent = totals.get(d) ?? ZERO;
+          const intensity = spent / maxSpent; // 0..1 display ratio only
+          const isPayday = paydays.has(d);
+          const isFixedHit = fixedHitDays.has(d);
+          const isToday = d === today;
+          return (
+            <Pressable
+              key={d}
+              style={styles.cell}
+              onPress={() => openDay(d)}
+              accessibilityRole="button"
+              accessibilityLabel={`${dayNumber(d)}: spent ${formatCents(spent)}${isPayday ? ', payday' : ''}${isFixedHit ? ', fixed bill' : ''}${isToday ? ', today' : ''}. Opens day detail.`}
+            >
+              <View
+                style={[
+                  styles.cellInner,
+                  {
+                    borderColor: isFixedHit
+                      ? color.danger
+                      : isToday
+                        ? color.text
+                        : color.hairline,
+                  },
+                ]}
+              >
+                {/* Heatmap fill: token spendFill at spend-scaled opacity. */}
+                {spent > 0 ? (
+                  <View
+                    style={[
+                      StyleSheet.absoluteFillObject,
+                      { backgroundColor: color.spendFill, opacity: 0.2 + intensity * 0.65 },
+                    ]}
+                    pointerEvents="none"
+                  />
+                ) : null}
+                <Text style={[styles.cellNum, isToday && styles.cellNumToday]}>
+                  {dayNumber(d)}
+                </Text>
+                {/* Mint payday ring. */}
+                {isPayday ? <View style={styles.paydayRing} pointerEvents="none" /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
 
-      {viewMode === 'week' ? (
-        <>
-          {/* Starting balance */}
-          <View style={styles.balanceCard}>
-            <Text style={styles.balanceLabel}>Starting Balance</Text>
-            <View style={styles.accountBalances}>
-              {accounts.map((acc) => (
-                <Text key={acc.id} style={styles.accountText}>
-                  {acc.name}: {formatCurrency(getAccountBalance(acc.id, toISODate(weekStart)))}
-                </Text>
-              ))}
-            </View>
-          </View>
+      <SectionLabel>Legend</SectionLabel>
+      <LegendRow swatch={<View style={styles.legendHeat} />} label="Fill intensity = spending" />
+      <LegendRow swatch={<View style={styles.legendRing} />} label="Mint ring = payday" />
+      <LegendRow swatch={<View style={styles.legendFixed} />} label="Coral edge = fixed bill spike" />
+    </Screen>
+  );
+}
 
-          {/* Weekly calendar grid */}
-          <ScrollView style={styles.scrollView}>
-            <View style={styles.weekGrid}>
-              {daysInWeek.map((day) => {
-                const dayStr = toISODate(day);
-                const dayTransactions = transactions.filter((txn) => txn.date === dayStr);
-                const dayTotal = calculateDailyTotal(dayTransactions);
-                const today = isToday(day);
-
-                return (
-                  <TouchableOpacity
-                    key={dayStr}
-                    style={[styles.dayCard, today && styles.dayCardToday]}
-                    onPress={() => setSelectedDay(day)}
-                  >
-                    <Text style={[styles.dayName, today && styles.dayNameToday]}>
-                      {format(day, 'EEE')}
-                    </Text>
-                    <Text style={[styles.dayNumber, today && styles.dayNumberToday]}>
-                      {format(day, 'd')}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.dayAmount,
-                        dayTotal > 0 && styles.dayAmountPositive,
-                        dayTotal < 0 && styles.dayAmountNegative,
-                      ]}
-                    >
-                      {dayTotal > 0 ? '+' : ''}
-                      {formatCurrency(dayTotal)}
-                    </Text>
-                    <Text style={styles.dayTransactionCount}>
-                      {dayTransactions.length} transactions
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Ending balance */}
-            <TouchableOpacity
-              style={styles.endingBalanceCard}
-              onPress={() => setShowWeeklyBreakdown(true)}
-            >
-              <Text style={styles.balanceLabel}>Ending Balance</Text>
-              <View style={styles.accountBalances}>
-                {accounts.map((acc) => (
-                  <Text key={acc.id} style={styles.accountText}>
-                    {acc.name}: {formatCurrency(getAccountBalance(acc.id, toISODate(weekEnd)))}
-                  </Text>
-                ))}
-              </View>
-              <View style={styles.netChangeContainer}>
-                <Text style={styles.netChangeLabel}>Net Change: </Text>
-                <Text
-                  style={[
-                    styles.netChangeAmount,
-                    endingBalance - startingBalance > 0 && styles.dayAmountPositive,
-                    endingBalance - startingBalance < 0 && styles.dayAmountNegative,
-                  ]}
-                >
-                  {endingBalance - startingBalance > 0 ? '+' : ''}
-                  {formatCurrency(endingBalance - startingBalance)}
-                </Text>
-              </View>
-              <Text style={styles.clickForDetails}>Tap for weekly breakdown</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </>
-      ) : (
-        <ScrollView style={styles.scrollView}>
-          <MonthlyCalendarView
-            currentDate={currentDate}
-            transactions={transactions}
-            onDayPress={(day) => setSelectedDay(day)}
-          />
-        </ScrollView>
-      )}
-
-      {/* Daily Detail Modal */}
-      {selectedDay && (
-        <DailyDetailScreen date={selectedDay} onClose={() => setSelectedDay(null)} />
-      )}
-
-      {/* Weekly Breakdown Modal */}
-      {showWeeklyBreakdown && (
-        <WeeklyBreakdownScreen
-          weekStart={weekStart}
-          weekEnd={weekEnd}
-          onClose={() => setShowWeeklyBreakdown(false)}
-        />
-      )}
+function LegendRow({ swatch, label }: { swatch: React.ReactNode; label: string }) {
+  return (
+    <View style={styles.legendRow}>
+      {swatch}
+      <Text style={styles.legendLabel}>{label}</Text>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-  header: {
+  weekHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: theme.spacing.md,
-    backgroundColor: colors.surface,
+    marginTop: space.sm,
+    marginBottom: space.xs,
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
+  weekHeaderCell: {
+    width: CELL_PCT,
+    textAlign: 'center',
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginBottom: 4,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    alignItems: 'center',
-  },
-  navButton: {
-    padding: theme.spacing.sm,
-  },
-  todayButton: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-  },
-  todayText: {
-    color: colors.accent.primary,
-    fontSize: 14,
-  },
-  viewModeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-    backgroundColor: colors.card,
-    borderRadius: 4,
-  },
-  viewModeText: {
-    color: colors.accent.primary,
-    fontSize: 14,
-  },
-  balanceCard: {
-    backgroundColor: colors.surface,
-    padding: theme.spacing.md,
-    margin: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-  },
-  balanceLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: theme.spacing.sm,
-  },
-  accountBalances: {
-    gap: 4,
-  },
-  accountText: {
-    fontSize: 16,
-    color: colors.text.primary,
-    fontFamily: 'monospace',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  weekGrid: {
+  grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: theme.spacing.sm,
-    gap: theme.spacing.sm,
   },
-  dayCard: {
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    width: '48%',
-    marginBottom: theme.spacing.sm,
+  cell: {
+    width: CELL_PCT,
+    aspectRatio: 1,
+    padding: 2,
   },
-  dayCardToday: {
-    borderWidth: 2,
-    borderColor: colors.accent.primary,
+  cellInner: {
+    flex: 1,
+    borderWidth: pixel.hairlineWidth,
+    backgroundColor: color.surfaceDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  dayName: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    textTransform: 'uppercase',
+  cellNum: {
+    color: color.text,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.caption.fontWeight,
+    fontVariant: [...typo.tabularNums.fontVariant],
   },
-  dayNameToday: {
-    color: colors.accent.primary,
-    fontWeight: 'bold',
+  cellNumToday: {
+    fontWeight: typo.title.fontWeight,
   },
-  dayNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginVertical: theme.spacing.xs,
+  paydayRing: {
+    position: 'absolute',
+    bottom: 3,
+    width: 7,
+    height: 7,
+    borderWidth: pixel.hairlineWidth * 2,
+    borderColor: color.accent,
   },
-  dayNumberToday: {
-    color: colors.accent.primary,
-  },
-  dayAmount: {
-    fontSize: 18,
-    fontFamily: 'monospace',
-    color: colors.text.primary,
-    marginBottom: 4,
-  },
-  dayAmountPositive: {
-    color: colors.status.success,
-  },
-  dayAmountNegative: {
-    color: colors.status.error,
-  },
-  dayTransactionCount: {
-    fontSize: 12,
-    color: colors.text.disabled,
-  },
-  endingBalanceCard: {
-    backgroundColor: colors.surface,
-    padding: theme.spacing.md,
-    margin: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-  },
-  netChangeContainer: {
+  legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: theme.spacing.sm,
+    marginBottom: space.sm,
   },
-  netChangeLabel: {
-    fontSize: 16,
-    color: colors.text.secondary,
+  legendHeat: {
+    width: 14,
+    height: 14,
+    backgroundColor: color.spendFill,
+    marginRight: space.sm,
   },
-  netChangeAmount: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
+  legendRing: {
+    width: 14,
+    height: 14,
+    borderWidth: pixel.hairlineWidth * 2,
+    borderColor: color.accent,
+    marginRight: space.sm,
   },
-  clickForDetails: {
-    fontSize: 12,
-    color: colors.accent.secondary,
-    marginTop: theme.spacing.sm,
-    textAlign: 'center',
+  legendFixed: {
+    width: 14,
+    height: 14,
+    borderWidth: pixel.hairlineWidth * 2,
+    borderColor: color.danger,
+    marginRight: space.sm,
+  },
+  legendLabel: {
+    color: color.textSecondary,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.caption.fontWeight,
   },
 });
 
