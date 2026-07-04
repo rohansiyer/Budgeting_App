@@ -12,7 +12,7 @@
  */
 import React, { useReducer, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import { HardButton } from './kit-stubs';
+import { HardButton } from '../components/kit';
 import { color, space, type } from '../theme/tokens';
 import { saveSetup, type SaveResult } from './save';
 import type { SetupWriter } from './types';

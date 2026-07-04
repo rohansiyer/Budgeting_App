@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -17,8 +17,7 @@ import { LockScreen } from './src/security/LockScreen';
 import { useAutoLock } from './src/security/useAutoLock';
 import { isAppLockEnabled } from './src/security/lockSettings';
 import { color, space } from './src/theme/tokens';
-
-const navigationRef = createNavigationContainerRef<Record<string, undefined>>();
+import { navigationRef, openSetup, openTab } from './src/navigation/navigationRef';
 
 // Midnight-themed navigation container (tokens only).
 const navTheme = {
@@ -39,6 +38,8 @@ type BootState = { phase: 'booting' } | { phase: 'ready' } | { phase: 'error'; m
 export default function App() {
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
   const [locked, setLocked] = useState(false);
+  // First-run gate: no accounts yet ⇒ land on the setup wizard (skippable).
+  const [firstRun, setFirstRun] = useState(false);
   useAutoLock(() => setLocked(true));
   useEffect(() => {
     void isAppLockEnabled().then((enabled) => {
@@ -53,6 +54,9 @@ export default function App() {
       await useBudgetStore.getState().loadData();
       await seedInitialData(createStoreSetupWriter()); // ensure default chapter only
       await useBudgetStore.getState().loadData();
+      // No accounts configured ⇒ this is a first run; open Setup once the
+      // navigator is ready (see NavigationContainer onReady below).
+      setFirstRun(useBudgetStore.getState().listAccounts().length === 0);
       setBoot({ phase: 'ready' });
     } catch (e) {
       setBoot({ phase: 'error', message: e instanceof Error ? e.message : 'Failed to start' });
@@ -108,14 +112,19 @@ export default function App() {
     <AppErrorBoundary>
       <SafeAreaProvider>
         <StoreProvider store={realStore}>
-          <NavigationContainer ref={navigationRef} theme={navTheme}>
+          <NavigationContainer
+            ref={navigationRef}
+            theme={navTheme}
+            onReady={() => {
+              if (firstRun) openSetup('firstRun');
+            }}
+          >
             <StatusBar style="light" />
             <AppShellProvider>
               <RootNavigator />
               <DuckResultsGate
-                onGoToPond={() => {
-                  if (navigationRef.isReady()) navigationRef.navigate('Pond');
-                }}
+                onGoToPond={() => openTab('Pond')}
+                onReviewBills={() => openTab('Calendar')}
               />
             </AppShellProvider>
           </NavigationContainer>

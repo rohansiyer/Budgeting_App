@@ -8,7 +8,7 @@
 import React, { useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import type { Dispatch } from 'react';
-import { CategoryChip, HardButton, PixelBox, RuledList } from '../kit-stubs';
+import { CategoryChip, HardButton, PixelBox, RuledList } from '../../components/kit';
 import { formatCents, MoneyError, parseDecimal } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import { nextDraftKey, type CategoryDraft, type WizardAction } from '../wizardState';

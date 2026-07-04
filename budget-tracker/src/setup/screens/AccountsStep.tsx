@@ -6,7 +6,7 @@
  */
 import React, { useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
-import { HardButton, PixelBox, RuledList } from '../kit-stubs';
+import { HardButton, PixelBox, RuledList } from '../../components/kit';
 import { formatCents, MoneyError, parseDecimal } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import type { Dispatch } from 'react';

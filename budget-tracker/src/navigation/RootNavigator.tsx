@@ -1,11 +1,14 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as tokens from '../theme/tokens';
 import { HomeScreen } from '../screens/HomeScreen';
 import { CalendarScreen } from '../screens/CalendarScreen';
 import { PondScreen } from '../screens/PondScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { SetupRoute } from './SetupRoute';
+import type { RootStackParamList } from './navigationRef';
 
 const { color, pixel } = tokens;
 const typo = tokens.type;
@@ -39,7 +42,8 @@ function TabIcon({ focused, pond }: { focused: boolean; pond?: boolean }) {
   );
 }
 
-export const RootNavigator = () => {
+/** The four-tab shell — Home / Calendar / Pond / Settings. */
+export const TabsNavigator = () => {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -71,6 +75,37 @@ export const RootNavigator = () => {
         options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} /> }}
       />
     </Tab.Navigator>
+  );
+};
+
+const RootStack = createNativeStackNavigator<RootStackParamList>();
+
+/** Route wrapper: reads the `mode` param and hands it to the setup host. */
+function SetupScreen({ route }: { route: { params: RootStackParamList['Setup'] } }) {
+  return <SetupRoute mode={route.params?.mode ?? 'edit'} />;
+}
+
+/**
+ * Root navigator: the tab shell wrapped in a native stack so the setup wizard
+ * can present full-screen over the tabs (first-run gate, "Edit setup", "New
+ * chapter"). Tabs are always the base route; Setup is a modal above them.
+ */
+export const RootNavigator = () => {
+  return (
+    <RootStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: color.bg },
+      }}
+    >
+      <RootStack.Screen name="Tabs" component={TabsNavigator} />
+      <RootStack.Screen
+        name="Setup"
+        component={SetupScreen}
+        options={{ presentation: 'fullScreenModal' }}
+        initialParams={{ mode: 'edit' }}
+      />
+    </RootStack.Navigator>
   );
 };
 
