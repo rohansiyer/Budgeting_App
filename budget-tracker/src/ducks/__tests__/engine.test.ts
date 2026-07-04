@@ -1,6 +1,6 @@
 import { cents, type Cents } from '../../lib/money';
-import type { Chapter, Duck } from '../../types/contracts';
-import { createDuckEngine, DuckEngineImpl } from '../engine';
+import type { Chapter, Duck, DuckEvaluation } from '../../types/contracts';
+import { createDuckEngine, DuckEngineImpl, DuckStateError } from '../engine';
 import { FakeReadPort, FakeDuckStore, makeIdGen } from '../testReadPort';
 
 const C = (n: number) => cents(n) as Cents;
@@ -11,7 +11,7 @@ function chapter(startedAt = '2025-01-01'): Chapter {
 
 function build(opts: {
   startedAt?: string;
-  storeSeed?: { ducks?: Duck[]; accessoryTier?: number };
+  storeSeed?: { ducks?: Duck[]; accessoryTier?: number; evaluations?: DuckEvaluation[] };
   config?: ConstructorParameters<typeof DuckEngineImpl>[0]['config'];
 } = {}) {
   const read = new FakeReadPort();
@@ -121,12 +121,16 @@ describe('Goal evaluation', () => {
     }
   });
 
-  test('Goal 3 income-zero rule: 0 income + 0 savings → MET', async () => {
+  test('Goal 3 income-zero rule: 0 income + 0 savings → MET (month kept non-dormant via spend)', async () => {
     const { read, engine, store } = build({ startedAt: '2025-01-01' });
+    // Spend keeps the month evaluable — a fully dormant month is skipped
+    // under the empty-month ruling and never reaches goal evaluation.
+    read.addCategory('food');
+    read.setBudget('food', '2025-01', C(10000));
+    read.addSpend('food', '2025-01', C(5000));
     read.setIncome('2025-01', C(0));
     read.setSavings('2025-01', C(0));
     read.setBills('2025-01', 0, 0);
-    read.markActive('2025-01');
     await engine.evaluatePendingMonths('2025-02-01');
     expect(store.peekEvaluations()[0].goalSavingsRate.met).toBe(true);
   });
@@ -405,5 +409,165 @@ describe('Flock + verdict finality', () => {
     expect(after).toHaveLength(1);
     expect(after[0].outcome).toBe(before.outcome);
     expect(after[0].goalVariableBudgets.met).toBe(true);
+  });
+});
+
+describe('Chapter boundary guard (red-team E5 fixes)', () => {
+  test('months before the chapter started are never evaluated even if the port lists them', async () => {
+    const { read, engine, store } = build({ startedAt: '2025-03-15' });
+    perfectMonth(read, '2025-02'); // pre-chapter leak
+    perfectMonth(read, '2025-04'); // first full chapter month
+    const evs = await engine.evaluatePendingMonths('2025-05-01');
+    expect(evs.map((e) => e.month)).toEqual(['2025-04']);
+    expect(store.peekEvaluations().map((e) => e.month)).toEqual(['2025-04']);
+  });
+
+  test('future-dated chapter: nothing before startedAt is evaluable', async () => {
+    const { read, engine, store } = build({ startedAt: '2025-09-15' });
+    perfectMonth(read, '2025-05');
+    perfectMonth(read, '2025-06');
+    const evs = await engine.evaluatePendingMonths('2025-07-04');
+    expect(evs).toHaveLength(0);
+    expect(store.peekEvaluations()).toHaveLength(0);
+  });
+});
+
+describe('Empty-month skip (ruling: dormant months issue no verdict)', () => {
+  test('a month with zero transactions and zero expected bills is skipped entirely', async () => {
+    const { read, engine, store } = build({ startedAt: '2025-01-01' });
+    read.markActive('2025-01'); // in the backlog, but fully dormant
+    const evs = await engine.evaluatePendingMonths('2025-02-01');
+    expect(evs).toHaveLength(0);
+    expect(store.peekEvaluations()).toHaveLength(0);
+    expect(store.peekDucks()).toHaveLength(1); // only the chapter seed duck
+  });
+
+  test('a configured-but-untouched envelope does not make a month evaluable', async () => {
+    const { read, engine, store } = build({ startedAt: '2025-01-01' });
+    read.addCategory('food');
+    read.setBudget('food', '2025-01', C(10000)); // budget set, nothing else
+    const evs = await engine.evaluatePendingMonths('2025-02-01');
+    expect(evs).toHaveLength(0);
+    expect(store.peekEvaluations()).toHaveLength(0);
+  });
+
+  test('dormant months in a backlog are skipped while active months still chain', async () => {
+    const { read, engine, store } = build({ startedAt: '2025-01-01' });
+    perfectMonth(read, '2025-01');
+    read.markActive('2025-02'); // dormant gap month
+    perfectMonth(read, '2025-03');
+    const evs = await engine.evaluatePendingMonths('2025-04-01');
+    expect(evs.map((e) => e.month)).toEqual(['2025-01', '2025-03']);
+    // Chain skips the dormant month: seed 1 → Jan 2 → Mar 3.
+    expect(evs.map((e) => e.duckCountAfter)).toEqual([2, 3]);
+    expect(store.peekDucks()).toHaveLength(3);
+  });
+
+  test('any single kind of activity (income, savings, spend, or expected bill) makes the month evaluable', async () => {
+    for (const activate of [
+      (r: FakeReadPort) => r.setIncome('2025-01', C(1)),
+      (r: FakeReadPort) => r.setSavings('2025-01', C(1)),
+      (r: FakeReadPort) => {
+        r.addCategory('food');
+        r.setBudget('food', '2025-01', C(10000));
+        r.addSpend('food', '2025-01', C(1));
+      },
+      (r: FakeReadPort) => r.setBills('2025-01', 1, 0),
+    ]) {
+      const { read, engine, store } = build({ startedAt: '2025-01-01' });
+      activate(read);
+      await engine.evaluatePendingMonths('2025-02-01');
+      expect(store.peekEvaluations()).toHaveLength(1);
+    }
+  });
+});
+
+describe('Load-time state validation (rulings: consistency + range asserts)', () => {
+  const finalEval = (month: string, duckCountAfter: number): DuckEvaluation => ({
+    id: `seed-${month}`,
+    chapterId: 'chap-1',
+    month,
+    evaluatedAt: `${month}-28`,
+    goalFixedBills: { met: true, detail: '' },
+    goalVariableBudgets: { met: true, detail: '' },
+    goalSavingsRate: { met: true, detail: '' },
+    outcome: 'gain',
+    duckCountAfter,
+    accessoryTierAfter: 0,
+    final: true,
+  });
+
+  test('flock diverged from last verdict duckCountAfter → DuckStateError, no evaluation runs', async () => {
+    // Ledger says 2 ducks after 2025-01; live flock is empty (e.g. a
+    // non-atomic commit lost the flock write). Engine must refuse loudly.
+    const { read, engine, store } = build({
+      startedAt: '2025-01-01',
+      storeSeed: { ducks: [], accessoryTier: 0, evaluations: [finalEval('2025-01', 2)] },
+    });
+    perfectMonth(read, '2025-02');
+    await expect(engine.evaluatePendingMonths('2025-03-01')).rejects.toThrow(DuckStateError);
+    await expect(engine.evaluatePendingMonths('2025-03-01')).rejects.toThrow(/duckCountAfter=2/);
+    expect(store.peekEvaluations()).toHaveLength(1); // nothing new issued
+    await expect(engine.getFlock()).rejects.toThrow(DuckStateError);
+  });
+
+  test('consistency uses the LATEST evaluation by month, not array order', async () => {
+    const ducks: Duck[] = [{ id: 'd0', name: null, earnedMonth: '2025-01' }];
+    // Passed newest-first on purpose; latest (2025-02) says 1 duck — consistent.
+    const { read, engine } = build({
+      startedAt: '2025-01-01',
+      storeSeed: {
+        ducks,
+        accessoryTier: 0,
+        evaluations: [finalEval('2025-02', 1), finalEval('2025-01', 2)],
+      },
+    });
+    perfectMonth(read, '2025-03');
+    const evs = await engine.evaluatePendingMonths('2025-04-01');
+    expect(evs.map((e) => e.month)).toEqual(['2025-03']);
+  });
+
+  test('over-cap flock (13 ducks) → DuckStateError instead of a 13-duck verdict', async () => {
+    const seeded: Duck[] = Array.from({ length: 13 }, (_, i) => ({
+      id: `orig-${i}`,
+      name: null,
+      earnedMonth: '2024-12',
+    }));
+    const { read, engine, store } = build({
+      startedAt: '2025-01-01',
+      storeSeed: { ducks: seeded, accessoryTier: 0 },
+    });
+    perfectMonth(read, '2025-01');
+    await expect(engine.evaluatePendingMonths('2025-02-01')).rejects.toThrow(DuckStateError);
+    await expect(engine.evaluatePendingMonths('2025-02-01')).rejects.toThrow(/13 ducks/);
+    expect(store.peekEvaluations()).toHaveLength(0);
+  });
+
+  test('accessory tier outside 0..3 → DuckStateError', async () => {
+    for (const tier of [4, -1]) {
+      const ducks: Duck[] = [{ id: 'd0', name: null, earnedMonth: '2024-12' }];
+      const { read, engine } = build({
+        startedAt: '2025-01-01',
+        storeSeed: { ducks, accessoryTier: tier },
+      });
+      perfectMonth(read, '2025-01');
+      await expect(engine.evaluatePendingMonths('2025-02-01')).rejects.toThrow(DuckStateError);
+      await expect(engine.getFlock()).rejects.toThrow(DuckStateError);
+    }
+  });
+
+  test('valid boundary state (12 ducks, tier 3) passes validation', async () => {
+    const ducks: Duck[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `d${i}`,
+      name: null,
+      earnedMonth: '2024-12',
+    }));
+    const { engine } = build({
+      startedAt: '2025-01-01',
+      storeSeed: { ducks, accessoryTier: 3 },
+    });
+    const flock = await engine.getFlock();
+    expect(flock.ducks).toHaveLength(12);
+    expect(flock.accessoryTier).toBe(3);
   });
 });
