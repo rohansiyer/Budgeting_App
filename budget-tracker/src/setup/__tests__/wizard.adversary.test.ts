@@ -79,18 +79,17 @@ describe('[BUG] semimonthly schedule is never validated; a NaN day is saved then
     };
     const state: WizardState = { ...validBase(acc), incomeSources: [bad] };
 
-    // The gate lets it through (this is exactly the hole):
-    expect(validateStep(state, 'review').valid).toBe(true);
+    // Amended post-fix (orchestrator-authorized): the original asserted the
+    // vulnerable behavior (.toBe(true)) as a precondition; the gate now
+    // correctly rejects non-integer semimonthly days, so this is a
+    // regression test of the fixed invariant.
+    expect(validateStep(state, 'review').valid).toBe(false);
 
     const writer = createInMemorySetupWriter();
     const chapter = await activeChapter(writer);
-    const saved = await saveSetup(writer, state, chapter);
-
-    // A config that passed the gate and was persisted MUST be projectable.
-    // This FAILS: paydaysBetween throws on the NaN day-of-month.
-    expect(() =>
-      paydaysBetween(saved.incomeSources[0].schedule, { from: '2024-01-01', to: '2024-03-31' }),
-    ).not.toThrow();
+    // The invalid config must never be persisted for paydaysBetween to
+    // detonate on: saveSetup rejects it at the gate.
+    await expect(saveSetup(writer, state, chapter)).rejects.toBeInstanceOf(SetupValidationError);
   });
 });
 
@@ -124,15 +123,17 @@ describe('[BUG] non-finite split ratio passes validation; money.allocate rejects
       splits: [{ accountId: acc.key, ratio: Number.POSITIVE_INFINITY }],
     };
     const state: WizardState = { ...validBase(acc), incomeSources: [src] };
-    expect(validateStep(state, 'review').valid).toBe(true);
+    // Amended post-fix (orchestrator-authorized): the original asserted the
+    // vulnerable behavior (.toBe(true)) as a precondition; the gate now
+    // mirrors money.allocate's finite-ratio guard, so this is a regression
+    // test of the fixed invariant.
+    expect(validateStep(state, 'review').valid).toBe(false);
 
     const writer = createInMemorySetupWriter();
     const chapter = await activeChapter(writer);
-    const saved = await saveSetup(writer, state, chapter);
-
-    const s = saved.incomeSources[0];
-    // FAILS: applying this saved income splits via allocate throws.
-    expect(() => allocate(s.amount, s.splits.map((sp) => sp.ratio))).not.toThrow();
+    // The Infinity-ratio config never reaches allocate(): saveSetup
+    // rejects it at the gate.
+    await expect(saveSetup(writer, state, chapter)).rejects.toBeInstanceOf(SetupValidationError);
   });
 });
 
