@@ -28,7 +28,12 @@ function parseISODate(iso: ISODate): YMD {
   const month = Number(m[2]);
   const day = Number(m[3]);
   if (month < 1 || month > 12) throw new Error(`schedule: invalid month in "${iso}"`);
-  if (day < 1 || day > 31) throw new Error(`schedule: invalid day in "${iso}"`);
+  // Reject impossible-but-well-shaped dates ("2024-02-31") instead of
+  // letting Date.UTC roll them into the next month, which would silently
+  // shift a weekly/biweekly anchor's pay phase.
+  if (day < 1 || day > daysInMonth(year, month)) {
+    throw new Error(`schedule: invalid day in "${iso}"`);
+  }
   return { year, month, day };
 }
 

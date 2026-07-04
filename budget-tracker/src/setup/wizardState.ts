@@ -5,6 +5,7 @@
  * `SetupWriter`.
  */
 import type { Cents } from '../lib/money';
+import { toEpochDay } from '../lib/schedule';
 import type { CategoryColorKey, EnvelopeConfig, IncomeSchedule, IncomeSplitConfig } from '../types/contracts';
 import type { AccountConfig } from '../types/contracts';
 
@@ -204,12 +205,40 @@ export function validateIncomeStep(state: WizardState): StepValidation {
     if (source.splits.some((s) => s.ratio < 0)) {
       errors.push(`"${source.name || 'Income source'}" has a negative split ratio.`);
     }
+    // Mirror money.allocate's guard: the wizard gate, not the allocator,
+    // must be what rejects a ratio allocate() cannot use (NaN, Infinity).
+    if (source.splits.some((s) => !Number.isFinite(s.ratio))) {
+      errors.push(`"${source.name || 'Income source'}" has a non-finite split ratio.`);
+    }
     if (source.splits.every((s) => s.ratio === 0)) {
       errors.push(`"${source.name || 'Income source'}" splits must sum to more than zero.`);
     }
     const accountIds = new Set(state.accounts.map((a) => a.key));
     if (source.splits.some((s) => !accountIds.has(s.accountId))) {
       errors.push(`"${source.name || 'Income source'}" splits reference a removed account.`);
+    }
+    // Schedule must be projectable by paydaysBetween once persisted.
+    if (source.schedule.kind === 'semimonthly') {
+      const days = source.schedule.semimonthlyDays;
+      if (
+        !days ||
+        days.length !== 2 ||
+        days.some((d) => !Number.isInteger(d) || d < 1 || d > 31)
+      ) {
+        errors.push(
+          `"${source.name || 'Income source'}" needs two semimonthly days of month between 1 and 31.`,
+        );
+      }
+    } else {
+      // Anchor-based kinds: the anchor must be a real calendar date
+      // (toEpochDay rejects impossible dates like 2024-02-31).
+      try {
+        toEpochDay(source.schedule.anchorDate);
+      } catch {
+        errors.push(
+          `"${source.name || 'Income source'}" needs a real calendar anchor date (YYYY-MM-DD).`,
+        );
+      }
     }
   }
   return { valid: errors.length === 0, errors };
