@@ -1,394 +1,196 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, theme } from '../theme/colors';
-import { useBudgetStore } from '../store';
-import {
-  getDaysInWeek,
-  getWeekBoundaries,
-  formatWeekRange,
-  toISODate,
-  getPreviousWeek,
-  getNextWeek,
-  isToday,
-  format,
-  formatMonthYear,
-  addMonths,
-  subMonths,
-} from '../utils/dateUtils';
-import { calculateDailyTotal, formatCurrency } from '../utils/calculations';
-import { MonthlyCalendarView } from '../components/MonthlyCalendarView';
-import { DailyDetailScreen } from './DailyDetailScreen';
-import { WeeklyBreakdownScreen } from './WeeklyBreakdownScreen';
+import React from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { colors, space, type, metrics } from '../theme/tokens';
+import { PixelBox } from '../components/kit';
+import { Screen, SectionLabel } from '../components/Primitives';
+import { useStore } from '../providers/StoreProvider';
+import { useAppShell } from '../providers/AppShell';
+import { monthTitle, dayNumber } from '../format/dates';
+import type { DaySpend, ISODate } from '../types/contracts';
 
-const CalendarScreen = () => {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [showWeeklyBreakdown, setShowWeeklyBreakdown] = useState(false);
+const WEEK_HEADER = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-  const { transactions, accounts, getAccountBalance, isLoading, loadData } =
-    useBudgetStore();
+/** Monday-based weekday index (0 = Monday). */
+function mondayIndex(isoDate: ISODate): number {
+  const [y, m, d] = isoDate.split('-').map((n) => parseInt(n, 10));
+  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 Sun..6 Sat
+  return wd === 0 ? 6 : wd - 1;
+}
 
-  useEffect(() => {
-    loadData();
-  }, []);
+export function CalendarScreen() {
+  const store = useStore();
+  const { openDay } = useAppShell();
+  const today = store.getToday();
+  const heatmap = store.getMonthHeatmap(today);
+  const leadBlanks = heatmap.length > 0 ? mondayIndex(heatmap[0].date) : 0;
 
-  const { start: weekStart, end: weekEnd } = getWeekBoundaries(currentDate);
-  const daysInWeek = getDaysInWeek(currentDate);
-
-  const startingBalance = accounts.reduce((total, acc) => {
-    return total + getAccountBalance(acc.id, toISODate(weekStart));
-  }, 0);
-
-  const endingBalance = accounts.reduce((total, acc) => {
-    return total + getAccountBalance(acc.id, toISODate(weekEnd));
-  }, 0);
-
-  const handlePrevious = () => {
-    if (viewMode === 'week') {
-      setCurrentDate(getPreviousWeek(currentDate));
-    } else {
-      setCurrentDate(subMonths(currentDate, 1));
-    }
-  };
-
-  const handleNext = () => {
-    if (viewMode === 'week') {
-      setCurrentDate(getNextWeek(currentDate));
-    } else {
-      setCurrentDate(addMonths(currentDate, 1));
-    }
-  };
-
-  const handleToday = () => {
-    setCurrentDate(new Date());
-  };
-
-  const toggleViewMode = () => {
-    setViewMode(viewMode === 'week' ? 'month' : 'week');
-  };
-
-  const getHeaderTitle = () => {
-    if (viewMode === 'week') {
-      return formatWeekRange(weekStart, weekEnd);
-    } else {
-      return formatMonthYear(currentDate);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accent.primary} />
-      </View>
-    );
-  }
+  const cells: (DaySpend | null)[] = [
+    ...Array.from({ length: leadBlanks }, () => null),
+    ...heatmap,
+  ];
 
   return (
-    <View style={styles.container}>
-      {/* Header with navigation */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handlePrevious} style={styles.navButton}>
-          <Ionicons name="chevron-back" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity onPress={handleToday} style={styles.todayButton}>
-              <Text style={styles.todayText}>Today</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={toggleViewMode} style={styles.viewModeButton}>
-              <Ionicons
-                name={viewMode === 'week' ? 'calendar' : 'list'}
-                size={16}
-                color={colors.accent.primary}
-              />
-              <Text style={styles.viewModeText}>
-                {viewMode === 'week' ? 'Month' : 'Week'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+    <Screen title={monthTitle(today)}>
+      <PixelBox padding={space.lg} style={styles.calBox}>
+        <View style={styles.weekHeader}>
+          {WEEK_HEADER.map((w, i) => (
+            <Text key={i} style={styles.weekHeaderCell}>
+              {w}
+            </Text>
+          ))}
         </View>
+        <View style={styles.grid}>
+          {cells.map((cell, i) =>
+            cell ? (
+              <DayCell
+                key={cell.date}
+                cell={cell}
+                isToday={cell.date === today}
+                onPress={() => openDay(cell.date)}
+                formatMoney={store.formatMoney}
+              />
+            ) : (
+              <View key={`blank_${i}`} style={styles.cell} />
+            )
+          )}
+        </View>
+      </PixelBox>
 
-        <TouchableOpacity onPress={handleNext} style={styles.navButton}>
-          <Ionicons name="chevron-forward" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-      </View>
+      <SectionLabel>Legend</SectionLabel>
+      <PixelBox padding={space.lg}>
+        <LegendRow swatch={<View style={[styles.legendSwatch, { backgroundColor: colors.accent.base }]} />} label="Spending intensity (darker = more)" />
+        <LegendRow swatch={<View style={[styles.legendRing]} />} label="Payday" />
+        <LegendRow swatch={<View style={[styles.legendSwatch, { backgroundColor: colors.status.spend }]} />} label="Fixed bill spike" />
+      </PixelBox>
+    </Screen>
+  );
+}
 
-      {viewMode === 'week' ? (
-        <>
-          {/* Starting balance */}
-          <View style={styles.balanceCard}>
-            <Text style={styles.balanceLabel}>Starting Balance</Text>
-            <View style={styles.accountBalances}>
-              {accounts.map((acc) => (
-                <Text key={acc.id} style={styles.accountText}>
-                  {acc.name}: {formatCurrency(getAccountBalance(acc.id, toISODate(weekStart)))}
-                </Text>
-              ))}
-            </View>
-          </View>
-
-          {/* Weekly calendar grid */}
-          <ScrollView style={styles.scrollView}>
-            <View style={styles.weekGrid}>
-              {daysInWeek.map((day) => {
-                const dayStr = toISODate(day);
-                const dayTransactions = transactions.filter((txn) => txn.date === dayStr);
-                const dayTotal = calculateDailyTotal(dayTransactions);
-                const today = isToday(day);
-
-                return (
-                  <TouchableOpacity
-                    key={dayStr}
-                    style={[styles.dayCard, today && styles.dayCardToday]}
-                    onPress={() => setSelectedDay(day)}
-                  >
-                    <Text style={[styles.dayName, today && styles.dayNameToday]}>
-                      {format(day, 'EEE')}
-                    </Text>
-                    <Text style={[styles.dayNumber, today && styles.dayNumberToday]}>
-                      {format(day, 'd')}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.dayAmount,
-                        dayTotal > 0 && styles.dayAmountPositive,
-                        dayTotal < 0 && styles.dayAmountNegative,
-                      ]}
-                    >
-                      {dayTotal > 0 ? '+' : ''}
-                      {formatCurrency(dayTotal)}
-                    </Text>
-                    <Text style={styles.dayTransactionCount}>
-                      {dayTransactions.length} transactions
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Ending balance */}
-            <TouchableOpacity
-              style={styles.endingBalanceCard}
-              onPress={() => setShowWeeklyBreakdown(true)}
-            >
-              <Text style={styles.balanceLabel}>Ending Balance</Text>
-              <View style={styles.accountBalances}>
-                {accounts.map((acc) => (
-                  <Text key={acc.id} style={styles.accountText}>
-                    {acc.name}: {formatCurrency(getAccountBalance(acc.id, toISODate(weekEnd)))}
-                  </Text>
-                ))}
-              </View>
-              <View style={styles.netChangeContainer}>
-                <Text style={styles.netChangeLabel}>Net Change: </Text>
-                <Text
-                  style={[
-                    styles.netChangeAmount,
-                    endingBalance - startingBalance > 0 && styles.dayAmountPositive,
-                    endingBalance - startingBalance < 0 && styles.dayAmountNegative,
-                  ]}
-                >
-                  {endingBalance - startingBalance > 0 ? '+' : ''}
-                  {formatCurrency(endingBalance - startingBalance)}
-                </Text>
-              </View>
-              <Text style={styles.clickForDetails}>Tap for weekly breakdown</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </>
-      ) : (
-        <ScrollView style={styles.scrollView}>
-          <MonthlyCalendarView
-            currentDate={currentDate}
-            transactions={transactions}
-            onDayPress={(day) => setSelectedDay(day)}
-          />
-        </ScrollView>
-      )}
-
-      {/* Daily Detail Modal */}
-      {selectedDay && (
-        <DailyDetailScreen date={selectedDay} onClose={() => setSelectedDay(null)} />
-      )}
-
-      {/* Weekly Breakdown Modal */}
-      {showWeeklyBreakdown && (
-        <WeeklyBreakdownScreen
-          weekStart={weekStart}
-          weekEnd={weekEnd}
-          onClose={() => setShowWeeklyBreakdown(false)}
+function DayCell({
+  cell,
+  isToday,
+  onPress,
+  formatMoney,
+}: {
+  cell: DaySpend;
+  isToday: boolean;
+  onPress: () => void;
+  formatMoney: (n: number) => string;
+}) {
+  const border = cell.hasFixedSpike
+    ? colors.status.spend
+    : isToday
+    ? colors.text.primary
+    : colors.border.hairline;
+  return (
+    <Pressable
+      style={styles.cell}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${dayNumber(cell.date)}: spent ${formatMoney(cell.spent)}${cell.isPayday ? ', payday' : ''}${cell.hasFixedSpike ? ', fixed bill' : ''}`}
+    >
+      <View style={[styles.cellInner, { borderColor: border }]}>
+        {/* intensity fill via opacity (no colour literal) */}
+        <View
+          style={[
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: colors.accent.base, opacity: 0.12 + cell.intensity * 0.68 },
+          ]}
+          pointerEvents="none"
         />
-      )}
+        <Text style={[styles.cellNum, isToday && styles.cellNumToday]}>{dayNumber(cell.date)}</Text>
+        {cell.isPayday ? <View style={styles.paydayRing} pointerEvents="none" /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function LegendRow({ swatch, label }: { swatch: React.ReactNode; label: string }) {
+  return (
+    <View style={styles.legendRow}>
+      {swatch}
+      <Text style={styles.legendLabel}>{label}</Text>
     </View>
   );
-};
+}
+
+const CELL_PCT = '14.2857%' as const;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  calBox: {
+    marginTop: space.sm,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-  header: {
+  weekHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: theme.spacing.md,
-    backgroundColor: colors.surface,
+    marginBottom: space.sm,
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
+  weekHeaderCell: {
+    width: CELL_PCT,
+    textAlign: 'center',
+    color: colors.text.muted,
+    fontFamily: type.family.mono,
+    fontSize: type.size.micro,
+    letterSpacing: 1,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginBottom: 4,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    alignItems: 'center',
-  },
-  navButton: {
-    padding: theme.spacing.sm,
-  },
-  todayButton: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-  },
-  todayText: {
-    color: colors.accent.primary,
-    fontSize: 14,
-  },
-  viewModeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-    backgroundColor: colors.card,
-    borderRadius: 4,
-  },
-  viewModeText: {
-    color: colors.accent.primary,
-    fontSize: 14,
-  },
-  balanceCard: {
-    backgroundColor: colors.surface,
-    padding: theme.spacing.md,
-    margin: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-  },
-  balanceLabel: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: theme.spacing.sm,
-  },
-  accountBalances: {
-    gap: 4,
-  },
-  accountText: {
-    fontSize: 16,
-    color: colors.text.primary,
-    fontFamily: 'monospace',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  weekGrid: {
+  grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: theme.spacing.sm,
-    gap: theme.spacing.sm,
   },
-  dayCard: {
-    backgroundColor: colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    width: '48%',
-    marginBottom: theme.spacing.sm,
+  cell: {
+    width: CELL_PCT,
+    aspectRatio: 1,
+    padding: 2,
   },
-  dayCardToday: {
-    borderWidth: 2,
-    borderColor: colors.accent.primary,
+  cellInner: {
+    flex: 1,
+    borderWidth: metrics.hairline,
+    borderRadius: metrics.radius,
+    backgroundColor: colors.bg.sunken,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  dayName: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    textTransform: 'uppercase',
-  },
-  dayNameToday: {
-    color: colors.accent.primary,
-    fontWeight: 'bold',
-  },
-  dayNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  cellNum: {
     color: colors.text.primary,
-    marginVertical: theme.spacing.xs,
+    fontFamily: type.family.mono,
+    fontSize: type.size.caption,
   },
-  dayNumberToday: {
-    color: colors.accent.primary,
+  cellNumToday: {
+    fontWeight: type.weight.bold,
   },
-  dayAmount: {
-    fontSize: 18,
-    fontFamily: 'monospace',
-    color: colors.text.primary,
-    marginBottom: 4,
+  paydayRing: {
+    position: 'absolute',
+    bottom: 3,
+    width: 6,
+    height: 6,
+    borderRadius: metrics.radius,
+    borderWidth: metrics.hairline,
+    borderColor: colors.status.payday,
+    backgroundColor: colors.status.payday,
   },
-  dayAmountPositive: {
-    color: colors.status.success,
-  },
-  dayAmountNegative: {
-    color: colors.status.error,
-  },
-  dayTransactionCount: {
-    fontSize: 12,
-    color: colors.text.disabled,
-  },
-  endingBalanceCard: {
-    backgroundColor: colors.surface,
-    padding: theme.spacing.md,
-    margin: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-  },
-  netChangeContainer: {
+  legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: theme.spacing.sm,
+    marginBottom: space.md,
   },
-  netChangeLabel: {
-    fontSize: 16,
+  legendSwatch: {
+    width: 16,
+    height: 16,
+    borderRadius: metrics.radius,
+    marginRight: space.md,
+  },
+  legendRing: {
+    width: 16,
+    height: 16,
+    borderRadius: metrics.radius,
+    borderWidth: metrics.hairline * 2,
+    borderColor: colors.status.payday,
+    marginRight: space.md,
+  },
+  legendLabel: {
     color: colors.text.secondary,
-  },
-  netChangeAmount: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
-  },
-  clickForDetails: {
-    fontSize: 12,
-    color: colors.accent.secondary,
-    marginTop: theme.spacing.sm,
-    textAlign: 'center',
+    fontFamily: type.family.text,
+    fontSize: type.size.body,
   },
 });
 
