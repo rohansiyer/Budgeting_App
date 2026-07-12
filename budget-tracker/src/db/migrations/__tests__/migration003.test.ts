@@ -14,8 +14,10 @@ type Raw = RawSqlDb & {
 };
 
 describe('migration 3 (import data layer)', () => {
-  it('is registered as the latest version', () => {
-    expect(MIGRATIONS[MIGRATIONS.length - 1].version).toBe(3);
+  it('is registered at version 3 in the runner sequence', () => {
+    expect(MIGRATIONS.some((m) => m.version === 3)).toBe(true);
+    // Versions must stay contiguous from 1 so the runner never skips.
+    MIGRATIONS.forEach((m, i) => expect(m.version).toBe(i + 1));
   });
 
   it('upgrades a v2 database additively to v3', async () => {

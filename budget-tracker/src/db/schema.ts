@@ -199,6 +199,32 @@ export const recurringBills = sqliteTable(
   }),
 );
 
+/**
+ * Named savings goals (handoff §3.10, migration 4). A goal targets a dollar
+ * amount and reads its current progress from a linked savings account
+ * (`savingsAccountId`) — or, when null, from the sum of ALL savings-kind
+ * account balances. `targetCents` is a positive INTEGER of cents. `active:false`
+ * is the non-destructive remove (row retained for history, hidden from the goal
+ * list UI), consistent with recurring_bills. `achievedAt` is stamped when the
+ * goal is first met (nullable); it is independent of `active`.
+ */
+export const goals = sqliteTable(
+  'goals',
+  {
+    id: text('id').primaryKey(),
+    chapterId: text('chapter_id').notNull(),
+    name: text('name').notNull(),
+    targetCents: integer('target_cents').notNull(), // Cents, > 0
+    savingsAccountId: text('savings_account_id'), // null => all savings accounts
+    active: integer('active', { mode: 'boolean' }).notNull(),
+    createdAt: text('created_at').notNull(),
+    achievedAt: text('achieved_at'), // ISO timestamp | null
+  },
+  (t) => ({
+    chapterIdx: index('idx_goals_chapter').on(t.chapterId),
+  }),
+);
+
 /** App-level settings. Single-row (id = 'main'). */
 export const settings = sqliteTable('settings', {
   id: text('id').primaryKey(),

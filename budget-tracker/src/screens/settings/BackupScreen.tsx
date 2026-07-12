@@ -13,6 +13,7 @@ import { LAST_BACKUP_EXPORT_KEY, IMPORT_CONFIRM_TITLE, IMPORT_CONFIRM_MESSAGE, f
 import { useStore } from '../../providers/StoreProvider';
 import { todayISO } from '../../format/dates';
 import { exportTransactionsCsv } from './csvExport';
+import { ImportFlow } from './import/ImportFlow';
 
 const { color, space } = tokens;
 const typo = tokens.type;
@@ -20,6 +21,11 @@ const typo = tokens.type;
 type Feedback = { kind: 'success' | 'error'; text: string } | null;
 
 export function BackupScreen({ onBack }: { onBack: () => void }) {
+  // Local sub-stack (CLAUDE.md: Settings subscreens use the local state
+  // stack, not the root navigator) so the CSV import flow (F11) can be
+  // hosted here without SettingsScreen.tsx or the navigator knowing about it.
+  const [view, setView] = useState<'root' | 'import'>('root');
+
   // Real Drizzle-backed port (CONTRACTS.md: backup ships wired to Team 1's
   // schema, not the fake port used by the module's own unit tests).
   const port = useMemo(() => createDrizzleBackupPort(), []);
@@ -111,6 +117,10 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
   const lastExportLabel = formatExportTimestamp(lastExportIso);
   const busy = exporting || importing || csvExporting;
 
+  if (view === 'import') {
+    return <ImportFlow onBack={() => setView('root')} />;
+  }
+
   return (
     <Screen scroll>
       <SubscreenHeader title="Backup" onBack={onBack} />
@@ -141,11 +151,13 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
         />
       </View>
 
-      {/* Every number is a door (F10): CSV export of the active chapter's
-          transactions, alongside the JSON backup above. */}
+      {/* Data (F10 + F11): CSV export of the active chapter's transactions,
+          alongside the JSON backup above, plus CSV statement import. */}
+      <Text style={styles.sectionLabel}>Data</Text>
       <Text style={styles.body}>
         Export every transaction in your active chapter as a CSV file: date, category, title,
-        amount, and note.
+        amount, and note. Import a bank or card statement CSV; you'll review every match before
+        anything is written.
       </Text>
       <View style={styles.actions}>
         <HardButton
@@ -154,6 +166,13 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
           onPress={() => void handleCsvExport()}
           disabled={busy}
           accessibilityLabel="Export all transactions as a CSV file"
+        />
+        <HardButton
+          label="Import CSV"
+          variant="ghost"
+          onPress={() => setView('import')}
+          disabled={busy}
+          accessibilityLabel="Import transactions from a CSV file"
         />
       </View>
 
@@ -175,6 +194,15 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  sectionLabel: {
+    color: color.textMuted,
+    fontSize: typo.sectionLabel.fontSize,
+    fontWeight: typo.sectionLabel.fontWeight,
+    letterSpacing: typo.sectionLabel.letterSpacing,
+    textTransform: typo.sectionLabel.textTransform,
+    marginTop: space.lg,
+    marginBottom: space.sm,
+  },
   body: {
     color: color.textSecondary,
     fontSize: typo.body.fontSize,

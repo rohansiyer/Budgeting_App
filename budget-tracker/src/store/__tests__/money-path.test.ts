@@ -320,6 +320,59 @@ describe('conservation law', () => {
   });
 });
 
+describe('getMonthSavingsTotal netting (v0.3 anti-inflation)', () => {
+  it('savings -> savings shuffle adds ZERO to the metric', async () => {
+    await freshChapter();
+    await makeAccount('Checking', 100000, 'spending');
+    const savA = await makeAccount('Savings A', 50000, 'savings');
+    const savB = await makeAccount('Savings B', 0, 'savings');
+
+    // Shuffling money between two savings accounts moves no new money into
+    // savings — it must not count toward the Goal-3 savings metric.
+    await store().transfer({ fromAccountId: savA, toAccountId: savB, amount: cents(30000), date: '2026-01-06' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(0);
+  });
+
+  it('checking -> savings still counts in full', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000, 'spending');
+    const savings = await makeAccount('Savings', 0, 'savings');
+
+    await store().transfer({ fromAccountId: checking, toAccountId: savings, amount: cents(40000), date: '2026-01-06' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(40000);
+  });
+
+  it('multi-savings setup nets: a spending deposit counts, a savings shuffle does not', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000, 'spending');
+    const savA = await makeAccount('Savings A', 20000, 'savings');
+    const savB = await makeAccount('Savings B', 0, 'savings');
+
+    // Real deposit from spending: counts.
+    await store().transfer({ fromAccountId: checking, toAccountId: savA, amount: cents(25000), date: '2026-01-06' });
+    // Internal shuffle between the two savings accounts: nets to zero.
+    await store().transfer({ fromAccountId: savA, toAccountId: savB, amount: cents(15000), date: '2026-01-07' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(25000);
+  });
+
+  it('sweep still counts (spending-funded transfer into savings)', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Fun', 10000);
+    await makeAccount('Checking', 100000, 'spending');
+    const savings = await makeAccount('Savings', 0, 'savings');
+
+    await store().sweepToSavings(cat, WEEK, savings);
+    // A later savings->savings shuffle must not add to the swept total.
+    const savB = await makeAccount('Savings B', 0, 'savings');
+    await store().transfer({ fromAccountId: savings, toAccountId: savB, amount: cents(5000), date: '2026-01-08' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(10000);
+  });
+});
+
 describe('transfer atomicity', () => {
   it('a throw mid-transfer rolls back — both accounts unchanged', async () => {
     await freshChapter();

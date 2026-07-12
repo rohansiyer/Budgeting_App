@@ -10,7 +10,14 @@ import { NOTIFICATION_KINDS, NotificationKind } from '../../notifications/types'
 export type SetupMode = 'edit' | 'newChapter';
 
 /** Subscreens this module owns and pushes onto its local, in-tab "stack". */
-export type SettingsRouteName = 'root' | 'backup' | 'security' | 'notifications' | 'about';
+export type SettingsRouteName =
+  | 'root'
+  | 'backup'
+  | 'security'
+  | 'notifications'
+  | 'bills'
+  | 'searchLedger'
+  | 'about';
 
 /** Every id the root list can produce, including the two that don't push a
  * local subscreen (they call the `onOpenSetup` seam instead). */
@@ -28,6 +35,8 @@ export const ROOT_SETTINGS_ITEMS: readonly RootSettingsItem[] = [
   { id: 'backup', title: 'Backup', subtitle: 'Export or import your data' },
   { id: 'security', title: 'Security', subtitle: 'App lock, PIN, biometrics' },
   { id: 'notifications', title: 'Notifications', subtitle: 'Bill reminders, payday, envelope warnings' },
+  { id: 'bills', title: 'Bills', subtitle: 'Upcoming bills and subscriptions' },
+  { id: 'searchLedger', title: 'Search ledger', subtitle: 'Find any transaction, filter by category' },
   { id: 'newChapter', title: 'New chapter', subtitle: 'Archive this setup, keep the flock' },
   { id: 'about', title: 'About', subtitle: 'App info' },
 ];

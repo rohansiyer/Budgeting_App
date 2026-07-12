@@ -174,3 +174,141 @@ describe('safeToSpendBreakdown reconciliation', () => {
     expect(bd.totalCents).toBe(store().getSafeToSpend(WEEK));
   });
 });
+
+/**
+ * Bills-forecast reservation (handoff §3.8). Active recurring bills due before
+ * the next payday are held out of safe-to-spend and surface as one reconciling
+ * "Reserved for upcoming bills" outflow line. WEEK is Mon 2026-01-05.
+ */
+describe('bills reservation feeds safe-to-spend', () => {
+  // A weekly paycheck lands every Friday, so the next payday after WEEK's Monday
+  // is Fri 2026-01-09 — inside the current week.
+  async function weeklyPaycheck(accountId: string, anchorFriday = '2026-01-09') {
+    const src = await store().createIncomeSource({
+      name: 'Paycheck',
+      amount: cents(64000),
+      schedule: { kind: 'weekly', anchorDate: anchorFriday },
+      splits: [{ accountId, ratio: 1 }],
+    });
+    return src.id;
+  }
+
+  async function makeFixedCategory(name: string) {
+    const c = await store().createCategory({
+      name,
+      colorKey: 'violet',
+      fixed: true,
+      envelope: null,
+    });
+    return c.id;
+  }
+
+  it('reservation math: a bill due before the next payday is held out of the total', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000);
+    await makeWeeklyEnvelope('Food', 10000);
+    await weeklyPaycheck(checking); // next payday Fri 2026-01-09
+    const rent = await makeFixedCategory('Rent');
+    // Due on the 6th (Tue) — before Friday's payday → reserves.
+    await store().addRecurringBill({ name: 'Rent', categoryId: rent, amountCents: cents(4000), dueDay: 6 });
+
+    // Envelope remaining is 10000; reservation of 4000 pulls the hero to 6000.
+    expect(store().getSafeToSpend(WEEK)).toBe(6000);
+  });
+
+  it('breakdown surfaces a reconciling "Reserved for upcoming bills" out line', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000);
+    await makeWeeklyEnvelope('Food', 10000);
+    await weeklyPaycheck(checking);
+    const rent = await makeFixedCategory('Rent');
+    await store().addRecurringBill({ name: 'Rent', categoryId: rent, amountCents: cents(4000), dueDay: 6 });
+
+    const bd = safeToSpendBreakdown(WEEK);
+    expectReconciled(bd, WEEK); // total === getSafeToSpend, lines sum to total
+    expect(bd.totalCents).toBe(6000);
+    expect(bd.lines.find((l) => l.label === 'Reserved for upcoming bills')).toEqual({
+      label: 'Reserved for upcoming bills',
+      amountCents: 4000,
+      direction: 'out',
+    });
+  });
+
+  it('already-paid bill is not double-reserved (matching category + amount this window)', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000);
+    await makeWeeklyEnvelope('Food', 10000);
+    await weeklyPaycheck(checking);
+    const rent = await makeFixedCategory('Rent');
+    await store().addRecurringBill({ name: 'Rent', categoryId: rent, amountCents: cents(4000), dueDay: 6 });
+    // The bill is actually paid this window (same category + amount): no reserve.
+    await store().addExpense({ accountId: checking, categoryId: rent, amount: cents(4000), date: '2026-01-06' });
+
+    // Envelope remaining 10000 unchanged (Rent is a fixed, non-enveloped
+    // category, so its expense does not touch envelope math); reservation is 0.
+    expect(store().getSafeToSpend(WEEK)).toBe(10000);
+    const bd = safeToSpendBreakdown(WEEK);
+    expectReconciled(bd, WEEK);
+    expect(bd.lines.some((l) => l.label === 'Reserved for upcoming bills')).toBe(false);
+  });
+
+  it('payday-boundary: a bill due ON the payday reserves (inclusive)', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000);
+    await makeWeeklyEnvelope('Food', 10000);
+    await weeklyPaycheck(checking); // next payday Fri 2026-01-09
+    const rent = await makeFixedCategory('Rent');
+    // Due on the 9th — exactly the payday → still reserves.
+    await store().addRecurringBill({ name: 'Rent', categoryId: rent, amountCents: cents(3000), dueDay: 9 });
+
+    expect(store().getSafeToSpend(WEEK)).toBe(7000);
+    const bd = safeToSpendBreakdown(WEEK);
+    expectReconciled(bd, WEEK);
+    expect(bd.lines.find((l) => l.label === 'Reserved for upcoming bills')?.amountCents).toBe(3000);
+  });
+
+  it('a bill due AFTER the next payday does not reserve', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000);
+    await makeWeeklyEnvelope('Food', 10000);
+    await weeklyPaycheck(checking); // next payday Fri 2026-01-09
+    const rent = await makeFixedCategory('Rent');
+    // Due on the 12th — after Friday's payday → next pay period, no reserve now.
+    await store().addRecurringBill({ name: 'Rent', categoryId: rent, amountCents: cents(4000), dueDay: 12 });
+
+    expect(store().getSafeToSpend(WEEK)).toBe(10000);
+    const bd = safeToSpendBreakdown(WEEK);
+    expectReconciled(bd, WEEK);
+    expect(bd.lines.some((l) => l.label === 'Reserved for upcoming bills')).toBe(false);
+  });
+
+  it('no-payday-schedule fallback: no income source means no reservation', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000);
+    await makeWeeklyEnvelope('Food', 10000);
+    // No income source configured → no payday horizon to bound the window.
+    const rent = await makeFixedCategory('Rent');
+    await store().addRecurringBill({ name: 'Rent', categoryId: rent, amountCents: cents(4000), dueDay: 6 });
+
+    // Without a payday we cannot bound the window, so we reserve nothing rather
+    // than invent an outflow (honesty rule).
+    expect(store().getSafeToSpend(WEEK)).toBe(10000);
+    const bd = safeToSpendBreakdown(WEEK);
+    expectReconciled(bd, WEEK);
+    expect(bd.lines.some((l) => l.label === 'Reserved for upcoming bills')).toBe(false);
+    // Sanity: the account still has cash; only the schedule is missing.
+    expect(store().getAccountBalance(checking, '2026-01-31')).toBe(100000);
+  });
+
+  it('inactive bill does not reserve', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000);
+    await makeWeeklyEnvelope('Food', 10000);
+    await weeklyPaycheck(checking);
+    const rent = await makeFixedCategory('Rent');
+    const bill = await store().addRecurringBill({ name: 'Rent', categoryId: rent, amountCents: cents(4000), dueDay: 6 });
+    await store().updateRecurringBill(bill.id, { active: false });
+
+    expect(store().getSafeToSpend(WEEK)).toBe(10000);
+  });
+});

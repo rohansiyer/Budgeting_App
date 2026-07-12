@@ -45,6 +45,8 @@ import type {
   EnvelopeConfig,
   EnvelopeWeekState,
   EvaluationReadPort,
+  Goal,
+  GoalProgress,
   IncomeSchedule,
   IncomeSourceConfig,
   ISODate,
@@ -197,6 +199,16 @@ interface RecurringBillRow {
   active: boolean;
   createdAt: string;
 }
+interface GoalRow {
+  id: string;
+  chapterId: string;
+  name: string;
+  targetCents: number;
+  savingsAccountId: string | null;
+  active: boolean;
+  createdAt: string;
+  achievedAt: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // AtomicDb — BEGIN/COMMIT/ROLLBACK bracket on the single connection. Nested
@@ -293,6 +305,17 @@ function toRecurringBill(row: RecurringBillRow): RecurringBill {
     createdAt: row.createdAt,
   };
 }
+function toGoal(row: GoalRow): Goal {
+  return {
+    id: row.id,
+    name: row.name,
+    targetCents: C(row.targetCents),
+    savingsAccountId: row.savingsAccountId,
+    active: Boolean(row.active),
+    createdAt: row.createdAt,
+    achievedAt: row.achievedAt,
+  };
+}
 
 interface StoreState extends StoreContract {
   // Internal caches (money as Cents).
@@ -304,6 +327,7 @@ interface StoreState extends StoreContract {
   _carryover: CarryoverRow[];
   _merchantCorrections: MerchantCorrectionRow[];
   _recurringBills: RecurringBillRow[];
+  _goalRows: GoalRow[];
   _ducks: Duck[];
   _evaluations: DuckEvaluation[];
   _settingsRow: (Settings & { notificationsEnabled: boolean }) | null;
@@ -373,6 +397,14 @@ export const useBudgetStore = create<StoreState>((set, get) => {
   const assertCategoryExists = (categoryId: string): void => {
     if (!categoryRow(categoryId)) {
       throw new Error(`Unknown category "${categoryId}"`);
+    }
+  };
+  /** A goal may only link a savings-kind account that exists. */
+  const assertSavingsAccount = (accountId: string, role: string): void => {
+    const acct = get()._accountRows.find((a) => a.id === accountId);
+    if (!acct) throw new Error(`${role}: unknown account "${accountId}"`);
+    if (acct.kind !== 'savings') {
+      throw new Error(`${role}: account "${accountId}" is not a savings account`);
     }
   };
 
@@ -475,6 +507,84 @@ export const useBudgetStore = create<StoreState>((set, get) => {
   // calendar validation, DST-immune epoch-day arithmetic).
   const paydaysBetween = schedulePaydaysBetween;
 
+  // -- bills forecast reservation (handoff §3.8) ----------------------------
+  // The next date on/after `from` with day-of-month = min(dueDay, monthLength),
+  // implementing the clamp-to-month-end semantics of RecurringBill.dueDay. Pure
+  // calendar math (Date), never money.
+  const nextBillDueOnOrAfter = (dueDay: number, from: ISODate): ISODate => {
+    const start = toDate(from);
+    let y = start.getFullYear();
+    let m = start.getMonth(); // 0-based
+    for (let i = 0; i < 14; i++) {
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      const day = Math.min(dueDay, daysInMonth);
+      const candidate = fmt(new Date(y, m, day));
+      if (candidate >= from) return candidate;
+      m += 1;
+      if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+    }
+    return from; // unreachable (a due date always resolves within 14 months)
+  };
+
+  // The earliest payday STRICTLY AFTER `from` across all income sources within a
+  // ~2-month horizon (enough to catch a monthly cadence). Null when no income
+  // schedule projects a payday — the caller then reserves nothing (see below).
+  const nextPaydayAfter = (from: ISODate): ISODate | null => {
+    const sources = get()._incomeSources;
+    if (sources.length === 0) return null;
+    const range: DateRange = { from: addDays(from, 1), to: addDays(from, 62) };
+    let best: ISODate | null = null;
+    for (const src of sources) {
+      for (const d of paydaysBetween(src.schedule, range)) {
+        if (best == null || d < best) best = d;
+      }
+    }
+    return best;
+  };
+
+  /**
+   * Cents to hold out of `week`s safe-to-spend for upcoming bills (handoff
+   * §3.8, "Feeds the safe-to-spend math"). An ACTIVE recurring bill reserves iff
+   * its next occurrence (on/after the week start, clamp-to-month-end) falls on
+   * or before the NEXT payday after the week start — a bill due AFTER that
+   * payday belongs to the following pay period and does not reserve now. A bill
+   * already covered this window by a matching fixed-category expense (SAME
+   * categoryId AND SAME amount, dated within [weekStart, nextPayday]) is treated
+   * as paid and not reserved; matches are consumed 1:1 so two identical bills
+   * are not both cleared by a single payment. Zero active bills, or no upcoming
+   * payday to bound the window, reserves nothing: without a payday horizon the
+   * window is unbounded, so guessing a reservation would invent an outflow the
+   * displayed math cannot justify (honesty rule). A bill due ON the payday
+   * reserves (boundary is inclusive).
+   */
+  const billsReservation = (week: WeekStart): Cents => {
+    const bills = get()._recurringBills.filter((b) => b.active);
+    if (bills.length === 0) return ZERO;
+    const nextPayday = nextPaydayAfter(week);
+    if (nextPayday == null) return ZERO;
+    const windowTxns = liveTxns().filter(
+      (t) => t.kind === 'expense' && inRange(t.date, week, nextPayday),
+    );
+    const consumed = new Set<string>();
+    let reserved: Cents = ZERO;
+    for (const b of bills) {
+      const due = nextBillDueOnOrAfter(b.dueDay, week);
+      if (due > nextPayday) continue; // due after the next payday: not this window
+      const match = windowTxns.find(
+        (t) => !consumed.has(t.id) && t.categoryId === b.categoryId && t.amount === b.amountCents,
+      );
+      if (match) {
+        consumed.add(match.id);
+        continue; // already paid this window — do not double-reserve
+      }
+      reserved = addCents(reserved, C(b.amountCents));
+    }
+    return reserved;
+  };
+
   // -- refresh: reload every cache from committed DB, rebuild shim views ----
   const refresh = async (): Promise<void> => {
     const db = getDb();
@@ -509,6 +619,9 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     const recurringBills = (
       db.select().from(schema.recurringBills).all() as RecurringBillRow[]
     ).filter((r) => !chId || r.chapterId === chId);
+    const goalRows = (db.select().from(schema.goals).all() as GoalRow[]).filter(
+      (g) => !chId || g.chapterId === chId,
+    );
     const sourceRows = (db.select().from(schema.incomeSources).all() as Array<{
       id: string; chapterId: string; name: string; amount: number;
       scheduleKind: string; scheduleAnchorDate: string;
@@ -624,6 +737,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       _carryover: carryover,
       _merchantCorrections: merchantCorrections,
       _recurringBills: recurringBills,
+      _goalRows: goalRows,
       _ducks: ducks,
       _evaluations: evaluations,
       _settingsRow: settingsRows[0] ?? null,
@@ -661,20 +775,35 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const savingsIds = new Set(
         get()._accountRows.filter((a) => a.kind === 'savings').map((a) => a.id),
       );
+      const txns = liveTxns();
+      // Source of a transfer leg = its transfer_out partner (shared groupId).
+      const outByGroup = new Map<string, TxnRow>();
+      for (const t of txns) {
+        if (t.kind === 'transfer_out' && t.groupId != null) outByGroup.set(t.groupId, t);
+      }
       const transfersIn = sumCents(
-        liveTxns()
-          .filter(
-            (t) =>
-              t.kind === 'transfer_in' &&
-              savingsIds.has(t.accountId) &&
-              t.date.slice(0, 7) === month,
-          )
+        txns
+          .filter((t) => {
+            if (t.kind !== 'transfer_in') return false;
+            if (!savingsIds.has(t.accountId)) return false;
+            if (t.date.slice(0, 7) !== month) return false;
+            // v0.3 correction (adversarial finding): a transfer whose SOURCE is
+            // itself a savings account is a savings->savings SHUFFLE — it moves
+            // no new money into savings, so it must not inflate the Goal-3
+            // metric. Count only transfers funded from a NON-savings source.
+            // Single-savings setups are unaffected (no savings->savings transfer
+            // can exist), and sweeps (spending-funded) still count as before.
+            const partner = t.groupId != null ? outByGroup.get(t.groupId) : undefined;
+            if (partner && savingsIds.has(partner.accountId)) return false;
+            return true;
+          })
           .map((t) => C(t.amount)),
       );
-      // Sweeps create real transfer_in rows (see sweepToSavings), so the
-      // transfersIn term already includes them — no separate sweep term,
-      // which would double-count (Goal 3 basis: calendar-month transfers
-      // into savings-kind accounts).
+      // Sweeps create real transfer_in rows (see sweepToSavings) funded from a
+      // spending account, so the transfersIn term already includes them — no
+      // separate sweep term, which would double-count (Goal 3 basis:
+      // calendar-month transfers into savings-kind accounts, net of internal
+      // savings->savings shuffles).
       return C(transfersIn);
     },
     async getMonthFixedBillStatus(month) {
@@ -820,6 +949,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     _carryover: [],
     _merchantCorrections: [],
     _recurringBills: [],
+    _goalRows: [],
     _ducks: [],
     _evaluations: [],
     _settingsRow: null,
@@ -1102,6 +1232,80 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           .set(set_)
           .where(eq(schema.recurringBills.id, id))
           .run();
+      });
+      await refresh();
+    },
+
+    // ---------------------------------------------------------------- named goals
+    // A goal targets a positive dollar amount and reads progress from a linked
+    // savings account (or the sum of all savings accounts when unlinked).
+    // Validation mirrors the recurring-bill boundary: a phantom or non-savings
+    // account, an empty name, or a non-positive target all throw BEFORE any write.
+    addGoal: async (input) => {
+      const name = input.name.trim();
+      if (name.length === 0) throw new Error('addGoal: name must be non-empty');
+      if (!Number.isInteger(input.targetCents) || input.targetCents <= 0) {
+        throw new Error('addGoal: targetCents must be a positive whole number of cents');
+      }
+      const savingsAccountId = input.savingsAccountId ?? null;
+      if (savingsAccountId !== null) assertSavingsAccount(savingsAccountId, 'addGoal');
+      const id = generateId();
+      const chapterId = activeChapterId();
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        getDb()
+          .insert(schema.goals)
+          .values({
+            id,
+            chapterId,
+            name,
+            targetCents: input.targetCents,
+            savingsAccountId,
+            active: true,
+            createdAt: now,
+            achievedAt: null,
+          })
+          .run();
+      });
+      await refresh();
+      return {
+        id,
+        name,
+        targetCents: input.targetCents,
+        savingsAccountId,
+        active: true,
+        createdAt: now,
+        achievedAt: null,
+      };
+    },
+
+    updateGoal: async (id, patch) => {
+      if (!get()._goalRows.some((g) => g.id === id)) {
+        throw new Error(`updateGoal: unknown goal "${id}"`);
+      }
+      if (patch.name !== undefined && patch.name.trim().length === 0) {
+        throw new Error('updateGoal: name must be non-empty');
+      }
+      if (
+        patch.targetCents !== undefined &&
+        (!Number.isInteger(patch.targetCents) || patch.targetCents <= 0)
+      ) {
+        throw new Error('updateGoal: targetCents must be a positive whole number of cents');
+      }
+      // A null savingsAccountId is a legal patch (re-link to all-savings); only a
+      // non-null id is validated for existence + savings kind.
+      if (patch.savingsAccountId != null) {
+        assertSavingsAccount(patch.savingsAccountId, 'updateGoal');
+      }
+      await withTransaction(async () => {
+        const set_: Record<string, unknown> = {};
+        if (patch.name !== undefined) set_.name = patch.name.trim();
+        if (patch.targetCents !== undefined) set_.targetCents = patch.targetCents;
+        if (patch.savingsAccountId !== undefined) set_.savingsAccountId = patch.savingsAccountId;
+        if (patch.active !== undefined) set_.active = patch.active;
+        if (patch.achievedAt !== undefined) set_.achievedAt = patch.achievedAt;
+        if (Object.keys(set_).length === 0) return;
+        getDb().update(schema.goals).set(set_).where(eq(schema.goals.id, id)).run();
       });
       await refresh();
     },
@@ -1470,6 +1674,30 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     getMerchantCorrections: () => get()._merchantCorrections.map(toMerchantCorrection),
     getRecurringBills: () => get()._recurringBills.map(toRecurringBill),
 
+    // active=0 is the non-destructive remove: the row survives (goalProgress /
+    // updateGoal still resolve it) but it leaves the goal list.
+    getGoals: () => get()._goalRows.filter((g) => Boolean(g.active)).map(toGoal),
+
+    // Current progress toward a goal: the linked savings account balance as of
+    // `asOf` (defaults to today), or the sum of ALL savings-kind balances when
+    // the goal has no linked account. Sync composition over the committed caches.
+    goalProgress: (goalId, asOf): GoalProgress => {
+      const row = get()._goalRows.find((g) => g.id === goalId);
+      if (!row) throw new Error(`goalProgress: unknown goal "${goalId}"`);
+      const at = asOf ?? fmt(new Date());
+      let currentCents: Cents;
+      if (row.savingsAccountId !== null) {
+        currentCents = accountBalance(row.savingsAccountId, at);
+      } else {
+        currentCents = sumCents(
+          get()
+            ._accountRows.filter((a) => a.kind === 'savings')
+            .map((a) => accountBalance(a.id, at)),
+        );
+      }
+      return { currentCents, targetCents: C(row.targetCents) };
+    },
+
     getTransactions: (range) =>
       liveTxns()
         .filter((t) => inRange(t.date, range.from, range.to))
@@ -1521,12 +1749,17 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       return { cycleStart, budget, alreadyOwed, startsWith };
     },
 
-    getSafeToSpend: (week) =>
-      sumCents(
+    // Home hero number: enveloped remaining, LESS bills due before the next
+    // payday (handoff §3.8 — the forecast feeds safe-to-spend). With no active
+    // bills the reservation is zero, so behavior is identical to v0.2.
+    getSafeToSpend: (week) => {
+      const envelopeRemaining = sumCents(
         get()
           ._categoryRows.filter((c) => toEnvelope(c) != null)
           .map((c) => envelopeWeekState(c.id, week).remaining),
-      ),
+      );
+      return subCents(envelopeRemaining, billsReservation(week));
+    },
 
     getAccountBalance: (accountId: string, asOf?: ISODate) =>
       accountBalance(accountId, asOf ?? fmt(new Date())),

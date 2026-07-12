@@ -214,6 +214,35 @@ export interface RecurringBill {
 }
 
 // ---------------------------------------------------------------------------
+// Named savings goals (handoff §3.10 — Team 1 owns the table + store; the goal
+// card UI and the step-line projection render against these reads)
+// ---------------------------------------------------------------------------
+
+/**
+ * A named savings goal. Progress is read from `savingsAccountId`'s balance, or
+ * — when it is null — from the SUM of all savings-kind account balances.
+ * `targetCents` is a positive whole number of cents. `active:false` is the
+ * non-destructive remove (row retained, hidden from the goal list). `achievedAt`
+ * is stamped when the goal is first met and is independent of `active`.
+ */
+export interface Goal {
+  id: string;
+  name: string;
+  targetCents: Cents;
+  /** Linked savings account; null => track the sum of all savings accounts. */
+  savingsAccountId: string | null;
+  active: boolean;
+  createdAt: string;
+  achievedAt: string | null;
+}
+
+/** Current progress toward a goal: the linked (or all-savings) balance vs target. */
+export interface GoalProgress {
+  currentCents: Cents;
+  targetCents: Cents;
+}
+
+// ---------------------------------------------------------------------------
 // Duck System (Team 4 owns engine; Team 1 owns tables + read port)
 // ---------------------------------------------------------------------------
 
@@ -406,6 +435,30 @@ export interface StoreContract {
     patch: Partial<Pick<RecurringBill, 'name' | 'categoryId' | 'amountCents' | 'dueDay' | 'active'>>,
   ): Promise<void>;
 
+  // --- named goals (handoff §3.10) -----------------------------------------
+  /**
+   * Add a named savings goal (active). Validates: `name` non-empty (trimmed),
+   * `targetCents` a positive whole number of cents, and — when
+   * `savingsAccountId` is given — that the account exists AND is savings-kind.
+   * Omitting `savingsAccountId` (or passing null) tracks the sum of all savings
+   * accounts.
+   */
+  addGoal(input: {
+    name: string;
+    targetCents: Cents;
+    savingsAccountId?: string | null;
+  }): Promise<Goal>;
+  /**
+   * Patch a goal in place. `active:false` is the non-destructive remove.
+   * Validates the same invariants as addGoal for any provided field.
+   */
+  updateGoal(
+    id: string,
+    patch: Partial<
+      Pick<Goal, 'name' | 'targetCents' | 'savingsAccountId' | 'active' | 'achievedAt'>
+    >,
+  ): Promise<void>;
+
   // --- carryover -----------------------------------------------------------
   rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;
   sweepToSavings(categoryId: string, fromWeek: WeekStart, savingsAccountId: string): Promise<void>;
@@ -440,6 +493,16 @@ export interface StoreContract {
   getMerchantCorrections(): MerchantCorrection[];
   /** Recurring bills for the active chapter (active AND inactive; consumers filter on `active`). */
   getRecurringBills(): RecurringBill[];
+
+  /** Named goals for the active chapter (active AND inactive; consumers filter on `active`). */
+  getGoals(): Goal[];
+  /**
+   * Current progress toward a goal (sync): `currentCents` is the linked savings
+   * account balance as of `asOf` (defaults to today), or the sum of all
+   * savings-kind balances when the goal has no linked account. Throws on an
+   * unknown goal id.
+   */
+  goalProgress(goalId: string, asOf?: ISODate): GoalProgress;
 
   getTransactions(range: DateRange): TransactionRecord[];
   /** date → net outflow, for week bars + calendar heatmap (income excluded). */

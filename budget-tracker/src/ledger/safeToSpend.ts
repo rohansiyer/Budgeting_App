@@ -22,13 +22,21 @@
  * own formula, so they sum to the displayed figure by construction, not by
  * coincidence.
  *
+ * BILLS RESERVATION (handoff §3.8): the store's getSafeToSpend now holds out
+ * active recurring bills that fall due before the next payday. This selector
+ * surfaces that as one "Reserved for upcoming bills" outflow line. It is derived
+ * as the RESIDUAL — the envelope subtotal minus the store's getSafeToSpend —
+ * rather than recomputing the forecast here, so the line equals exactly what the
+ * store reserved and reconciliation holds by construction (no drift between two
+ * copies of the bills math). Zero active bills => zero residual => no line.
+ *
  * NOTE ON THE MOCKUP: the "Tap-down" mockup frames the total as
- * paycheck − bills − envelopes − savings + carryover. That paycheck-first model
- * is aspirational: today's shipped safe-to-spend (the figure HomeScreen renders)
- * is purely envelope-remaining and folds in no paycheck, fixed-bill, or savings
- * term. Rendering a +$640 paycheck line that the total does not actually contain
- * would break reconciliation and invent money, so this selector mirrors the real
- * math. See the concerns note for what the fuller mockup model would require.
+ * paycheck − bills − envelopes − savings + carryover. The paycheck-first framing
+ * is still aspirational (today's shipped safe-to-spend folds in no paycheck or
+ * savings term), but the reserved-bills line is now real. Rendering a +$640
+ * paycheck line that the total does not actually contain would break
+ * reconciliation and invent money, so this selector mirrors the real math. See
+ * the concerns note for what the fuller mockup model would require.
  */
 import { useBudgetStore } from '../store';
 import { addCents, subCents, ZERO, type Cents } from '../lib/money';
@@ -107,6 +115,30 @@ export function safeToSpendBreakdown(weekStartISO: WeekStart): SafeToSpendBreakd
 
   const lines = candidates.filter((l) => l.amountCents !== 0);
 
+  // Envelope subtotal = the algebraic sum of the seven envelope terms above.
+  let envelopeSubtotal: Cents = ZERO;
+  for (const l of lines) {
+    envelopeSubtotal =
+      l.direction === 'in'
+        ? addCents(envelopeSubtotal, l.amountCents)
+        : subCents(envelopeSubtotal, l.amountCents);
+  }
+
+  // Bills reservation is whatever the store held out of getSafeToSpend beyond
+  // the envelope remaining (handoff §3.8). Deriving it as the residual keeps a
+  // single source of truth for the forecast and guarantees reconciliation.
+  const storeTotal = store.getSafeToSpend(weekStartISO);
+  const reserved = subCents(envelopeSubtotal, storeTotal);
+  if (reserved > 0) {
+    lines.push({
+      label: 'Reserved for upcoming bills',
+      amountCents: reserved,
+      direction: 'out',
+    });
+  }
+
+  // Sum the final line set — including the reserved-bills line — so the emitted
+  // totalCents is the honest sum of what is shown, and equals store.getSafeToSpend.
   let totalCents: Cents = ZERO;
   for (const l of lines) {
     totalCents =
