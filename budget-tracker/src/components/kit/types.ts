@@ -146,7 +146,8 @@ export interface SnackbarProps {
   message: string;
   /** Default "Undo". */
   actionLabel?: string;
-  onAction: () => void;
+  /** Omit for a message-only snackbar (no action button rendered). */
+  onAction?: () => void;
   onTimeout?: () => void;
   durationMs?: number;
   visible: boolean;

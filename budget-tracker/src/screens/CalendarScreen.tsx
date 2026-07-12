@@ -156,6 +156,8 @@ const styles = StyleSheet.create({
   },
   weekHeader: {
     flexDirection: 'row',
+    // Full-bleed to stay column-aligned with the full-bleed grid below.
+    marginHorizontal: -space.md,
     marginTop: space.sm,
     marginBottom: space.xs,
   },
@@ -170,10 +172,16 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    // Full-bleed: reclaim the Screen's side padding so each of the 7 columns
+    // gets the whole device width (a11y-v03 fix: 375px / 7 = 53px, 360px / 7 =
+    // 51px; the padded grid landed under the 48px tap-target floor).
+    marginHorizontal: -space.md,
   },
   cell: {
     width: CELL_PCT,
-    aspectRatio: 1,
+    // Hard 48px tap-target floor in the vertical axis regardless of device
+    // width (replaces aspectRatio 1, which shrank with the column).
+    minHeight: 48,
     padding: 2,
   },
   cellInner: {

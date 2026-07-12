@@ -33,12 +33,14 @@ export function Snackbar({
       <Text style={styles.message} numberOfLines={2}>
         {message}
       </Text>
-      <HardButton
-        label={actionLabel}
-        onPress={onAction}
-        variant="ghost"
-        accessibilityLabel={actionLabel}
-      />
+      {onAction ? (
+        <HardButton
+          label={actionLabel}
+          onPress={onAction}
+          variant="ghost"
+          accessibilityLabel={actionLabel}
+        />
+      ) : null}
     </View>
   );
 }

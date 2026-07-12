@@ -2,19 +2,18 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useRef,
   useState,
   ReactNode,
 } from 'react';
-import { Modal, View, Text, Pressable, StyleSheet } from 'react-native';
+import { Modal, View, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
+import { Snackbar } from '../components/kit';
 import { UNDO_WINDOW_MS } from '../types/contracts';
 import type { ISODate } from '../types/contracts';
 import { DailyDetailScreen } from '../screens/DailyDetailScreen';
 
-const { color, space, pixel } = tokens;
-const typo = tokens.type;
+const { space } = tokens;
 
 interface AppShellApi {
   /** Open the Daily detail overlay for a date. */
@@ -36,26 +35,20 @@ export function useAppShell(): AppShellApi {
 
 export function AppShellProvider({ children }: { children: ReactNode }) {
   const [day, setDay] = useState<ISODate | null>(null);
+  // `id` keys the kit Snackbar so a new message remounts it and restarts its
+  // self-dismiss timer (lifetime matches the store's undo window).
   const [snack, setSnack] = useState<{
+    id: number;
     message: string;
     onUndo?: () => void | Promise<void>;
   } | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextId = useRef(0);
 
   const openDay = useCallback((date: ISODate) => setDay(date), []);
   const showUndo = useCallback((message: string, onUndo?: () => void | Promise<void>) => {
-    setSnack({ message, onUndo });
+    nextId.current += 1;
+    setSnack({ id: nextId.current, message, onUndo });
   }, []);
-
-  useEffect(() => {
-    if (!snack) return;
-    if (timer.current) clearTimeout(timer.current);
-    // Snackbar lifetime matches the store's undo window.
-    timer.current = setTimeout(() => setSnack(null), UNDO_WINDOW_MS);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [snack]);
 
   return (
     <Ctx.Provider value={{ openDay, showUndo }}>
@@ -71,23 +64,22 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
       </Modal>
 
       {snack ? (
-        <View style={styles.snackbar} accessibilityLiveRegion="polite">
-          <Text style={styles.snackText} numberOfLines={2}>
-            {snack.message}
-          </Text>
-          {snack.onUndo ? (
-            <Pressable
-              onPress={() => {
-                void snack.onUndo?.();
-                setSnack(null);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Undo"
-              hitSlop={12}
-            >
-              <Text style={styles.undo}>UNDO</Text>
-            </Pressable>
-          ) : null}
+        <View style={styles.snackbarHost} pointerEvents="box-none">
+          <Snackbar
+            key={snack.id}
+            visible
+            message={snack.message}
+            durationMs={UNDO_WINDOW_MS}
+            onTimeout={() => setSnack(null)}
+            onAction={
+              snack.onUndo
+                ? () => {
+                    void snack.onUndo?.();
+                    setSnack(null);
+                  }
+                : undefined
+            }
+          />
         </View>
       ) : null}
     </Ctx.Provider>
@@ -95,31 +87,13 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  snackbar: {
+  // Placement wrapper only — the bar itself is the kit Snackbar (the app's
+  // single undo-bar implementation; a11y-v03 follow-up unified the ad hoc
+  // duplicate that used to live here).
+  snackbarHost: {
     position: 'absolute',
     left: space.md,
     right: space.md,
     bottom: space.xl * 2 + space.md,
-    backgroundColor: color.surfaceDeep,
-    borderWidth: pixel.hairlineWidth,
-    borderColor: color.border,
-    paddingVertical: space.sm + space.xs,
-    paddingHorizontal: space.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  snackText: {
-    color: color.text,
-    fontSize: typo.body.fontSize,
-    fontWeight: typo.caption.fontWeight,
-    flexShrink: 1,
-  },
-  undo: {
-    color: color.accent,
-    fontSize: typo.sectionLabel.fontSize,
-    fontWeight: typo.sectionLabel.fontWeight,
-    letterSpacing: typo.sectionLabel.letterSpacing,
-    marginLeft: space.md,
   },
 });
