@@ -1,0 +1,59 @@
+/**
+ * Ducks in a Row — color tokens.
+ * Source of truth: budget-tracker/src/theme/tokens.ts (`color` export),
+ * DucksInARow_DesignDoc_v2.md §3. Single dark theme by design — there is no
+ * light mode. Category colors are validated CVD-safe against --surface;
+ * don't reorder adjacent hues in charts/legends without re-validating.
+ */
+
+:root {
+  /* ---- base palette ---- */
+  --dr-black: #060707;
+  --dr-surface: #131917;
+  --dr-surface-deep: #0c100f;
+  --dr-border: #2e3833;
+  --dr-hairline: #1c2422;
+  --dr-white: #eaf2ee;
+  --dr-gray-300: #c9d6d0;
+  --dr-gray-500: #7c8a84;
+
+  --dr-mint: #46e0b4;
+  --dr-amber: #f2b84b;
+  --dr-coral: #e0645c;
+  --dr-spend-fill: #2e7d68;
+
+  --dr-pond-edge: #17454e;
+  --dr-pond-deep: #0c262d;
+
+  /* category identity (one hue per category, everywhere: chips, tiles, charts) */
+  --dr-cat-violet: #9d6fe0; /* Fixed */
+  --dr-cat-amber: #ba8329; /* Food */
+  --dr-cat-mint: #2fa383; /* Savings */
+  --dr-cat-blue: #5b82d9; /* Gas / Transit */
+  --dr-cat-pink: #c75e86; /* Fun */
+
+  /* ---- semantic aliases (screens consume ONLY these) ---- */
+  --bg: var(--dr-black);
+  --surface: var(--dr-surface);
+  --surface-deep: var(--dr-surface-deep);
+  --border: var(--dr-border);
+  --hairline: var(--dr-hairline);
+
+  --text: var(--dr-white);
+  --text-secondary: var(--dr-gray-300);
+  --text-muted: var(--dr-gray-500);
+
+  --accent: var(--dr-mint); /* positive / brand / payday */
+  --warn: var(--dr-amber); /* envelope >= 90% */
+  --danger: var(--dr-coral); /* over budget / duck loss / rent spike */
+  --spend-fill: var(--dr-spend-fill); /* ordinary week-bar spend */
+
+  --pond-edge: var(--dr-pond-edge);
+  --pond-deep: var(--dr-pond-deep);
+
+  --cat-violet: var(--dr-cat-violet);
+  --cat-amber: var(--dr-cat-amber);
+  --cat-mint: var(--dr-cat-mint);
+  --cat-blue: var(--dr-cat-blue);
+  --cat-pink: var(--dr-cat-pink);
+}

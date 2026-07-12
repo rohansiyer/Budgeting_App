@@ -1,0 +1,25 @@
+/**
+ * Ducks in a Row — "quiet pixel instrument" container/motion constants.
+ * Source: budget-tracker/src/theme/tokens.ts (`pixel`, `motion`).
+ * These are the numbers that make the UI read as pixel-true game hardware:
+ * notched HUD boxes, segmented meters, hard offset-shadow buttons, stepped
+ * (never eased) motion. Never round these to a 4/8px grid default.
+ */
+:root {
+  --notch: 4px; /* PixelBox corner chamfer */
+  --block-gap: 3px; /* BlockMeter segment gap */
+  --block-height: 12px; /* BlockMeter segment height */
+  --shadow-offset: 3px; /* HardButton hard offset shadow */
+  --hairline-width: 1px;
+
+  /* motion: stepped only, never eased/tweened */
+  --bob-period-ms: 1150; /* @kind other */
+  --sprite-fps: 5; /* @kind other */
+  --step-ease: steps(1); /* @kind other */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --bob-period-ms: 0; /* @kind other */
+  }
+}

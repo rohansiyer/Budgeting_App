@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/pixel.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/styles.css">
+  <script src="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/_ds_bundle.js"></script>
+  <style>
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--border); }
+    a:hover { color: var(--text); border-bottom-color: var(--accent); }
+    ::selection { background: var(--accent); color: var(--bg); }
+  </style>
+</helmet>
+
+<div style="max-width: 960px; margin: 0 auto; padding: 48px 32px 96px 32px;">
+
+  <!-- ============ HEADER ============ -->
+  <header data-screen-label="Header" style="border-bottom: 1px solid var(--border); padding-bottom: 32px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Design system review &middot; July 2026</div>
+    <h1 style="font-family: var(--font-ui); font-size: 40px; font-weight: 800; letter-spacing: -1px; margin: 16px 0 8px 0;">Ducks in a Row, reviewed</h1>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary); max-width: 640px; margin: 0;">Where the design system stands against Monarch, YNAB and Copilot, and what to change to win its actual audience: someone taking their first steps into financial independence. Pixel identity kept intact throughout; nothing here asks for a rounded corner.</p>
+  </header>
+
+  <!-- ============ 01 VERDICT ============ -->
+  <section data-screen-label="Verdict" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">01 &middot; Verdict</div>
+    <p style="font-size: 16px; font-weight: 500; line-height: 1.7; max-width: 700px; margin: 0 0 16px 0;">The visual system is <strong>coherent, disciplined, and genuinely differentiated</strong>, a rarity. Zero radii, block meters, one accent, one shadow idiom, real copy rules: that's a stronger brand foundation than most funded competitors have. The problem is not the aesthetic. The problem is <strong>coverage</strong>: the system defines how a finished screen looks, but says nothing about the moments that decide whether a first-time budgeter survives week one, setup, empty states, data entry, and feeling progress.</p>
+    <p style="font-size: 16px; font-weight: 500; line-height: 1.7; max-width: 700px; margin: 0 0 24px 0;">Don't chase Monarch's breadth (sync, investments, net worth, couples). For your audience, that breadth is the weakness, feature-heavy dashboards overwhelm beginners and cost $100/yr. Compete on the three things Monarch structurally can't do: <strong>free + 100% private</strong>, <strong>one answer per day</strong>, and <strong>a game layer that makes consistency feel like something</strong>.</p>
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--hairline); border: 1px solid var(--hairline);">
+      <div style="background: var(--surface); padding: 16px;"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--danger);">1</div><div style="font-size: 11.5px; font-weight: 500; color: var(--text-secondary); margin-top: 4px;">Build the onboarding &amp; form layer, the biggest gap in the kit</div></div>
+      <div style="background: var(--surface); padding: 16px;"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--danger);">2</div><div style="font-size: 11.5px; font-weight: 500; color: var(--text-secondary); margin-top: 4px;">Make add-expense a &le;5 second ritual, manual entry is your sync</div></div>
+      <div style="background: var(--surface); padding: 16px;"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--warn);">3</div><div style="font-size: 11.5px; font-weight: 500; color: var(--text-secondary); margin-top: 4px;">Surface the duck goals on Home &middot; the moat is hidden on tab 3</div></div>
+      <div style="background: var(--surface); padding: 16px;"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--danger);">4</div><div style="font-size: 11.5px; font-weight: 500; color: var(--text-secondary); margin-top: 4px;">Ship the insight layer free, delivered answers, zero friction, no paywall</div></div>
+      <div style="background: var(--surface); padding: 16px;"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">5</div><div style="font-size: 11.5px; font-weight: 500; color: var(--text-secondary); margin-top: 4px;">Patch the type scale, one missing size makes screens feel flat</div></div>
+    </div>
+  </section>
+
+  <!-- ============ 02 COMPETITIVE CONTEXT ============ -->
+  <sc-if value="{{ showCompetitors }}" hint-placeholder-val="{{ true }}">
+  <section data-screen-label="Competitive context" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">02 &middot; The field</div>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 24px 0;">The post-Mint market has consolidated around three paid apps. All three assume bank sync, all three charge ~$100/yr, and reviewers consistently note that beginners find the feature-rich ones overwhelming and that Monarch takes 30&ndash;60 minutes to set up. That's the opening.</p>
+    <div style="display: flex; flex-direction: column; border-top: 1px solid var(--hairline);">
+      <div style="display: grid; grid-template-columns: 140px 110px 1fr 1fr; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--hairline);">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">App</div>
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Price</div>
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Wins on</div>
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Weak spot for your audience</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 110px 1fr 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-weight: 700;">Monarch</div>
+        <div style="font-family: var(--font-mono); color: var(--text-secondary);">$99.99/yr</div>
+        <div style="color: var(--text-secondary);">All-in-one dashboard: sync, net worth, investments, goals, couples, AI assistant. Polished, customizable.</div>
+        <div style="color: var(--text-secondary);">Long setup; visibility-first, not behavior-first; overwhelming for someone with one checking account.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 110px 1fr 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-weight: 700;">YNAB</div>
+        <div style="font-family: var(--font-mono); color: var(--text-secondary);">$109/yr</div>
+        <div style="color: var(--text-secondary);">Methodology, zero-based envelopes that actually change behavior. Your closest philosophical rival.</div>
+        <div style="color: var(--text-secondary);">Steep learning curve, dated interface, priciest option. Miss a few days and you're playing catch-up.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 110px 1fr 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-weight: 700;">Copilot</div>
+        <div style="font-family: var(--font-mono); color: var(--text-secondary);">$95/yr</div>
+        <div style="color: var(--text-secondary);">Craft, widely called the best-looking budget app. Proof that visual quality is a purchase driver here.</div>
+        <div style="color: var(--text-secondary);">iOS-only, solo-only, shallow reporting. Design-led but passive.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 110px 1fr 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-weight: 700; color: var(--accent);">Ducks in a Row</div>
+        <div style="font-family: var(--font-mono); color: var(--accent);">Free</div>
+        <div style="color: var(--text-secondary);">Offline + private (no accounts, no Plaid, nothing leaves the device), envelope discipline, and the only emotional progress system in the category.</div>
+        <div style="color: var(--text-secondary);">Manual entry burden, no first-run experience defined, insights thin next to Monarch's reporting.</div>
+      </div>
+    </div>
+    <p style="font-size: 13px; font-weight: 500; line-height: 1.7; color: var(--text-muted); max-width: 700px; margin: 16px 0 0 0;">Positioning to own: <span style="color: var(--text);">&ldquo;the first budgeting app&rdquo;</span>, the one you use before you have investments, a partner, or $100/yr to spend on software. Nobody owns that slot; Monarch explicitly targets ex-Mint households.</p>
+  </section>
+  </sc-if>
+
+  <!-- ============ 03 FINDINGS: ONBOARDING ============ -->
+  <section data-screen-label="Onboarding findings" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">03 &middot; Onboarding &amp; first run</div>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--danger); color: var(--danger);">FIX NOW</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F1</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">The kit has no form layer at all</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">The setup wizard is a Play Store blocker in your own spec, yet the design system contains <strong>no text input, no numeric/amount field, no segmented choice, no toggle, no stepper, and no progress indicator</strong>. Thirteen components, zero of them accept typing. Every wizard screen will currently be improvised outside the system, which is exactly where the brand will erode first. Monarch's weakest moment is its 30&ndash;60 minute setup; a 4-step, 3-minute wizard is your single clearest chance to beat it, and it's undesigned.</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">Recommend:</strong> add a <span style="font-family: var(--font-mono); font-size: 13px;">Field</span> (48px tap height, <span style="font-family: var(--font-mono); font-size: 13px;">surface-deep</span> well, 1px border, mint border on focus, no glow), a <span style="font-family: var(--font-mono); font-size: 13px;">ChoiceRow</span> (segmented options built from ghost HardButtons), and a <span style="font-family: var(--font-mono); font-size: 13px;">StepTrack</span> progress element, blocks, not a bar, with the duck standing on the last filled block. Setup should feel like the game starting, not paperwork.</p>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin: 32px 0 8px 0;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--danger); color: var(--danger);">FIX NOW</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F2</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Empty states don't exist, and you own the best empty-state asset in the category</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">Day one, the Home screen has no spend bars and no envelope history, and the pond holds exactly one duck: the starter. Every player begins with a flock of one, so the first screen is an introduction, not an apology. No pattern covers this yet. For a first-time budgeter, an empty dashboard reads as &ldquo;I'm doing it wrong.&rdquo; Every screen needs a defined zero state: what shows, what the duck does, and the one action to take next. The duck sprite makes these moments charming for free, competitors pay illustrators for what you already have.</p>
+
+    <sc-if value="{{ showMockups }}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px;">
+      <!-- Mockup: wizard step -->
+      <div style="width: 360px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Proposed &middot; wizard step</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Setup &middot; step 2 of 4</div>
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.DuckSprite" scale="{{ two }}" hint-size="28px,24px"></x-import>
+          </div>
+          <div style="display: flex; gap: 3px; height: 8px;">
+            <div style="flex: 1; background: var(--accent);"></div>
+            <div style="flex: 1; background: var(--accent);"></div>
+            <div style="flex: 1; background: var(--surface-deep); border: 1px solid var(--border);"></div>
+            <div style="flex: 1; background: var(--surface-deep); border: 1px solid var(--border);"></div>
+          </div>
+          <div style="font-size: 20px; font-weight: 800; letter-spacing: -0.3px; margin-top: 8px;">Where does your money come from?</div>
+          <div style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); line-height: 1.5; margin-top: -8px;">Your paydays set the rhythm for everything else. You can change this anytime.</div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Income source</div>
+            <div style="height: 48px; background: var(--surface-deep); border: 1px solid var(--accent); display: flex; align-items: center; padding: 0 16px; font-size: 14px; font-weight: 600;">Part-time job<span style="display: inline-block; width: 2px; height: 18px; background: var(--accent); margin-left: 2px;"></span></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Amount per paycheck</div>
+            <div style="height: 48px; background: var(--surface-deep); border: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.MoneyText" amount="{{ payAmount }}" hint-size="70px,20px"></x-import>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">How often</div>
+            <div style="display: flex; gap: 8px;">
+              <div style="flex: 1; height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface); font-size: 13px; font-weight: 700; color: var(--text-secondary);">Weekly</div>
+              <div style="flex: 1; height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--accent); background: var(--surface); font-size: 13px; font-weight: 700; color: var(--accent);">Every 2 weeks</div>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Continue" hint-size="120px,51px"></x-import>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">New pieces: Field (focus = mint border, no glow), ChoiceRow, StepTrack (blocks + duck). All from existing tokens, nothing new invented.</div>
+      </div>
+
+      <!-- Mockup: empty pond -->
+      <div style="width: 360px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Proposed &middot; day one (Pond, starter duck)</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="font-size: 24px; font-weight: 800;">The Pond</div>
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,220px">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px 8px; text-align: center;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.DuckSprite" scale="{{ four }}" hint-size="56px,48px"></x-import>
+              <div style="font-size: 14px; font-weight: 600; line-height: 1.6; max-width: 240px;">Meet your first duck, it's yours from day one. Hit all three goals this month and a second one waddles in.</div>
+              <div style="display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left;">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--border); flex-shrink: 0;"></div>Fixed bills paid on time</div>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--border); flex-shrink: 0;"></div>Every envelope under budget</div>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--border); flex-shrink: 0;"></div>Savings on target</div>
+              </div>
+            </div>
+          </x-import>
+          </sc-if>
+          <div style="display: flex; justify-content: center;">
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="How ducks work" variant="ghost" hint-size="150px,51px"></x-import>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">Day one previews the rules of the game instead of apologizing for missing data, and the pond is never empty.</div>
+      </div>
+    </div>
+    </sc-if>
+  </section>
+
+  <!-- ============ 04 THE DAILY LOOP ============ -->
+  <section data-screen-label="Daily loop findings" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">04 &middot; The daily loop</div>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--danger); color: var(--danger);">FIX NOW</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F3</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Manual entry is your bank sync, design it like one</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">Staying offline is the right call, it's the trust story and the price story. But it means the add-expense flow carries the entire retention load that Plaid carries for Monarch. It deserves a dedicated, specified pattern: <strong>amount-first</strong> (a big mono keypad, not a form), <strong>recent categories as one-tap squares</strong>, live envelope feedback (&ldquo;Food: $22.60 left after this&rdquo;) before you confirm, and done in under five seconds. YNAB proved manual entry builds awareness; your job is making it cost nothing. This is also where the borrow prompt lives, the flow's one moment of drama, and today no component in the kit can render it. One rule change: borrowing is cadence-aware and open to every envelope. Each envelope lends from its own next cycle, weekly or monthly, whichever it runs; skip hard caps and let the honest math be the guardrail.</p>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin: 32px 0 8px 0;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--warn); color: var(--warn);">SOON</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F4</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Home answers &ldquo;can I buy this?&rdquo; but not &ldquo;am I okay?&rdquo;</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">The hero number is the right bet, PocketGuard built a whole product on it. Two things are missing around it. First, <strong>pacing</strong>: $128.40 means nothing to a beginner without &ldquo;4 days to payday &middot; about $32 a day keeps you green.&rdquo; Second, <strong>the month's stakes</strong>: the three duck goals are invisible until you visit the Pond tab. The emotional engine, the one thing no competitor has, is hidden on tab three and pays out once a month. Put a quiet goal strip on Home so every day is a move in the game, and warnings arrive while the month's duck is still earnable.</p>
+
+    <sc-if value="{{ showMockups }}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px;">
+      <!-- BEFORE -->
+      <div style="width: 360px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Before &middot; Home today</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary);">Good evening</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.DuckSprite" scale="{{ two }}" hint-size="28px,24px"></x-import>
+              <span style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--text-muted);">8/12</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Safe to spend this week</div>
+            <div class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 44px; font-weight: 700; letter-spacing: -1.5px; color: var(--accent); line-height: 1;">$128.40</div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Last 7 days</div>
+            <div style="display: flex; align-items: flex-end; gap: 3px; height: 48px;">
+              <div style="flex: 1; height: 40%; background: var(--spend-fill);"></div>
+              <div style="flex: 1; height: 15%; background: var(--spend-fill);"></div>
+              <div style="flex: 1; height: 100%; background: var(--danger);"></div>
+              <div style="flex: 1; height: 25%; background: var(--spend-fill);"></div>
+              <div style="flex: 1; height: 55%; background: var(--accent);"></div>
+              <div style="flex: 1; height: 30%; background: var(--spend-fill);"></div>
+              <div style="flex: 1; height: 10%; background: var(--spend-fill);"></div>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Envelopes</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import>
+              <span style="font-size: 14px; font-weight: 600; flex: 1;">Food</span>
+              <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--text-secondary);">$39.00 left</span>
+            </div>
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.BlockMeter" budget="{{ foodBudget }}" spent="{{ foodSpent }}" block-value="{{ blockTen }}" hint-size="100%,12px"></x-import>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="pink" hint-size="11px,11px"></x-import>
+              <span style="font-size: 14px; font-weight: 600; flex: 1;">Fun</span>
+              <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--warn);">$6.40 left</span>
+            </div>
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.BlockMeter" budget="{{ funBudget }}" spent="{{ funSpent }}" block-value="{{ blockTen }}" hint-size="100%,12px"></x-import>
+          </div>
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Add expense" hint-size="100%,51px"></x-import>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div style="width: 360px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">After &middot; pacing + live stakes</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary);">Good evening</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.DuckSprite" scale="{{ two }}" hint-size="28px,24px"></x-import>
+              <span style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--text-muted);">8/12</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Safe to spend this week</div>
+            <div class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 44px; font-weight: 700; letter-spacing: -1.5px; color: var(--accent); line-height: 1;">$128.40</div>
+            <div style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); margin-top: 8px;">4 days to payday &middot; about <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--text-secondary);">$32.10</span> a day keeps you green</div>
+          </div>
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,120px">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">July's duck</div>
+                <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">On track</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--accent); flex-shrink: 0;"></div>Bills paid<div style="width: 10px; height: 10px; background: var(--accent); flex-shrink: 0; margin-left: 16px;"></div>Savings 12%<div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--warn); flex-shrink: 0; margin-left: 16px;"></div>Envelopes</div>
+              <div style="font-size: 11.5px; font-weight: 500; color: var(--warn); line-height: 1.5;">Fun is at 92% in week 2, ease off to earn July's duck.</div>
+            </div>
+          </x-import>
+          </sc-if>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Envelopes</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import>
+              <span style="font-size: 14px; font-weight: 600; flex: 1;">Food</span>
+              <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--text-secondary);">$39.00 left</span>
+            </div>
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.BlockMeter" budget="{{ foodBudget }}" spent="{{ foodSpent }}" block-value="{{ blockTen }}" hint-size="100%,12px"></x-import>
+          </div>
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Add expense" hint-size="100%,51px"></x-import>
+        </div>
+        <div style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">Adds: pacing line under the hero; a PixelBox goal strip (goals are game objects, correct container); early warning in the supportive voice. Nothing else moved.</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <div style="max-width: 700px; margin-top: 32px; border: 1px solid var(--border); background: var(--surface); padding: 16px;">
+      <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Duck rules, settled</div>
+      <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">
+        <div style="display: flex; gap: 16px;"><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); min-width: 72px;">DAY ONE</span><span>Everyone starts with one duck. The pond is never empty; the game begins occupied.</span></div>
+        <div style="display: flex; gap: 16px;"><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); min-width: 72px;">3 OF 3</span><span>A duck waddles in.</span></div>
+        <div style="display: flex; gap: 16px;"><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary); min-width: 72px;">1&ndash;2 OF 3</span><span>The flock holds. A partial month is never a loss.</span></div>
+        <div style="display: flex; gap: 16px;"><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--danger); min-width: 72px;">0 OF 3</span><span>One duck waddles off, and only then. Losses stay rare enough to mean something.</span></div>
+      </div>
+      <div style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 16px;">The asymmetry is right for beginners: the punishing edge only appears when the whole month collapsed, so one blown envelope never makes the app feel cruel, and the warning copy above shifts from &ldquo;don't lose your duck&rdquo; to &ldquo;you can still earn it.&rdquo;</div>
+    </div>
+  </section>
+
+  <!-- ============ 05 INSIGHTS ============ -->
+  <section data-screen-label="Insights findings" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">05 &middot; Insights: match them, minus the friction</div>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--danger); color: var(--danger);">FIX NOW</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F5</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Match their insight, free, and delivered instead of fetched</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">Decision: Ducks offers the insight the $100/yr apps sell, where the money went, how this month compares, what's drifting, what's recurring, <strong>for free, computed entirely on-device</strong>. Nothing about good insight requires a server: trends, pacing, month-over-month deltas, and recurring-spend detection are arithmetic on numbers the user already typed in. &ldquo;The paid apps' reports, free and private&rdquo; is the sharpest single answer to <em>why not just pay for Monarch?</em></p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">The differentiator isn't the math, it's the friction. Monarch's insight lives behind a reports tab, filters, and a scheduled money date; YNAB's behind a methodology course. The rule for Ducks: <strong>insights are delivered, never fetched</strong>. One rotating sentence on Home computed at open, live envelope math inside add-expense (&ldquo;$22.60 left after this&rdquo;), and a recap that builds itself at the close of every pay period (month-end adds the duck verdict), the user never runs a report; the report visits them. And cap it hard, one insight per surface per day, so it stays one answer a day instead of becoming the dashboard sprawl you're escaping. The cap applies to what's <em>pushed</em>, not what's reachable, see F10 below. Two patterns carry it:</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">InsightRow</strong>, a category chip + one plain-language sentence with the exact dollar figure, in the existing voice. <strong style="color: var(--text);">SparkBlocks</strong>, a six-month trend as columns of discrete blocks (money stays countable; never a smooth line chart). Both slot into the Results screen, turning &ldquo;Time to count ducks!&rdquo; into a real recap, the habit Monarch users call the money date, in your language, and the natural screen to share.</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">On writing the sentences:</strong> this is not prose generation. Each InsightRow is a deterministic rule, a trigger condition plus a template with slots (<span style="font-family: var(--font-mono); font-size: 13px;">{category} came in {amount} under budget, your best month since {month}</span>). Write ~20 rules once, rank them, and each month the top three that fired get rendered. If only one fired, show one, silence beats filler, and an insight that isn't true for this user never appears. No AI, no server, an afternoon of copywriting rather than an engine.</p>
+
+    <sc-if value="{{ showMockups }}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px;">
+      <div style="width: 360px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Proposed &middot; month in review</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,100px">
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.DuckSprite" scale="{{ four }}" hint-size="56px,48px"></x-import>
+              <div>
+                <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">June &middot; month in review</div>
+                <div style="font-size: 14px; font-weight: 700; margin-top: 4px;">3 of 3 goals, a duck waddles in.</div>
+              </div>
+            </div>
+          </x-import>
+          </sc-if>
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline);">
+              <div style="margin-top: 4px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import></div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">Food came in <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent);">$61.20</span> under budget, your best month since March.</div>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline);">
+              <div style="margin-top: 4px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="mint" hint-size="11px,11px"></x-import></div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">You swept <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent);">$48.00</span> of leftovers to savings, that's real money moved.</div>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline);">
+              <div style="margin-top: 4px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="violet" hint-size="11px,11px"></x-import></div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">Rent hit on the 1st, the week after was your tightest. It always is.</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Spend &middot; last 6 months</div>
+            <div style="display: flex; align-items: flex-end; gap: 8px; height: 72px;">
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--accent);"></div><div style="height: 9px; background: var(--accent);"></div><div style="height: 9px; background: var(--accent);"></div><div style="height: 9px; background: var(--accent);"></div></div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 4px;">
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">J</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">M</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">A</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">M</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">J</div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">InsightRow reuses RuledList + CategoryChip + MoneyText. SparkBlocks is BlockMeter turned vertical, one block = a fixed dollar amount, so months stay countable.</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin: 32px 0 8px 0;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--warn); color: var(--warn);">SOON</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F10</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Every number is a door, the savvy user sees everything</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">Some users are genuinely savvy, they just also want ducks. Serve them with <strong>progressive disclosure, not a mode</strong>: the surface stays one-answer-a-day, but every number on it opens to its own math. Tap safe-to-spend &rarr; the exact ledger that produced it (income in, bills reserved, envelopes funded, savings set aside). Tap an envelope &rarr; every transaction, carryover history, borrow record. Tap an insight sentence &rarr; the numbers behind it. One tap down from anything, nothing hidden, nothing simplified away.</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">This costs almost nothing to design: it's all RuledList, full-bleed hairline rows, tabular numerals, exact dollars, the treatment the system already reserves for anything read as a list. Add a plain CSV export in Settings (their data, on their device, theirs to take) and the honesty principle the copy already promises, <em>&ldquo;every dollar is accounted for; nothing is ever invented or lost&rdquo;</em>, becomes something the user can verify, not just read. That's a claim none of the three subscription apps can make as cleanly, and it never bothers the user who only ever wants the duck.</p>
+  </section>
+
+  <!-- ============ 06 TYPE & LEGIBILITY ============ -->
+  <section data-screen-label="Type and accessibility findings" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">06 &middot; Type, hierarchy &amp; accessibility</div>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--warn); color: var(--warn);">SOON</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F6</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">The scale jumps 56 &rarr; 24 &rarr; 14 &middot; the middle is missing</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">There is no size between a screen title and body copy, so every mid-importance number, envelope remainders, day KPIs, sheet titles, goal amounts, renders at 14px and screens read flatter than they are. Copilot's perceived polish is mostly a well-tuned mid-scale. Add one token: <span style="font-family: var(--font-mono); font-size: 13px;">--text-kpi: 20px / 700</span>. It's the cheapest polish win in this document.</p>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin: 32px 0 8px 0;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--warn); color: var(--warn);">SOON</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F7</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Small-text floor and focus states</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">11.5px captions and 11px labels are at the floor of comfortable mobile legibility, fine as labels, risky wherever they carry real content (the pacing line, insight sentences, warnings should sit at 13&ndash;14px). Raise the caption token to 12px and reserve 11px for tracked uppercase labels only. Separately, the system defines press states but <strong>no focus state</strong>, the moment a web or desktop surface exists (and this design system itself is one), keyboard focus needs a spec. A 1px mint outline offset by 2px is enough and stays in-brand.</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0;"><strong style="color: var(--text);">Worth saying plainly:</strong> the accessibility fundamentals here beat the competitors', 48px minimum targets, color-never-alone with mandatory text fallbacks, CVD-validated category hues, and reduced-motion enforced in source rather than promised. Guard these; they're marketing claims as much as compliance.</p>
+  </section>
+
+  <!-- ============ 07 COMPONENT GAPS ============ -->
+  <section data-screen-label="Component gaps" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">07 &middot; Component gaps, in priority order</div>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 24px 0;">The 13-component kit is deliberately narrow, good. But several patterns the app <em>already ships or mandates</em> have no component, which means they'll be re-improvised on every screen. Everything below derives from existing tokens; none of it adds a new visual idea.</p>
+    <div style="display: flex; flex-direction: column; border-top: 1px solid var(--hairline);">
+      <div style="display: grid; grid-template-columns: 160px 1fr 220px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-family: var(--font-mono); font-weight: 700; color: var(--danger);">Field</div>
+        <div style="color: var(--text-secondary);">Text + amount input. Setup wizard and add-expense are impossible without it.</div>
+        <div style="color: var(--text-muted); font-size: 11.5px;">surface-deep well, 1px border, mint focus, 48px</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 1fr 220px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-family: var(--font-mono); font-weight: 700; color: var(--danger);">Snackbar</div>
+        <div style="color: var(--text-secondary);">&ldquo;Undo instead of confirm&rdquo; is a stated content rule, with no component to deliver the undo. The rule is currently unimplementable in-system.</div>
+        <div style="color: var(--text-muted); font-size: 11.5px;">surface bar, hairline top, ghost HardButton</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 1fr 220px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-family: var(--font-mono); font-weight: 700; color: var(--danger);">TabBar</div>
+        <div style="color: var(--text-secondary);">The one piece of fixed chrome in the app is absent from the kit, four text-label tabs with no icon set to lean on deserve a canonical spec.</div>
+        <div style="color: var(--text-muted); font-size: 11.5px;">mono labels, mint underline block for active</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 1fr 220px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-family: var(--font-mono); font-weight: 700; color: var(--warn);">ChoiceRow / Toggle</div>
+        <div style="color: var(--text-secondary);">Pay schedule, envelope cadence, carryover defaults, notification opt-ins, the settings surface is full of choices with no control.</div>
+        <div style="color: var(--text-muted); font-size: 11.5px;">segmented ghost buttons; square toggle, no pill</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 1fr 220px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-family: var(--font-mono); font-weight: 700; color: var(--warn);">StepTrack</div>
+        <div style="color: var(--text-secondary);">Wizard progress. Blocks + the duck, so setup reads as the game beginning.</div>
+        <div style="color: var(--text-muted); font-size: 11.5px;">BlockMeter cells + DuckSprite</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 1fr 220px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-family: var(--font-mono); font-weight: 700; color: var(--warn);">EmptyState</div>
+        <div style="color: var(--text-secondary);">Duck + one sentence + one action. Defined once, used on every zero screen.</div>
+        <div style="color: var(--text-muted); font-size: 11.5px;">PixelBox + DuckSprite + HardButton</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 1fr 220px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; font-weight: 500; line-height: 1.55;">
+        <div style="font-family: var(--font-mono); font-weight: 700; color: var(--text-secondary);">InsightRow &middot; SparkBlocks</div>
+        <div style="color: var(--text-secondary);">The insight layer from &sect;05 &middot; sentence-first recaps and countable trends.</div>
+        <div style="color: var(--text-muted); font-size: 11.5px;">RuledList + chips; vertical BlockMeter</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 08 COPY ============ -->
+  <section data-screen-label="Copy findings" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">08 &middot; Copy &amp; tone</div>
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--accent); color: var(--accent);">GUARD</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F8</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">The voice is a genuine competitive asset, extend it to the hard moments</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">&ldquo;A tough month. One duck waddles off, but the pond is still here for you&rdquo; is better writing than anything in Monarch, which speaks fluent dashboard. But the copy system only covers the happy paths. Missing: <strong>error copy</strong> (bad import, failed backup, invalid amount), <strong>notification copy</strong> (a bill reminder in this voice is an asset; a generic one breaks the spell), and a <strong>celebration library</strong> (the good-month strings will repeat within three months, write 6&ndash;8 variants per event now). One rule worth codifying while extending: warnings name the duck at stake; errors never do, the game never blames you for a technical failure.</p>
+  </section>
+
+  <!-- ============ 09 PRODUCT GAPS ============ -->
+  <section data-screen-label="Product gaps" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">09 &middot; Product-level gaps vs the field</div>
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--warn); color: var(--warn);">SOON</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F9</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Pick the fights that fit the audience</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">Named goals.</strong> Monarch's most-loved feature after reports, and the most natural extension of your envelope model. &ldquo;First month's rent for my own place: $340 of $1,200&rdquo; as a PixelBox with a BlockMeter is more motivating for this audience than any net-worth chart, and it's nearly free to build. This is the one Monarch feature worth taking.</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">A home-screen widget.</strong> Deferred in the spec, but for a manual-entry app the widget <em>is</em> the retention mechanism: safe-to-spend + duck status on the lock screen keeps the daily question answered without opening the app. Reprioritize above notifications polish.</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">Privacy as the headline, backup as the safety net.</strong> &ldquo;No accounts, no tracking, nothing leaves your phone&rdquo; is the loudest differentiator against three Plaid-dependent subscriptions, lead the store listing with it. Its cost is that losing a phone means losing the flock, so backup nudges (quarterly, gentle, in-voice) belong in the design system as a pattern, not just a settings row.</p>
+    <div style="display: flex; align-items: center; gap: 8px; margin: 32px 0 8px 0;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--warn); color: var(--warn);">SOON</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F11</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">The data layer: import, forecast, detect, search</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">CSV import with semantic category matching.</strong> The one thing sync buys competitors is history, so let users bring their own. Matching stays on-device: merchant strings tokenized and matched against category keyword lists, plus everything learned from the user's own corrections (assign &ldquo;TRADER JOE'S&rdquo; to Food once, it's Food forever). Imports always land in a review screen, <em>&ldquo;We sorted 142 of 151. Check these 9.&rdquo;</em>, never silently, per the honesty principle. Payoff: a year of history on day one means the insight layer works in week one, not month three.</p>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">Bills forecast.</strong> &ldquo;What's due before payday&rdquo; as a next-14-days RuledList, feeding the safe-to-spend math it already implies. <strong style="color: var(--text);">Subscription detection</strong> is the same trigger machinery as the insight rules, a recurring merchant at a steady amount fires a sentence (<em>&ldquo;Spotify hit for the 3rd month, $11.99. Still using it?&rdquo;</em>) and offers to mark it as a bill. <strong style="color: var(--text);">Search &amp; filter</strong> ships with the F10 ledger: a Field on top of a RuledList, filter by category chip, mono numerals. All four are one design language, no new visual ideas required.</p>
+
+    <div style="display: flex; align-items: center; gap: 8px; margin: 32px 0 8px 0;">
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; padding: 4px 8px; border: 1px solid var(--accent); color: var(--accent);">SPICY</span>
+      <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F12</span>
+    </div>
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px 0;">Long-term trends and a predicted balance, yes, with two house rules</h2>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;"><strong style="color: var(--text);">Rule one: stepped, never smooth.</strong> A smooth line chart breaks the &ldquo;money stays countable&rdquo; principle, but a <em>step</em> line (one step per week, hard right angles, pixel-true) is native to this brand, the chart equivalent of <span style="font-family: var(--font-mono); font-size: 13px;">steps()</span> motion. <strong style="color: var(--text);">Rule two: projections borrow the pond's transparency device.</strong> Actual balance draws solid; the predicted continuation draws at 45% opacity, labeled <em>&ldquo;if your last 3 months hold&rdquo;</em>, so an invented number is never rendered as a fact. The prediction itself is honest arithmetic, not ML: median trailing spend per envelope plus scheduled bills, projected forward. That's enough to answer the questions this audience actually has, <em>when do I hit $1,000? Can I afford September?</em></p>
+
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0;"><strong style="color: var(--text);">Don't build:</strong> bank sync, investment tracking, net worth, couples/household, AI chat. Each one drags the product toward the incumbents' home turf, adds accounts/servers that break the privacy story, and serves a user Ducks isn't for. The moment your user has a brokerage account, let them graduate to Monarch, on good terms.</p>
+  </section>
+
+  <!-- ============ 10 DO NOT TOUCH ============ -->
+  <section data-screen-label="What not to change" style="padding: 40px 0; border-bottom: 1px solid var(--hairline);">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">10 &middot; What not to change</div>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.7; color: var(--text-secondary); max-width: 700px; margin: 0 0 16px 0;">Everything in this review builds <em>on</em> these; competitive pressure is not a reason to soften any of them:</p>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; max-width: 700px;">
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">Zero corner radius</span>
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">BlockMeter over progress bars</span>
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">One accent, semantic amber/coral</span>
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">No emoji, no icon library</span>
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">Stepped motion only</span>
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">Undo, never confirm dialogs</span>
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">Exact dollars, warm feelings</span>
+      <span style="font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface);">100% offline &amp; free</span>
+    </div>
+    <p style="font-size: 13px; font-weight: 500; line-height: 1.7; color: var(--text-muted); max-width: 700px; margin: 16px 0 0 0;">Three flags to carry forward: no logo/app icon exists (blocking store assets, the duck sprite is the obvious starting point); Space Grotesk/Mono is a substitution the team should ratify or replace; and the duck is now a <span style="color: var(--text);">mallard, not a rubber duck</span>, same 14&times;12 pixel grid and animation frames, new palette (green head, brown breast, white collar), a sprite-data recolor rather than a new asset, which also hands yellow back to the semantic palette.</p>
+  </section>
+
+  <!-- ============ 11 ROADMAP ============ -->
+  <section data-screen-label="Roadmap" style="padding: 40px 0;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">11 &middot; Suggested order</div>
+    <div style="display: flex; flex-direction: column; border-top: 1px solid var(--hairline); max-width: 700px;">
+      <div style="display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">01</div><div style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);"><strong style="color: var(--text);">Form layer + wizard pattern</strong> (F1), Field, ChoiceRow, StepTrack. Unblocks the store-blocking onboarding.</div></div>
+      <div style="display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">02</div><div style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);"><strong style="color: var(--text);">Add-expense flow + Snackbar</strong> (F3), the daily ritual, amount-first, with the undo the content rules already promise.</div></div>
+      <div style="display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">03</div><div style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);"><strong style="color: var(--text);">Insight layer</strong> (F5, F10), the daily delivered sentence on Home, InsightRow + SparkBlocks on Results, and the tap-down ledger behind every number. Elevated: free, frictionless insight is now a headline bet, not polish.</div></div>
+      <div style="display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">04</div><div style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);"><strong style="color: var(--text);">Type patch</strong> (F6, F7), --text-kpi token, 12px caption floor, focus state. An afternoon of work, visible everywhere.</div></div>
+      <div style="display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">05</div><div style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);"><strong style="color: var(--text);">Empty states + Home goal strip</strong> (F2, F4), day-one experience (starter duck included) and daily stakes, in one pass.</div></div>
+      <div style="display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">06</div><div style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);"><strong style="color: var(--text);">Named goals + widget + copy library</strong> (F8, F9), the competitive-feature picks, once the foundations hold.</div></div>
+      <div style="display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);"><div style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">07</div><div style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);"><strong style="color: var(--text);">Data layer</strong> (F11), CSV import + category matching, bills forecast, subscription rules, ledger search. Step-chart projections (F12) come last, once there's history to project from.</div></div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1024},&quot;showMockups&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;showCompetitors&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Content&quot;}}">
+class Component extends DCLogic {
+  state = { boxesReady: false };
+  componentDidMount() {
+    const flip = () => { if (!this.state.boxesReady) this.setState({ boxesReady: true }); };
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => setTimeout(flip, 60)).catch(() => flip());
+    }
+    setTimeout(flip, 1500);
+  }
+  renderVals() {
+    return {
+      boxesReady: this.state.boxesReady,
+      showMockups: this.props.showMockups ?? true,
+      showCompetitors: this.props.showCompetitors ?? true,
+      two: 2,
+      four: 4,
+      payAmount: 64000,
+      foodBudget: 10000,
+      foodSpent: 6100,
+      funBudget: 10000,
+      funSpent: 9360,
+      blockTen: 1000,
+    };
+  }
+}
+</script>
+</body>
+</html>

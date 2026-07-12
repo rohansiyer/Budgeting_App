@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/pixel.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/styles.css">
+  <script src="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/_ds_bundle.js"></script>
+  <style>
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--border); }
+    a:hover { color: var(--text); border-bottom-color: var(--accent); }
+    ::selection { background: var(--accent); color: var(--bg); }
+  </style>
+</helmet>
+
+<div style="max-width: 1040px; margin: 0 auto; padding: 48px 32px 96px 32px; display: flex; flex-direction: column; gap: 40px;">
+
+  <!-- HEADER -->
+  <header data-screen-label="Header" style="border-bottom: 1px solid var(--border); padding-bottom: 32px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Brand asset spec &middot; July 2026</div>
+    <h1 style="font-family: var(--font-ui); font-size: 40px; font-weight: 800; letter-spacing: -1px; margin: 16px 0 8px 0;">Mallard sprite sheet</h1>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary); max-width: 680px; margin: 0;">The new duck, built from the pixel reference. The grid grows from 14&times;12 to 16&times;14 to make room for legs and tail. Every animation is stepped, one discrete frame at a time, never interpolated; reduced-motion holds frame one. See it in context in the <a href="Pattern Mockups.dc.html">pattern mockups</a>.</p>
+  </header>
+
+  <!-- RULES -->
+  <section data-screen-label="Rules" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--hairline); border: 1px solid var(--hairline);">
+    <div style="background: var(--surface); padding: 16px;">
+      <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px;">Legs on land</div>
+      <div style="font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);">The last two grid rows are reserved for legs. They render in idle, waddle, walk-off and preen.</div>
+    </div>
+    <div style="background: var(--surface); padding: 16px;">
+      <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px;">No legs in water</div>
+      <div style="font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);">Swim frames drop the leg rows entirely; the body sits two rows lower and the waterline covers the bottom row.</div>
+    </div>
+    <div style="background: var(--surface); padding: 16px;">
+      <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px;">Stepped only</div>
+      <div style="font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);">Frame holds, no tweens. Idle keeps the 1150ms two-frame bob from the current sprite.</div>
+    </div>
+  </section>
+
+  <!-- PALETTE -->
+  <section data-screen-label="Palette" style="display: flex; flex-direction: column; gap: 8px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">Palette &middot; 9 hues, matched to the reference</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #4c9c46;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">G head #4C9C46</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #e8a93d;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">O bill #E8A93D</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #f0e9d6;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">C neck #F0E9D6</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #c9bfae;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">B body #C9BFAE</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #8e8577;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">W wing #8E8577</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #8a5638;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">R breast #8A5638</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #3f3b33;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">D tail #3F3B33</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #d97e32;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">L legs #D97E32</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px;"><div style="width: 16px; height: 16px; background: #14181a;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">K eye #14181A</span></div>
+    </div>
+    <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6;">Water in swim frames uses #1C4F46 / #28695B, drawn from the accent family. The old body yellow #EFC94C is retired to the semantic palette.</div>
+  </section>
+
+  <!-- ANIMATIONS -->
+  <sc-for list="{{ anims }}" as="anim" hint-placeholder-count="5">
+    <section data-screen-label="Animation" style="border-top: 1px solid var(--hairline); padding-top: 32px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: baseline; gap: 16px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">{{ anim.name }}</div>
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">{{ anim.timing }}</div>
+      </div>
+      <p style="font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--text-secondary); max-width: 680px; margin: 0;">{{ anim.note }}</p>
+      <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;">
+          <div style="width: 128px; height: 120px; background: var(--surface-deep); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;">{{ anim.preview }}</div>
+          <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-muted);">LIVE</span>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <sc-for list="{{ anim.frames }}" as="frame" hint-placeholder-count="4">
+            <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;">
+              <div style="width: 80px; height: 76px; background: var(--surface); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;">{{ frame.svg }}</div>
+              <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">{{ frame.label }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </section>
+  </sc-for>
+
+  <!-- FOOTNOTE -->
+  <section data-screen-label="Footnote" style="border-top: 1px solid var(--border); padding-top: 24px;">
+    <p style="font-size: 12px; font-weight: 500; line-height: 1.7; color: var(--text-muted); max-width: 680px; margin: 0;">Accessory tiers (bowtie, hat, chain) carry over unchanged; they overlay the same coordinates as today. Waddle-in and walk-off reuse the waddle cycle with horizontal shifts, entering from the left and exiting to the right, matching the current sprite's frame tables. Preen is a new idle variant for the Pond: play it at random every 8 to 20 seconds on at most one duck at a time.</p>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1100}}">
+class Component extends DCLogic {
+  state = { now: 0 };
+
+  componentDidMount() {
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) {
+      this.t0 = Date.now();
+      this.timer = setInterval(() => this.setState({ now: Date.now() - this.t0 }), 90);
+    }
+  }
+  componentWillUnmount() { if (this.timer) clearInterval(this.timer); }
+
+  grids() {
+    const BODY = [
+      '................',
+      '....GGGG........',
+      '...GGGGGG.......',
+      '.OOGGKGGGG......',
+      'OOOGGGGGGG......',
+      '....GGGGG.......',
+      '....CCGGG....D..',
+      '...RCCBBBBBBDD..',
+      '..RRCBBWWWWBBD..',
+      '..RRBBWWWWWWB...',
+      '..RRBBWWWWWB....',
+      '...RBBBBBBB.....',
+    ];
+    const BLANK = '................';
+    const STAND = BODY.concat(['.....L....L.....', '....LL...LL.....']);
+    const BOB = [BLANK].concat(BODY, ['....LL...LL.....']);
+    const STRIDE = [BLANK].concat(BODY, ['...LL......LL...']);
+    const STRIDE2 = [BLANK].concat(BODY, ['.....LL..LL.....']);
+    const PREEN_TURN = [
+      BLANK, BLANK,
+      '....GGGG........',
+      '...GGGGGGK......',
+      '...GGGGGGGO.....',
+      '....GGGGGOO.....',
+      '....CCGGG....D..',
+      '...RCCBBBBBBDD..',
+      '..RRCBBWWWWBBD..',
+      '..RRBBWWWWWWB...',
+      '..RRBBWWWWWB....',
+      '...RBBBBBBB.....',
+      '.....L....L.....',
+      '....LL...LL.....',
+    ];
+    const PREEN_DOWN = [
+      BLANK, BLANK, BLANK,
+      '....GGGG........',
+      '...GGGGGG.......',
+      '...GGGGGGK......',
+      '....CCGGGGO..D..',
+      '...RCCBBBBOODD..',
+      '..RRCBBWWWWBBD..',
+      '..RRBBWWWWWWB...',
+      '..RRBBWWWWWB....',
+      '...RBBBBBBB.....',
+      '.....L....L.....',
+      '....LL...LL.....',
+    ];
+    const swim = (sink, phase) => {
+      const rows = [];
+      for (let i = 0; i < sink; i++) rows.push(BLANK);
+      for (const r of BODY) rows.push(r);
+      while (rows.length < 14) rows.push(BLANK);
+      const water = (c) => ((c + phase) % 4 < 2 ? 'A' : 'a');
+      const out = rows.slice(0, 14).map((row, r) => {
+        if (r < 12) return row;
+        let s = '';
+        for (let c = 0; c < 16; c++) {
+          const ch = row[c];
+          s += (r === 13 || ch === '.' || ch === undefined) ? water(c) : ch;
+        }
+        return s;
+      });
+      return out;
+    };
+    return { STAND, BOB, STRIDE, STRIDE2, PREEN_TURN, PREEN_DOWN, SWIM1: swim(2, 0), SWIM2: swim(3, 2) };
+  }
+
+  sprite(grid, scale, flip) {
+    const PAL = {
+      G: '#4C9C46', K: '#14181A', O: '#E8A93D', C: '#F0E9D6', B: '#C9BFAE',
+      W: '#8E8577', R: '#8A5638', D: '#3F3B33', L: '#D97E32',
+      A: '#1C4F46', a: '#28695B',
+    };
+    const w = 16 * scale, h = 14 * scale;
+    const rects = [];
+    grid.forEach((row, r) => {
+      for (let c = 0; c < row.length; c++) {
+        const fill = PAL[row[c]];
+        if (fill) rects.push(React.createElement('rect', { key: r + ':' + c, x: c * scale, y: r * scale, width: scale, height: scale, fill }));
+      }
+    });
+    const g = React.createElement('g', { transform: flip ? 'translate(' + w + ', 0) scale(-1, 1)' : undefined }, rects);
+    return React.createElement('svg', { width: w, height: h, role: 'img', 'aria-label': 'Pixel mallard frame' }, g);
+  }
+
+  renderVals() {
+    const G = this.grids();
+    const mk = (grid, label, flip) => ({ svg: this.sprite(grid, 4, !!flip), label });
+    const schedule = (steps, flip) => {
+      const total = steps.reduce((s, x) => s + x[1], 0);
+      let t = this.state.now % total;
+      let grid = steps[0][0];
+      for (const [g2, d] of steps) { if (t < d) { grid = g2; break; } t -= d; }
+      return this.sprite(grid, 7, !!flip);
+    };
+
+    const anims = [
+      {
+        name: 'Idle',
+        timing: '2 frames / 1150ms loop',
+        note: 'The signature bob, unchanged from the current sprite: body drops one pixel, legs compress. Loops forever.',
+        preview: schedule([[G.STAND, 575], [G.BOB, 575]]),
+        frames: [mk(G.STAND, '01 stand'), mk(G.BOB, '02 bob')],
+      },
+      {
+        name: 'Waddle in',
+        timing: '4 frames / 180ms each, enters left',
+        note: 'The arrival walk when a duck is earned. Legs alternate between planted, astride, and passing; the body bobs one pixel on stride frames. Plays left to right with a 2px shift per frame, then settles into idle.',
+        preview: schedule([[G.STAND, 180], [G.STRIDE, 180], [G.STAND, 180], [G.STRIDE2, 180]]),
+        frames: [mk(G.STAND, '01 plant'), mk(G.STRIDE, '02 astride'), mk(G.STAND, '03 plant'), mk(G.STRIDE2, '04 pass')],
+      },
+      {
+        name: 'Walk off',
+        timing: 'Same cycle, flipped, exits right',
+        note: 'The loss walk for a 0-of-3 month. Identical frame data played horizontally flipped, exiting stage right with two hold frames at the edge, matching the current walk-off table.',
+        preview: schedule([[G.STAND, 180], [G.STRIDE, 180], [G.STAND, 180], [G.STRIDE2, 180]], true),
+        frames: [mk(G.STAND, '01 plant', true), mk(G.STRIDE, '02 astride', true), mk(G.STAND, '03 plant', true), mk(G.STRIDE2, '04 pass', true)],
+      },
+      {
+        name: 'Swim',
+        timing: '2 frames / 500ms each',
+        note: 'For the Pond. Legs are gone; the body sits two rows lower and the waterline runs across the bottom two rows, rippling in a 4px pattern. The second frame sinks the body one more pixel.',
+        preview: schedule([[G.SWIM1, 500], [G.SWIM2, 500]]),
+        frames: [mk(G.SWIM1, '01 float'), mk(G.SWIM2, '02 ripple')],
+      },
+      {
+        name: 'Preen',
+        timing: '4 steps with holds, plays once',
+        note: 'A new idle variant: the head turns back and the bill works into the wing, then returns. Sequence: stand (hold), turn, preen (long hold), turn, back to idle.',
+        preview: schedule([[G.STAND, 900], [G.PREEN_TURN, 350], [G.PREEN_DOWN, 1200], [G.PREEN_TURN, 350]]),
+        frames: [mk(G.STAND, '01 stand'), mk(G.PREEN_TURN, '02 turn'), mk(G.PREEN_DOWN, '03 preen'), mk(G.PREEN_TURN, '04 turn')],
+      },
+    ];
+    return { anims };
+  }
+}
+</script>
+</body>
+</html>

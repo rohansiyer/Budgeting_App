@@ -1,0 +1,12 @@
+/**
+ * Ducks in a Row — spacing scale.
+ * Source: budget-tracker/src/theme/tokens.ts (`space` export). A tight
+ * 4-step scale — the app deliberately has no 6th step.
+ */
+:root {
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+}
