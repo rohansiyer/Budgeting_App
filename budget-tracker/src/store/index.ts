@@ -21,6 +21,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, getRawDb } from '../db/client';
 import * as schema from '../db/schema';
 import { generateId } from '../lib/ids';
+import { color } from '../theme/tokens';
 import {
   addCents,
   cents,
@@ -123,13 +124,9 @@ function inRange(date: ISODate, from: ISODate, to: ISODate): boolean {
   return date >= from && date <= to;
 }
 
-const CATEGORY_HEX: Record<CategoryColorKey, string> = {
-  violet: '#9D6FE0',
-  amber: '#BA8329',
-  mint: '#2FA383',
-  blue: '#5B82D9',
-  pink: '#C75E86',
-};
+// Single source of truth for category hues is the theme (only tokens.ts and
+// sprites.ts may hold literal hex). Legacy consumers get the same values.
+const CATEGORY_HEX: Record<CategoryColorKey, string> = color.category;
 
 // ---------------------------------------------------------------------------
 // Internal row shapes (drizzle select results, money as plain integers).
@@ -375,8 +372,18 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     return ch.id;
   };
 
-  const carryoverFor = (categoryId: string, week: WeekStart): CarryoverRow[] =>
-    get()._carryover.filter((e) => e.categoryId === categoryId && e.weekStart === week);
+  // Entries are matched by CONTAINING week, not exact key: weekly legs sit on
+  // Mondays (exact hit), but monthly-cadence borrow legs sit on month-first
+  // dates that are usually mid-week. Windowed matching counts every leg exactly
+  // once in the week that contains it — the review-proven alternative (exact
+  // match) silently dropped monthly legs from safe-to-spend, inventing or
+  // destroying money depending on which month-firsts happened to be Mondays.
+  const carryoverFor = (categoryId: string, week: WeekStart): CarryoverRow[] => {
+    const weekEnd = addDays(week, 6);
+    return get()._carryover.filter(
+      (e) => e.categoryId === categoryId && e.weekStart >= week && e.weekStart <= weekEnd,
+    );
+  };
 
   const sumKind = (rows: CarryoverRow[], kind: string): Cents =>
     sumCents(rows.filter((r) => r.kind === kind).map((r) => C(r.amount)));
@@ -1394,7 +1401,13 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     editTransaction: async (id, patch) => {
+      if (!get()._txnRows.some((t) => t.id === id && t.deletedAt == null)) {
+        throw new Error(`editTransaction: unknown or deleted transaction "${id}"`);
+      }
       if (patch.categoryId != null) assertCategoryExists(patch.categoryId);
+      if (patch.amount !== undefined && (!Number.isInteger(patch.amount) || patch.amount <= 0)) {
+        throw new Error('editTransaction: amount must be a positive whole number of cents');
+      }
       await withTransaction(async () => {
         const set_: Record<string, unknown> = {};
         if (patch.amount !== undefined) set_.amount = patch.amount;

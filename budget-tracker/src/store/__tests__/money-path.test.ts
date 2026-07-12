@@ -171,6 +171,34 @@ describe('conservation law', () => {
     expect(feb).toHaveLength(0);
   });
 
+  it('monthly borrow legs are visible to week-keyed reads exactly once (final-review regression)', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+
+    // June 2026: month-first IS a Monday; July 2026: month-first is a
+    // Wednesday. The review-proven defect: exact weekStart matching counted
+    // the June leg but never the July repay, permanently inventing the
+    // borrowed amount in safe-to-spend. Windowed matching must count each
+    // leg exactly once in its containing week.
+    await store().borrowFromNextCycle(cat, '2026-06-15', cents(5000));
+
+    // borrow_in at 2026-06-01 (Monday): containing week is 2026-06-01.
+    expect(store().getEnvelopeWeekState(cat, '2026-06-01').borrowedIn).toBe(5000);
+    // borrow_repay at 2026-07-01 (Wednesday): containing week is 2026-06-29.
+    expect(store().getEnvelopeWeekState(cat, '2026-06-29').repaying).toBe(5000);
+    // No other week sees either leg (exactly-once accounting).
+    for (const wk of ['2026-06-08', '2026-06-15', '2026-06-22', '2026-07-06']) {
+      const st = store().getEnvelopeWeekState(cat, wk);
+      expect(st.borrowedIn).toBe(0);
+      expect(st.repaying).toBe(0);
+    }
+    // Conservation in the hero figure: +5000 in the credited week, -5000 in
+    // the repaying week, untouched weeks pure allocation.
+    const baseline = store().getSafeToSpend('2026-06-15');
+    expect(store().getSafeToSpend('2026-06-01') - baseline).toBe(5000);
+    expect(baseline - store().getSafeToSpend('2026-06-29')).toBe(5000);
+  });
+
   it('borrowFromNextWeek delegate rejects a monthly-cadence envelope', async () => {
     await freshChapter();
     const cat = await makeMonthlyEnvelope('Fun', 20000);
@@ -567,5 +595,87 @@ describe('EvaluationReadPort attribution (duck guard §5.4)', () => {
     const julyTotals = await store().evaluation.getMonthCategoryTotals('2026-07');
     expect(juneTotals.find((t) => t.categoryId === cat)!.spent).toBe(5000); // origin week's month
     expect(julyTotals.find((t) => t.categoryId === cat)!.spent).toBe(0); // NOT calendar month
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Final-review coverage: editTransaction + updateRecurringBill field edits
+// ---------------------------------------------------------------------------
+describe('editTransaction (final-review coverage)', () => {
+  it('edits amount/category/note and every downstream read follows', async () => {
+    await freshChapter();
+    const a = await makeAccount('A', 100000);
+    const food = await makeWeeklyEnvelope('Food', 10000);
+    const gas = await makeWeeklyEnvelope('Gas', 10000);
+    const id = await store().addExpense({
+      accountId: a, categoryId: food, amount: cents(2500), date: '2026-01-06',
+    });
+
+    await store().editTransaction(id, { amount: cents(4000), categoryId: gas, note: 'refuel' });
+
+    expect(store().getEnvelopeWeekState(food, '2026-01-05').spent).toBe(0);
+    expect(store().getEnvelopeWeekState(gas, '2026-01-05').spent).toBe(4000);
+    expect(store().getAccountBalance(a, '2026-01-06')).toBe(100000 - 4000);
+  });
+
+  it('rejects a zero, negative, or fractional amount and an unknown/deleted id', async () => {
+    await freshChapter();
+    const a = await makeAccount('A', 100000);
+    const food = await makeWeeklyEnvelope('Food', 10000);
+    const id = await store().addExpense({
+      accountId: a, categoryId: food, amount: cents(2500), date: '2026-01-06',
+    });
+
+    await expect(store().editTransaction(id, { amount: 0 as never })).rejects.toThrow(/positive/);
+    await expect(store().editTransaction(id, { amount: -100 as never })).rejects.toThrow(/positive/);
+    await expect(store().editTransaction(id, { amount: 10.5 as never })).rejects.toThrow(/positive/);
+    await expect(store().editTransaction('phantom', { note: 'x' })).rejects.toThrow(/unknown/);
+    await store().deleteTransaction(id);
+    await expect(store().editTransaction(id, { note: 'x' })).rejects.toThrow(/deleted/);
+    // The rejected edits left the original untouched (it is soft-deleted now,
+    // but its stored amount never changed along the way).
+  });
+});
+
+describe('updateRecurringBill field edits (final-review coverage)', () => {
+  it('amount and dueDay edits flow into the safe-to-spend reservation', async () => {
+    await freshChapter();
+    await makeAccount('A', 100000);
+    const fixed = await store().createCategory({
+      name: 'Rent', colorKey: 'violet', fixed: true, envelope: null,
+    });
+    await store().createIncomeSource({
+      name: 'Job', amount: cents(100000),
+      schedule: { kind: 'monthly', anchorDate: '2026-01-30' },
+      splits: [],
+    });
+    const env = await makeWeeklyEnvelope('Food', 50000);
+    void env;
+    const bill = await store().addRecurringBill({
+      name: 'Rent', categoryId: fixed.id, amountCents: cents(20000), dueDay: 10,
+    });
+
+    const before = store().getSafeToSpend('2026-01-05');
+    await store().updateRecurringBill(bill.id, { amountCents: cents(30000) });
+    const after = store().getSafeToSpend('2026-01-05');
+    expect(before - after).toBe(10000); // reservation followed the amount edit
+
+    // Move the due day past the next payday: the reservation disappears.
+    await store().updateRecurringBill(bill.id, { dueDay: 31 });
+    expect(store().getSafeToSpend('2026-01-05')).toBe(before + 20000);
+  });
+
+  it('rejects invalid dueDay and amount edits', async () => {
+    await freshChapter();
+    const fixed = await store().createCategory({
+      name: 'Rent', colorKey: 'violet', fixed: true, envelope: null,
+    });
+    const bill = await store().addRecurringBill({
+      name: 'Rent', categoryId: fixed.id, amountCents: cents(20000), dueDay: 10,
+    });
+    await expect(store().updateRecurringBill(bill.id, { dueDay: 0 })).rejects.toThrow(/1\.\.31/);
+    await expect(store().updateRecurringBill(bill.id, { dueDay: 32 })).rejects.toThrow(/1\.\.31/);
+    await expect(store().updateRecurringBill(bill.id, { amountCents: 0 as never })).rejects.toThrow(/positive/);
+    await expect(store().updateRecurringBill('phantom', { dueDay: 5 })).rejects.toThrow(/unknown/);
   });
 });

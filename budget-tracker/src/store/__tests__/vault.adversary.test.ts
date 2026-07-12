@@ -224,11 +224,15 @@ describe('borrow (uncapped, cadence-aware)', () => {
     await expect(store().borrowFromNextWeek(monthly, '2026-01-05', cents(1000))).rejects.toThrow(
       /monthly-cadence/,
     );
-    // A proper monthly borrow writes month-boundary legs that the week-keyed
-    // reads (Monday weekStarts) never pick up — no accidental double-counting.
+    // A proper monthly borrow writes month-boundary legs; week-keyed reads
+    // count each leg exactly once, in the week CONTAINING it (2026-01-01 sits
+    // in the week of 2025-12-29, 2026-02-01 in the week of 2026-01-26). The
+    // Mondays asserted first contain neither leg and must see nothing.
     await store().borrowFromNextCycle(monthly, '2026-01-15', cents(4000));
     expect(store().getEnvelopeWeekState(monthly, W(0)).borrowedIn).toBe(0);
     expect(store().getEnvelopeWeekState(monthly, W(1)).repaying).toBe(0);
+    expect(store().getEnvelopeWeekState(monthly, '2025-12-29').borrowedIn).toBe(4000);
+    expect(store().getEnvelopeWeekState(monthly, '2026-01-26').repaying).toBe(4000);
   });
 
   it('borrow-then-switch-cadence: frozen legs plus a fresh monthly pair, all conserved', async () => {

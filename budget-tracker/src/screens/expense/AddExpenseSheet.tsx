@@ -357,7 +357,8 @@ const styles = StyleSheet.create({
   },
   recentCellLabel: {
     color: color.textSecondary,
-    fontSize: typo.sectionLabel.fontSize,
+    // 11px is reserved for tracked uppercase labels; content labels sit at caption size.
+    fontSize: typo.caption.fontSize,
     fontWeight: typo.sectionLabel.fontWeight,
     fontFamily: font.uiBold,
   },

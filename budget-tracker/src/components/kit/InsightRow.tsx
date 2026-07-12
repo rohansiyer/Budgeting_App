@@ -44,11 +44,14 @@ const styles = StyleSheet.create({
     color: color.textSecondary,
     fontSize: typo.body.fontSize,
     fontWeight: typo.body.fontWeight,
+    fontFamily: typo.body.fontFamily,
   },
   amount: {
     color: color.accent,
     fontSize: typo.body.fontSize,
     fontWeight: typo.title.fontWeight,
+    // "The exact dollar figure in mono accent" (§3.1) — mono face mandatory.
+    fontFamily: tokens.font.monoBold,
     fontVariant: [...typo.tabularNums.fontVariant],
   },
 });

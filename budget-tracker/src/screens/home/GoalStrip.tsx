@@ -153,7 +153,8 @@ const styles = StyleSheet.create({
   warning: {
     marginTop: space.xs,
     color: color.warn,
-    fontSize: typo.caption.fontSize,
+    // Warnings are content-bearing text: 13px, never caption size (handoff 2.3).
+    fontSize: 13,
     fontWeight: typo.body.fontWeight,
     fontFamily: typo.body.fontFamily,
     lineHeight: 18,

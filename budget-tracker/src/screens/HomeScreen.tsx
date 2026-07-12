@@ -474,7 +474,8 @@ const styles = StyleSheet.create({
   },
   pacingLine: {
     color: color.textMuted,
-    fontSize: typo.caption.fontSize,
+    // Content-bearing guidance sits at 13px, never caption size (handoff 2.3).
+    fontSize: 13,
     fontWeight: typo.caption.fontWeight,
     fontFamily: typo.caption.fontFamily,
     marginTop: space.sm,
@@ -482,7 +483,7 @@ const styles = StyleSheet.create({
   },
   pacingAmount: {
     color: color.textSecondary,
-    fontSize: typo.caption.fontSize,
+    fontSize: 13,
     fontWeight: typo.body.fontWeight,
     fontFamily: font.monoBold,
     fontVariant: [...typo.tabularNums.fontVariant],
