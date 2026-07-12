@@ -1,18 +1,23 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  createBottomTabNavigator,
+  type BottomTabBarProps,
+} from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as tokens from '../theme/tokens';
+import { TabBar } from '../components/kit';
 import { HomeScreen } from '../screens/HomeScreen';
 import { CalendarScreen } from '../screens/CalendarScreen';
 import { PondScreen } from '../screens/PondScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { SetupRoute } from './SetupRoute';
 import { openSetup } from './navigationRef';
+import { buildTabDescriptors, activeRouteName } from './TabBar.logic';
 import type { RootStackParamList } from './navigationRef';
 
-const { color, pixel } = tokens;
-const typo = tokens.type;
+const { color } = tokens;
 
 export type RootTabParamList = {
   Home: undefined;
@@ -24,22 +29,37 @@ export type RootTabParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
 /**
- * Pixel tab icon: a square — filled when focused, outlined when not. The Pond
- * tab's pond-tinted square is the placeholder for Team 4's DuckSprite icon,
- * swapped at merge.
+ * Adapts React Navigation's bottom-tab state/events to the kit TabBar's
+ * tabs/activeKey/onPress contract (handoff v3 §3.1: the one fixed chrome
+ * element, 56px, mint underline). Emits the standard `tabPress` event before
+ * navigating so any per-screen listeners (e.g. scroll-to-top on re-tap) keep
+ * working exactly as they would with the default tab bar.
  */
-function TabIcon({ focused, pond }: { focused: boolean; pond?: boolean }) {
-  const tint = pond ? color.pondEdge : color.accent;
+function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const tabs = buildTabDescriptors(state.routeNames);
+  const activeName = activeRouteName(state.routeNames, state.index);
+
   return (
-    <View
-      style={[
-        styles.icon,
-        {
-          backgroundColor: focused ? tint : color.bg,
-          borderColor: focused ? tint : color.textMuted,
-        },
-      ]}
-    />
+    <View style={[styles.tabBarWrap, { paddingBottom: insets.bottom }]}>
+      <TabBar
+        tabs={tabs}
+        activeKey={activeName ?? tabs[0]?.key ?? ''}
+        onPress={(key) => {
+          const route = state.routes.find((r) => r.name === key);
+          if (!route) return;
+          const isFocused = route.name === activeName;
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        }}
+      />
+    </View>
   );
 }
 
@@ -47,33 +67,13 @@ function TabIcon({ focused, pond }: { focused: boolean; pond?: boolean }) {
 export const TabsNavigator = () => {
   return (
     <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: color.text,
-        tabBarInactiveTintColor: color.textMuted,
-        tabBarLabelStyle: styles.tabLabel,
-      }}
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <CustomTabBar {...props} />}
     >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} /> }}
-      />
-      <Tab.Screen
-        name="Calendar"
-        component={CalendarScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} /> }}
-      />
-      <Tab.Screen
-        name="Pond"
-        component={PondScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} pond /> }}
-      />
-      <Tab.Screen
-        name="Settings"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} /> }}
-      >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} />
+      <Tab.Screen name="Pond" component={PondScreen} />
+      <Tab.Screen name="Settings">
         {() => <SettingsScreen onOpenSetup={(mode) => openSetup(mode)} />}
       </Tab.Screen>
     </Tab.Navigator>
@@ -112,23 +112,11 @@ export const RootNavigator = () => {
 };
 
 const styles = StyleSheet.create({
-  tabBar: {
+  // The kit TabBar itself is a fixed 56px; this wrap just extends its
+  // `surface` background under the safe area so the inset reads as part of
+  // the same fixed chrome element rather than a gap (handoff v3 §3.1).
+  tabBarWrap: {
     backgroundColor: color.surface,
-    borderTopWidth: pixel.hairlineWidth,
-    borderTopColor: color.border,
-    height: 60,
-    paddingBottom: 6,
-    paddingTop: 6,
-  },
-  tabLabel: {
-    fontSize: typo.sectionLabel.fontSize,
-    fontWeight: typo.sectionLabel.fontWeight,
-    letterSpacing: typo.sectionLabel.letterSpacing,
-  },
-  icon: {
-    width: 16,
-    height: 16,
-    borderWidth: pixel.hairlineWidth * 2,
   },
 });
 

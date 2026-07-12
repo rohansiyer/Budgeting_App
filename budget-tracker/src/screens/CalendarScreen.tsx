@@ -3,8 +3,11 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { formatCents, ZERO } from '../lib/money';
 import { Screen, SectionLabel } from '../components/Primitives';
+import { EmptyState } from '../components/kit';
+import { DuckSprite } from '../ducks/DuckSprite';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
+import { isCalendarMonthEmpty } from './CalendarScreen.logic';
 import {
   todayISO,
   monthRange,
@@ -35,6 +38,8 @@ export function CalendarScreen() {
 
   const days = eachDay(range);
   const totals = store.getDaySpendTotals(range);
+  const monthTxnCount = store.getTransactions(range).length;
+  const isEmpty = isCalendarMonthEmpty(monthTxnCount);
   const paydays = useMemo(() => new Set(store.getPaydays(range)), [store, range.from, range.to]);
   const fixedHitDays = useMemo(() => {
     const fixedIds = new Set(
@@ -114,10 +119,24 @@ export function CalendarScreen() {
         })}
       </View>
 
-      <SectionLabel>Legend</SectionLabel>
-      <LegendRow swatch={<View style={styles.legendHeat} />} label="Fill intensity = spending" />
-      <LegendRow swatch={<View style={styles.legendRing} />} label="Mint ring = payday" />
-      <LegendRow swatch={<View style={styles.legendFixed} />} label="Coral edge = fixed bill spike" />
+      {isEmpty ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            message="No spending recorded yet. Add your first expense and this calendar starts filling in."
+            actionLabel="Add expense"
+            onAction={() => openDay(today)}
+            renderDuck={(props) => <DuckSprite {...props} />}
+            accessibilityLabel="No spending recorded yet"
+          />
+        </View>
+      ) : (
+        <>
+          <SectionLabel>Legend</SectionLabel>
+          <LegendRow swatch={<View style={styles.legendHeat} />} label="Fill intensity = spending" />
+          <LegendRow swatch={<View style={styles.legendRing} />} label="Mint ring = payday" />
+          <LegendRow swatch={<View style={styles.legendFixed} />} label="Coral edge = fixed bill spike" />
+        </>
+      )}
     </Screen>
   );
 }
@@ -132,6 +151,9 @@ function LegendRow({ swatch, label }: { swatch: React.ReactNode; label: string }
 }
 
 const styles = StyleSheet.create({
+  emptyWrap: {
+    marginTop: space.md,
+  },
   weekHeader: {
     flexDirection: 'row',
     marginTop: space.sm,

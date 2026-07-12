@@ -5,38 +5,45 @@
  * ever touches a balance here.
  */
 import React, { useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
-import { HardButton, PixelBox, RuledList } from '../../components/kit';
-import { formatCents, MoneyError, parseDecimal } from '../../lib/money';
+import { Text, View } from 'react-native';
+import { ChoiceRow, Field, HardButton, PixelBox, RuledList } from '../../components/kit';
+import { formatCents, MoneyError, parseDecimal, type Cents } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import type { Dispatch } from 'react';
 import { nextDraftKey, type AccountDraft, type WizardAction } from '../wizardState';
 import type { AccountConfig } from '../../types/contracts';
+import { stepSubtextStyle, stepTitleStyle } from './stepTypography';
 
 interface AccountsStepProps {
   accounts: AccountDraft[];
   dispatch: Dispatch<WizardAction>;
 }
 
-const KINDS: Array<AccountConfig['kind']> = ['spending', 'savings'];
+const KIND_OPTIONS: Array<{ key: AccountConfig['kind']; label: string }> = [
+  { key: 'spending', label: 'Spending' },
+  { key: 'savings', label: 'Savings' },
+];
 
 export function AccountsStep({ accounts, dispatch }: AccountsStepProps) {
   const [name, setName] = useState('');
   const [institution, setInstitution] = useState('');
   const [kind, setKind] = useState<AccountConfig['kind']>('spending');
   const [balanceInput, setBalanceInput] = useState('0');
-  const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
 
   const handleAdd = () => {
+    setNameError(null);
+    setBalanceError(null);
     if (name.trim().length === 0) {
-      setError('Give the account a name.');
+      setNameError('Give the account a name.');
       return;
     }
-    let startingBalance;
+    let startingBalance: Cents;
     try {
       startingBalance = parseDecimal(balanceInput || '0');
     } catch (e) {
-      setError(e instanceof MoneyError ? e.message : 'Enter a valid starting balance.');
+      setBalanceError(e instanceof MoneyError ? e.message : 'Enter a valid starting balance.');
       return;
     }
     const draft: AccountDraft = {
@@ -50,13 +57,12 @@ export function AccountsStep({ accounts, dispatch }: AccountsStepProps) {
     setName('');
     setInstitution('');
     setBalanceInput('0');
-    setError(null);
   };
 
   return (
     <View style={{ gap: space.md }}>
-      <Text style={[type.title, { color: color.text }]}>Your accounts</Text>
-      <Text style={[type.body, { color: color.textSecondary }]}>
+      <Text style={stepTitleStyle}>Where does your money live?</Text>
+      <Text style={stepSubtextStyle}>
         Add every account you move money through. You can rename these later.
       </Text>
 
@@ -98,43 +104,36 @@ export function AccountsStep({ accounts, dispatch }: AccountsStepProps) {
 
       <PixelBox>
         <View style={{ gap: space.sm }}>
-          <TextInput
-            accessibilityLabel="New account name"
-            placeholder="Account name (e.g. Everyday Checking)"
-            placeholderTextColor={color.textMuted}
+          <Field
+            label="Account name"
+            placeholder="e.g. Everyday Checking"
             value={name}
             onChangeText={setName}
-            style={{ color: color.text, borderBottomWidth: 1, borderBottomColor: color.hairline }}
+            error={nameError ?? undefined}
+            accessibilityLabel="New account name"
           />
-          <TextInput
-            accessibilityLabel="Institution (optional)"
-            placeholder="Institution (optional)"
-            placeholderTextColor={color.textMuted}
+          <Field
+            label="Institution (optional)"
+            placeholder="e.g. Local Bank"
             value={institution}
             onChangeText={setInstitution}
-            style={{ color: color.text, borderBottomWidth: 1, borderBottomColor: color.hairline }}
+            accessibilityLabel="Institution (optional)"
           />
-          <View style={{ flexDirection: 'row', gap: space.sm }}>
-            {KINDS.map((k) => (
-              <HardButton
-                key={k}
-                label={k}
-                variant={kind === k ? 'primary' : 'ghost'}
-                accessibilityLabel={`Account kind ${k}`}
-                onPress={() => setKind(k)}
-              />
-            ))}
-          </View>
-          <TextInput
-            accessibilityLabel="Starting balance in dollars"
-            placeholder="Starting balance (e.g. 250.00)"
-            placeholderTextColor={color.textMuted}
+          <ChoiceRow
+            options={KIND_OPTIONS}
+            selectedKey={kind}
+            onSelect={(key) => setKind(key as AccountConfig['kind'])}
+            accessibilityLabel="Account kind"
+          />
+          <Field
+            label="Starting balance"
+            placeholder="e.g. 250.00"
             keyboardType="decimal-pad"
             value={balanceInput}
             onChangeText={setBalanceInput}
-            style={{ color: color.text, borderBottomWidth: 1, borderBottomColor: color.hairline }}
+            error={balanceError ?? undefined}
+            accessibilityLabel="Starting balance in dollars"
           />
-          {error ? <Text style={[type.caption, { color: color.danger }]}>{error}</Text> : null}
           <HardButton label="Add account" accessibilityLabel="Add account" onPress={handleAdd} />
         </View>
       </PixelBox>

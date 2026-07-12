@@ -21,6 +21,7 @@ import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
 import { createStoreSetupWriter } from './src/setup/storeSetupWriter';
 import { DuckResultsGate } from './src/ducks/DuckResultsGate';
+import { PayPeriodRecapGate } from './src/ducks/PayPeriodRecapGate';
 import { LockScreen } from './src/security/LockScreen';
 import { useAutoLock } from './src/security/useAutoLock';
 import { isAppLockEnabled } from './src/security/lockSettings';
@@ -144,6 +145,10 @@ export default function App() {
             <StatusBar style="light" />
             <AppShellProvider>
               <RootNavigator />
+              {/* Mid-month pay-period recaps never carry a duck verdict, so they
+                  mount first; the month-end verdict gate paints above them
+                  when both happen to be pending at once. */}
+              <PayPeriodRecapGate />
               <DuckResultsGate
                 onGoToPond={() => openTab('Pond')}
                 onReviewBills={() => openTab('Calendar')}

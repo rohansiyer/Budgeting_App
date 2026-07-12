@@ -8,8 +8,10 @@
  * src/lib/money.ts, never raw float math.
  *
  * Carryover mutations enforce the conservation law (paired roll/borrow entries
- * share a pairId and equal amounts) and borrow caps (next week only, ≤50% of
- * next week's configured budget) — violations throw.
+ * share a pairId and equal amounts). Borrowing is cadence-aware and UNCAPPED
+ * (v0.3): an envelope borrows from its own next cycle — weekly from next week,
+ * monthly from next calendar month — with honest math (nextCycleStartState) as
+ * the only guardrail. Money is never invented or lost; violations throw.
  *
  * A handful of DEPRECATED shim members (marked `TODO(team3)`) keep the legacy
  * screens compiling until Team 3 replaces them wholesale.
@@ -47,6 +49,7 @@ import type {
   IncomeSourceConfig,
   ISODate,
   MonthKey,
+  NextCycleState,
   StoreContract,
   TransactionRecord,
   WeekStart,
@@ -85,6 +88,21 @@ function mondayOf(iso: ISODate): WeekStart {
 /** Month a week belongs to = month of its Monday. */
 function monthOfWeek(week: WeekStart): MonthKey {
   return week.slice(0, 7);
+}
+/** 'YYYY-MM' of an ISODate (calendar month). */
+function monthKeyOf(iso: ISODate): MonthKey {
+  return iso.slice(0, 7);
+}
+/** First calendar day of a month key ('2026-03' -> '2026-03-01'). */
+function firstOfMonth(month: MonthKey): ISODate {
+  return `${month}-01`;
+}
+/** The month key one calendar month after `month`. Pure integer math (no Date). */
+function nextMonthKey(month: MonthKey): MonthKey {
+  const [y, m] = month.split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}`;
 }
 /** All week-starts (Mondays) that belong to `month`, in order. */
 function weeksInMonth(month: MonthKey): WeekStart[] {
@@ -1183,33 +1201,59 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       await refresh();
     },
 
-    borrowFromNextWeek: async (categoryId, week, amount) => {
-      if (amount <= 0) throw new Error('borrow: amount must be positive');
-      const nextWeek = addDays(week, 7);
-      // Cap: ≤50% of next week's configured budget, next week only.
-      const nextBudget = configuredWeeklyBudget(categoryId, nextWeek);
-      const cap = C(Math.floor(nextBudget / 2));
-      const already = sumKind(carryoverFor(categoryId, week), 'borrow_in');
-      if (already + amount > cap) {
-        throw new Error(
-          `borrow: exceeds cap. Requested ${already + amount}¢, cap ${cap}¢ (50% of next week's ${nextBudget}¢).`,
-        );
+    // Borrow from an envelope's OWN next cycle (v0.3: cadence-aware, uncapped).
+    // Weekly-cadence envelopes borrow from next week; monthly-cadence envelopes
+    // from next calendar month. The only guardrails are honest math and the
+    // conservation law: the two legs share a pairId, carry EQUAL amounts, both
+    // attribute to the ORIGIN period's month (so a cross-period borrow can never
+    // dodge that month's duck verdict), and land in ONE transaction. A phantom
+    // category id throws BEFORE any write.
+    borrowFromNextCycle: async (categoryId, currentPeriodStart, amount) => {
+      // Positive whole cents only — no cap. (cents() already brands integers;
+      // this re-check keeps the guarantee at the mutation boundary.)
+      if (!Number.isInteger(amount) || amount <= 0) {
+        throw new Error('borrow: amount must be a positive whole number of cents');
       }
+      assertCategoryExists(categoryId);
+      const row = categoryRow(categoryId)!;
+      if (!toEnvelope(row)) {
+        throw new Error(`borrow: category "${categoryId}" has no configured envelope budget`);
+      }
+      const cadence = (row.cadence as CadenceType) ?? 'weekly';
+
+      // Resolve origin + next-cycle period starts and the (shared) attribution
+      // month. NOTE (cadence change after debt exists): entries already written
+      // keep their own period math; this call reads the CURRENT cadence to place
+      // new legs. A monthly borrow's repay leg sits at next month's first day but
+      // is attributed to the origin month, exactly as the weekly repay leg sits
+      // at next week but attributes to the origin week's month.
+      let originStart: WeekStart;
+      let nextStart: WeekStart;
+      let attributionMonth: MonthKey;
+      if (cadence === 'monthly') {
+        const month = monthKeyOf(currentPeriodStart);
+        originStart = firstOfMonth(month);
+        nextStart = firstOfMonth(nextMonthKey(month));
+        attributionMonth = month; // origin (current) month owns the spend
+      } else {
+        originStart = mondayOf(currentPeriodStart);
+        nextStart = addDays(originStart, 7);
+        attributionMonth = monthOfWeek(originStart);
+      }
+
       const chapterId = activeChapterId();
       const pairId = generateId();
       const now = new Date().toISOString();
-      // Both legs attribute to the ORIGIN week's month (duck guard §5.4).
-      const attributionMonth = monthOfWeek(week);
       await withTransaction(async () => {
         const db = getDb();
         db.insert(schema.carryoverEntries).values({
           id: generateId(),
           chapterId,
           categoryId,
-          weekStart: week,
+          weekStart: originStart,
           kind: 'borrow_in',
           amount,
-          counterpartWeekStart: nextWeek,
+          counterpartWeekStart: nextStart,
           pairId,
           attributionMonth,
           createdAt: now,
@@ -1218,16 +1262,30 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           id: generateId(),
           chapterId,
           categoryId,
-          weekStart: nextWeek,
+          weekStart: nextStart,
           kind: 'borrow_repay',
           amount, // EQUAL amount — conservation
-          counterpartWeekStart: week,
+          counterpartWeekStart: originStart,
           pairId,
           attributionMonth,
           createdAt: now,
         }).run();
       });
       await refresh();
+    },
+
+    // @deprecated Delegate for existing weekly-envelope UI. Rejects a
+    // monthly-cadence category (which must use borrowFromNextCycle) with a
+    // clear error rather than silently borrowing from "next week".
+    borrowFromNextWeek: async (categoryId, week, amount) => {
+      assertCategoryExists(categoryId);
+      const cadence = (categoryRow(categoryId)!.cadence as CadenceType) ?? 'weekly';
+      if (cadence !== 'weekly') {
+        throw new Error(
+          `borrowFromNextWeek: "${categoryId}" is a monthly-cadence envelope; use borrowFromNextCycle`,
+        );
+      }
+      await get().borrowFromNextCycle(categoryId, week, amount);
     },
 
     // ----------------------------------------------------------------- reads
@@ -1265,6 +1323,31 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     getEnvelopeWeekState: (categoryId, week) => envelopeWeekState(categoryId, week),
+
+    // What the envelope's next cycle will start with (borrow prompt, F3).
+    // Sync composition over committed caches; dispatches on the category's
+    // cadence. `alreadyOwed` = borrow repayments already charged to that next
+    // cycle by prior borrows (stacked borrows accumulate here); startsWith =
+    // budget − alreadyOwed (the plan money the next cycle currently begins
+    // with, before the contemplated borrow).
+    nextCycleStartState: (categoryId, currentPeriodStart): NextCycleState => {
+      const row = categoryRow(categoryId);
+      if (!row) throw new Error(`nextCycleStartState: unknown category "${categoryId}"`);
+      const cadence = (row.cadence as CadenceType) ?? 'weekly';
+      let cycleStart: WeekStart;
+      let budget: Cents;
+      if (cadence === 'monthly') {
+        const nextMonth = nextMonthKey(monthKeyOf(currentPeriodStart));
+        cycleStart = firstOfMonth(nextMonth);
+        budget = configuredMonthlyBudget(categoryId, nextMonth) ?? ZERO;
+      } else {
+        cycleStart = addDays(mondayOf(currentPeriodStart), 7);
+        budget = configuredWeeklyBudget(categoryId, cycleStart);
+      }
+      const alreadyOwed = sumKind(carryoverFor(categoryId, cycleStart), 'borrow_repay');
+      const startsWith = C(budget - alreadyOwed);
+      return { cycleStart, budget, alreadyOwed, startsWith };
+    },
 
     getSafeToSpend: (week) =>
       sumCents(

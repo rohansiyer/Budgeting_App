@@ -43,6 +43,17 @@ async function makeWeeklyEnvelope(name: string, budget: number) {
   return c.id;
 }
 
+async function makeMonthlyEnvelope(name: string, budget: number) {
+  const c = await store().createCategory({
+    name,
+    colorKey: 'pink',
+    fixed: false,
+    cadence: 'monthly',
+    envelope: { period: 'monthly', budget: cents(budget), carryoverDefault: 'ask' },
+  });
+  return c.id;
+}
+
 const WEEK = '2026-01-05'; // a Monday
 const NEXT = '2026-01-12';
 
@@ -93,14 +104,202 @@ describe('conservation law', () => {
     expect(store().getEnvelopeWeekState(cat, NEXT).remaining).toBe(7000);
   });
 
-  it('borrow cap: rejects > 50% of next week budget', async () => {
+  it('borrow uncapped: 100% and 150% of next week budget are both allowed and conserved', async () => {
     await freshChapter();
-    const cat = await makeWeeklyEnvelope('Gas', 10000); // cap = 5000
+    const cat = await makeWeeklyEnvelope('Gas', 10000); // no cap in v0.3
 
-    await expect(store().borrowFromNextWeek(cat, WEEK, cents(6000))).rejects.toThrow(/cap/);
-    // At-cap allowed, then any further borrow rejected.
+    // 100% of next week's budget: allowed (was rejected under the old 50% cap).
+    await store().borrowFromNextWeek(cat, WEEK, cents(10000));
+    expect(store().getEnvelopeWeekState(cat, WEEK).borrowedIn).toBe(10000);
+    expect(store().getEnvelopeWeekState(cat, WEEK).remaining).toBe(20000);
+    // Next week goes negative — honest math, not an error.
+    expect(store().getEnvelopeWeekState(cat, NEXT).remaining).toBe(0);
+
+    // A further 5000 (now 150% total) also lands.
     await store().borrowFromNextWeek(cat, WEEK, cents(5000));
-    await expect(store().borrowFromNextWeek(cat, WEEK, cents(1))).rejects.toThrow(/cap/);
+    expect(store().getEnvelopeWeekState(cat, WEEK).borrowedIn).toBe(15000);
+    expect(store().getEnvelopeWeekState(cat, NEXT).remaining).toBe(-5000);
+
+    // Budget only moved: this week + next week still sum to configured × 2.
+    const wk = store().getEnvelopeWeekState(cat, WEEK);
+    const nx = store().getEnvelopeWeekState(cat, NEXT);
+    expect(wk.remaining + wk.spent + (nx.remaining + nx.spent)).toBe(20000);
+  });
+
+  it('borrowFromNextCycle (weekly cadence) matches the delegate: paired equal legs, origin-month attribution', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+
+    await store().borrowFromNextCycle(cat, WEEK, cents(3000));
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    const bin = entries.find((e) => e.kind === 'borrow_in')!;
+    const rep = entries.find((e) => e.kind === 'borrow_repay')!;
+    expect(bin.amount).toBe(3000);
+    expect(rep.amount).toBe(3000);
+    expect(bin.pairId).toBe(rep.pairId);
+    expect(bin.weekStart).toBe(WEEK);
+    expect(rep.weekStart).toBe(NEXT);
+    expect(bin.attributionMonth).toBe('2026-01');
+    expect(rep.attributionMonth).toBe('2026-01');
+  });
+
+  it('monthly-envelope borrow round-trip: next month debited, current month credited, pair integrity', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+
+    // Any date inside January is a valid current-period start for a monthly envelope.
+    await store().borrowFromNextCycle(cat, '2026-01-15', cents(5000));
+
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    const bin = entries.find((e) => e.kind === 'borrow_in')!;
+    const rep = entries.find((e) => e.kind === 'borrow_repay')!;
+    // Legs live at the first-of-month of the current and next month.
+    expect(bin.weekStart).toBe('2026-01-01'); // credited into January (current cycle)
+    expect(rep.weekStart).toBe('2026-02-01'); // debited from February (next cycle)
+    expect(bin.counterpartWeekStart).toBe('2026-02-01');
+    expect(rep.counterpartWeekStart).toBe('2026-01-01');
+    // Conservation: equal amounts, shared pair.
+    expect(bin.amount).toBe(5000);
+    expect(rep.amount).toBe(5000);
+    expect(bin.pairId).toBe(rep.pairId);
+    // Both legs attribute to the ORIGIN (January) month — the spend belongs there.
+    expect(bin.attributionMonth).toBe('2026-01');
+    expect(rep.attributionMonth).toBe('2026-01');
+    const jan = await store().evaluation.getCarryoverEntries({ month: '2026-01' });
+    const feb = await store().evaluation.getCarryoverEntries({ month: '2026-02' });
+    expect(jan.map((e) => e.kind).sort()).toEqual(['borrow_in', 'borrow_repay']);
+    expect(feb).toHaveLength(0);
+  });
+
+  it('borrowFromNextWeek delegate rejects a monthly-cadence envelope', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+    await expect(store().borrowFromNextWeek(cat, '2026-01-05', cents(1000))).rejects.toThrow(
+      /monthly-cadence/,
+    );
+    // No partial write from the rejected delegate.
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('borrow rejects a phantom category before any write', async () => {
+    await freshChapter();
+    await expect(
+      store().borrowFromNextCycle('ghost-cat', WEEK, cents(1000)),
+    ).rejects.toThrow(/unknown category/i);
+    await expect(store().borrowFromNextWeek('ghost-cat', WEEK, cents(1000))).rejects.toThrow(
+      /unknown category/i,
+    );
+  });
+
+  it('borrow rejects a non-positive or non-integer amount', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+    await expect(store().borrowFromNextCycle(cat, WEEK, cents(0))).rejects.toThrow(/positive/);
+    await expect(store().borrowFromNextCycle(cat, WEEK, -100 as never)).rejects.toThrow(/positive/);
+    await expect(store().borrowFromNextCycle(cat, WEEK, 12.5 as never)).rejects.toThrow(/whole/);
+  });
+
+  it('borrow rejects a category with no configured envelope budget', async () => {
+    await freshChapter();
+    const fixed = await store().createCategory({
+      name: 'Rent',
+      colorKey: 'violet',
+      fixed: true,
+      envelope: null,
+    });
+    await expect(store().borrowFromNextCycle(fixed.id, WEEK, cents(1000))).rejects.toThrow(
+      /no configured envelope/,
+    );
+  });
+
+  it('nextCycleStartState (weekly): budget minus stacked borrow repayments', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+
+    let s = store().nextCycleStartState(cat, WEEK);
+    expect(s.cycleStart).toBe(NEXT);
+    expect(s.budget).toBe(10000);
+    expect(s.alreadyOwed).toBe(0);
+    expect(s.startsWith).toBe(10000);
+
+    await store().borrowFromNextCycle(cat, WEEK, cents(3000));
+    s = store().nextCycleStartState(cat, WEEK);
+    expect(s.alreadyOwed).toBe(3000);
+    expect(s.startsWith).toBe(7000);
+
+    // Stacked borrow from the same week accumulates the debt against next week.
+    await store().borrowFromNextCycle(cat, WEEK, cents(4000));
+    s = store().nextCycleStartState(cat, WEEK);
+    expect(s.alreadyOwed).toBe(7000);
+    expect(s.startsWith).toBe(3000);
+  });
+
+  it('nextCycleStartState (monthly): next month budget minus stacked repayments', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+
+    let s = store().nextCycleStartState(cat, '2026-01-20');
+    expect(s.cycleStart).toBe('2026-02-01');
+    expect(s.budget).toBe(20000);
+    expect(s.startsWith).toBe(20000);
+
+    await store().borrowFromNextCycle(cat, '2026-01-20', cents(5000));
+    await store().borrowFromNextCycle(cat, '2026-01-02', cents(3000)); // same Jan cycle
+    s = store().nextCycleStartState(cat, '2026-01-31');
+    expect(s.alreadyOwed).toBe(8000);
+    expect(s.startsWith).toBe(12000);
+  });
+
+  it('nextCycleStartState throws on an unknown category', async () => {
+    await freshChapter();
+    expect(() => store().nextCycleStartState('ghost', WEEK)).toThrow(/unknown category/i);
+  });
+
+  it('cadence change after debt exists: old weekly legs keep their period math; the read follows the new cadence', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+    // Incur weekly debt: repay leg lands at next Monday.
+    await store().borrowFromNextCycle(cat, WEEK, cents(3000));
+    const weeklyRepay = (await store().evaluation.getCarryoverEntries({ categoryId: cat })).find(
+      (e) => e.kind === 'borrow_repay',
+    )!;
+    expect(weeklyRepay.weekStart).toBe(NEXT); // 2026-01-12
+
+    // Switch the envelope to monthly cadence while the weekly debt still exists.
+    await store().updateCategory(cat, { cadence: 'monthly' });
+
+    // The already-written weekly legs are untouched (their period math is frozen).
+    const stillThere = (await store().evaluation.getCarryoverEntries({ categoryId: cat })).find(
+      (e) => e.kind === 'borrow_repay',
+    )!;
+    expect(stillThere.weekStart).toBe(NEXT);
+
+    // nextCycleStartState now reads the CURRENT (monthly) cadence: next cycle is
+    // February, which the weekly repay (at 2026-01-12, not a month boundary) does
+    // not touch — documented edge.
+    const s = store().nextCycleStartState(cat, WEEK);
+    expect(s.cycleStart).toBe('2026-02-01');
+    expect(s.alreadyOwed).toBe(0);
+
+    // A fresh borrow now writes monthly legs; the weekly pair remains alongside it.
+    await store().borrowFromNextCycle(cat, WEEK, cents(2000));
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    const pairs = new Map<string, number[]>();
+    for (const e of entries) {
+      if (!e.pairId) continue;
+      pairs.set(e.pairId, [...(pairs.get(e.pairId) ?? []), e.amount]);
+    }
+    // Two independent pairs, each internally equal (conservation per pair).
+    expect(pairs.size).toBe(2);
+    for (const legs of pairs.values()) {
+      expect(legs).toHaveLength(2);
+      expect(legs[0]).toBe(legs[1]);
+    }
+    const monthlyRepay = entries.find(
+      (e) => e.kind === 'borrow_repay' && e.weekStart === '2026-02-01',
+    );
+    expect(monthlyRepay).toBeDefined();
   });
 
   it('sweep: leftover leaves envelope system and counts toward savings', async () => {

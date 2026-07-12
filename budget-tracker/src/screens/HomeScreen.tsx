@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { Cents, cents, formatCents, minCents, ZERO } from '../lib/money';
-import { PixelBox, BlockMeter, HardButton, CategoryChip, DuckChipSlot } from '../components/kit';
+import { PixelBox, BlockMeter, HardButton, CategoryChip, DuckChipSlot, InsightRow } from '../components/kit';
 import { DuckSprite } from '../ducks/DuckSprite';
 import { useFlock } from '../ducks/appEngine';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
@@ -17,13 +17,26 @@ import {
   addDaysISO,
   weekdayShort,
   eachDay,
+  monthKeyOf,
 } from '../format/dates';
+import { getInsightPort } from '../insights';
+import { GoalStrip } from './home/GoalStrip';
+import { computePacingLine, daysToPaydayPhrase } from './home/pacing.logic';
+import type { VariableEnvelopeInput } from './home/goalStatus.logic';
 import type { CategoryConfig, EnvelopeWeekState, ISODate } from '../types/contracts';
 
-const { color, space, pixel } = tokens;
+const { color, space, pixel, font } = tokens;
 const typo = tokens.type;
 
-export function HomeScreen() {
+/** Lookahead window for the "days to payday" pacing line (covers monthly schedules). */
+const PAYDAY_LOOKAHEAD_DAYS = 45;
+
+export interface HomeScreenProps {
+  /** Opens the safe-to-spend ledger drill-down. Screen arrives a later wave; no-op default. */
+  onOpenLedger?: () => void;
+}
+
+export function HomeScreen({ onOpenLedger = () => {} }: HomeScreenProps = {}) {
   const store = useStore();
   const flock = useFlock();
   const { openDay, showUndo } = useAppShell();
@@ -31,6 +44,7 @@ export function HomeScreen() {
   const today = todayISO();
   const week = weekStartOf(today);
   const prevWeek = addDaysISO(week, -7);
+  const month = monthKeyOf(today);
 
   const categories = store.listCategories();
   const enveloped = categories.filter((c) => c.envelope !== null);
@@ -38,9 +52,28 @@ export function HomeScreen() {
   const savingsAccount = accounts.find((a) => a.kind === 'savings') ?? accounts[0];
 
   const safeToSpend = store.getSafeToSpend(week);
-  // perDay / daysLeft are display logic, computed locally (not contract).
-  const daysLeft = Math.max(1, 7 - eachDay({ from: week, to: today }).length + 1);
-  const perDay = cents(Math.floor(safeToSpend / daysLeft));
+
+  // Pacing line: days to the next payday + a cent-exact "about $X a day"
+  // figure over that span (v0.3 §3.5). Null hides the line gracefully
+  // (e.g. no income schedule configured yet).
+  const paydayWindow = { from: today, to: addDaysISO(today, PAYDAY_LOOKAHEAD_DAYS) };
+  const upcomingPaydays = store.getPaydays(paydayWindow);
+  const pacing = computePacingLine({ today, paydays: upcomingPaydays, remaining: safeToSpend });
+
+  // Goal strip inputs: this month's enveloped plan vs actual (sync read).
+  const planVsActual = store.getPlanVsActual(month);
+  const variableSlices: VariableEnvelopeInput[] = enveloped.map((c) => {
+    const row = planVsActual.find((r) => r.categoryId === c.id);
+    return {
+      categoryId: c.id,
+      categoryName: c.name,
+      planned: row?.planned ?? ZERO,
+      actual: row?.actual ?? ZERO,
+    };
+  });
+
+  // Today's answer: at most one delivered insight, silence when null (F5).
+  const homeInsight = getInsightPort().getHomeInsight(today);
 
   // 7-day bars: today-6 .. today.
   const barsRange = { from: addDaysISO(today, -6), to: today };
@@ -115,18 +148,42 @@ export function HomeScreen() {
         </PixelBox>
       ) : null}
 
-      {/* Hero: safe to spend this week. */}
-      <View
+      {/* Hero: safe to spend this week, with the pacing line beneath (v0.3 §3.5).
+          Every number is a door (F10) — tapping opens the ledger behind it;
+          the ledger screen itself arrives a later wave, so onOpenLedger is an
+          optional no-op seam for now. */}
+      <Pressable
         style={styles.hero}
-        accessible
-        accessibilityLabel={`Safe to spend this week: ${formatCents(safeToSpend)}. About ${formatCents(perDay)} per day for ${daysLeft} more ${daysLeft === 1 ? 'day' : 'days'}.`}
+        onPress={onOpenLedger}
+        accessibilityRole="button"
+        accessibilityLabel="Safe to spend, tap for the math"
       >
         <Text style={styles.heroLabel}>SAFE TO SPEND THIS WEEK</Text>
-        <MoneyText amount={safeToSpend} size={typo.hero.fontSize} />
-        <Text style={styles.heroSub}>
-          about {formatCents(perDay)}/day for {daysLeft} more {daysLeft === 1 ? 'day' : 'days'}
-        </Text>
-      </View>
+        <Text style={styles.heroAmount}>{formatCents(safeToSpend)}</Text>
+        {pacing ? (
+          <Text style={styles.pacingLine}>
+            {daysToPaydayPhrase(pacing.daysToPayday)}, about{' '}
+            <Text style={styles.pacingAmount}>{formatCents(pacing.perDay)}</Text> a day keeps you
+            green, tap for the math
+          </Text>
+        ) : null}
+      </Pressable>
+
+      {/* Goal strip: this month's duck at a glance (v0.3 §3.5). */}
+      <GoalStrip month={month} variable={variableSlices} />
+
+      {/* Today's answer: at most one delivered insight, silence when null (F5). */}
+      {homeInsight ? (
+        <View style={styles.insightSection}>
+          <SectionLabel style={styles.insightLabel}>Today's answer</SectionLabel>
+          <InsightRow
+            colorKey={homeInsight.colorKey ?? 'mint'}
+            prefix={homeInsight.prefix}
+            amountText={homeInsight.amountText ?? ''}
+            suffix={homeInsight.suffix}
+          />
+        </View>
+      ) : null}
 
       {/* 7-day spend bars: mint = payday, coral = big fixed hit. */}
       <SectionLabel>Last 7 days</SectionLabel>
@@ -243,7 +300,12 @@ function EnvelopeCard({
           <CategoryChip colorKey={cat.colorKey} />
           <Text style={styles.envName}>{cat.name}</Text>
         </Row>
-        <MoneyText amount={st.remaining} kind={st.remaining < 0 ? 'spend' : 'plain'} />
+        <MoneyText
+          amount={st.remaining}
+          kind={st.remaining < 0 ? 'spend' : 'plain'}
+          size={typo.kpi.fontSize}
+          style={{ fontFamily: font.monoBold }}
+        />
       </Row>
       <BlockMeter
         budget={budget}
@@ -366,13 +428,36 @@ const styles = StyleSheet.create({
     fontSize: typo.sectionLabel.fontSize,
     fontWeight: typo.sectionLabel.fontWeight,
     letterSpacing: typo.sectionLabel.letterSpacing,
+    fontFamily: typo.sectionLabel.fontFamily,
     marginBottom: space.xs,
   },
-  heroSub: {
-    color: color.textSecondary,
+  heroAmount: {
+    color: color.accent,
+    fontSize: 44,
+    fontFamily: font.monoBold,
+    fontVariant: [...typo.tabularNums.fontVariant],
+    letterSpacing: -1.5,
+  },
+  pacingLine: {
+    color: color.textMuted,
     fontSize: typo.caption.fontSize,
     fontWeight: typo.caption.fontWeight,
-    marginTop: space.xs,
+    fontFamily: typo.caption.fontFamily,
+    marginTop: space.sm,
+    lineHeight: 18,
+  },
+  pacingAmount: {
+    color: color.textSecondary,
+    fontSize: typo.caption.fontSize,
+    fontWeight: typo.body.fontWeight,
+    fontFamily: font.monoBold,
+    fontVariant: [...typo.tabularNums.fontVariant],
+  },
+  insightSection: {
+    marginTop: space.sm,
+  },
+  insightLabel: {
+    marginTop: 0,
   },
   barsRow: {
     flexDirection: 'row',

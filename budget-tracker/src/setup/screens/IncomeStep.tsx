@@ -6,14 +6,15 @@
  * (cent-conserving) rather than doing its own float division.
  */
 import React, { useMemo, useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { Text, View } from 'react-native';
 import type { Dispatch } from 'react';
-import { HardButton, PixelBox, RuledList } from '../../components/kit';
+import { ChoiceRow, Field, HardButton, PixelBox, RuledList } from '../../components/kit';
 import { allocate, formatCents, MoneyError, parseDecimal } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import { paydaysBetween } from '../../lib/schedule';
 import { nextDraftKey, type AccountDraft, type IncomeSourceDraft, type WizardAction } from '../wizardState';
 import type { IncomeScheduleKind, IncomeSplitConfig } from '../../types/contracts';
+import { stepSubtextStyle, stepTitleStyle } from './stepTypography';
 
 interface IncomeStepProps {
   accounts: AccountDraft[];
@@ -21,7 +22,12 @@ interface IncomeStepProps {
   dispatch: Dispatch<WizardAction>;
 }
 
-const KINDS: IncomeScheduleKind[] = ['weekly', 'biweekly', 'semimonthly', 'monthly'];
+const KIND_OPTIONS: Array<{ key: IncomeScheduleKind; label: string }> = [
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'biweekly', label: 'Every 2 weeks' },
+  { key: 'semimonthly', label: 'Semimonthly' },
+  { key: 'monthly', label: 'Monthly' },
+];
 
 export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProps) {
   const [name, setName] = useState('');
@@ -31,7 +37,10 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
   const [semiDay1, setSemiDay1] = useState('1');
   const [semiDay2, setSemiDay2] = useState('15');
   const [ratios, setRatios] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [anchorError, setAnchorError] = useState<string | null>(null);
+  const [splitsError, setSplitsError] = useState<string | null>(null);
 
   const preview = useMemo(() => {
     let amount;
@@ -76,30 +85,35 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
   }, [anchorDate, kind, semiDay1, semiDay2]);
 
   const handleAdd = () => {
+    setNameError(null);
+    setAmountError(null);
+    setAnchorError(null);
+    setSplitsError(null);
+
     if (name.trim().length === 0) {
-      setError('Give the income source a name.');
+      setNameError('Give the income source a name.');
       return;
     }
     let amount;
     try {
       amount = parseDecimal(amountInput || '0');
     } catch (e) {
-      setError(e instanceof MoneyError ? e.message : 'Enter a valid amount.');
+      setAmountError(e instanceof MoneyError ? e.message : 'Enter a valid amount.');
       return;
     }
     if (amount <= 0) {
-      setError('Amount must be positive.');
+      setAmountError('Amount must be positive.');
       return;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDate)) {
-      setError('Enter an anchor date as YYYY-MM-DD.');
+      setAnchorError('Enter an anchor date as YYYY-MM-DD.');
       return;
     }
     const splits: IncomeSplitConfig[] = accounts
       .map((a) => ({ accountId: a.key, ratio: Number(ratios[a.key] ?? '0') }))
       .filter((s) => Number.isFinite(s.ratio) && s.ratio > 0);
     if (splits.length === 0) {
-      setError('Split this income across at least one account.');
+      setSplitsError('Split this income across at least one account.');
       return;
     }
 
@@ -117,13 +131,12 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
     setName('');
     setAmountInput('');
     setRatios({});
-    setError(null);
   };
 
   return (
     <View style={{ gap: space.md }}>
-      <Text style={[type.title, { color: color.text }]}>Income</Text>
-      <Text style={[type.body, { color: color.textSecondary }]}>
+      <Text style={stepTitleStyle}>Where does your money come from?</Text>
+      <Text style={stepSubtextStyle}>
         Add each paycheck or recurring deposit and how it splits across your accounts.
       </Text>
 
@@ -156,65 +169,62 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
       ) : (
         <PixelBox>
           <View style={{ gap: space.sm }}>
-            <TextInput
-              accessibilityLabel="Income source name"
-              placeholder="Source name (e.g. Day job)"
-              placeholderTextColor={color.textMuted}
+            <Field
+              label="Source name"
+              placeholder="e.g. Day job"
               value={name}
               onChangeText={setName}
-              style={{ color: color.text, borderBottomWidth: 1, borderBottomColor: color.hairline }}
+              error={nameError ?? undefined}
+              accessibilityLabel="Income source name"
             />
-            <TextInput
-              accessibilityLabel="Income amount in dollars"
-              placeholder="Amount per payday (e.g. 1500.00)"
-              placeholderTextColor={color.textMuted}
+            <Field
+              label="Amount per payday"
+              placeholder="e.g. 1500.00"
               keyboardType="decimal-pad"
               value={amountInput}
               onChangeText={setAmountInput}
-              style={{ color: color.text, borderBottomWidth: 1, borderBottomColor: color.hairline }}
+              error={amountError ?? undefined}
+              accessibilityLabel="Income amount in dollars"
             />
 
-            <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-              {KINDS.map((k) => (
-                <HardButton
-                  key={k}
-                  label={k}
-                  variant={kind === k ? 'primary' : 'ghost'}
-                  accessibilityLabel={`Schedule kind ${k}`}
-                  onPress={() => setKind(k)}
-                />
-              ))}
-            </View>
+            <ChoiceRow
+              options={KIND_OPTIONS}
+              selectedKey={kind}
+              onSelect={(key) => setKind(key as IncomeScheduleKind)}
+              accessibilityLabel="Income schedule kind"
+            />
 
-            <TextInput
-              accessibilityLabel="Anchor date, a known payday, in YYYY-MM-DD format"
-              placeholder="Anchor payday (YYYY-MM-DD)"
-              placeholderTextColor={color.textMuted}
+            <Field
+              label="Anchor payday"
+              placeholder="YYYY-MM-DD"
               value={anchorDate}
               onChangeText={setAnchorDate}
-              style={{ color: color.text, borderBottomWidth: 1, borderBottomColor: color.hairline }}
+              error={anchorError ?? undefined}
+              accessibilityLabel="Anchor date, a known payday, in YYYY-MM-DD format"
             />
 
             {kind === 'semimonthly' ? (
               <View style={{ flexDirection: 'row', gap: space.sm }}>
-                <TextInput
-                  accessibilityLabel="First semimonthly day of month"
-                  placeholder="Day 1 (e.g. 1)"
-                  placeholderTextColor={color.textMuted}
-                  keyboardType="number-pad"
-                  value={semiDay1}
-                  onChangeText={setSemiDay1}
-                  style={{ color: color.text, flex: 1, borderBottomWidth: 1, borderBottomColor: color.hairline }}
-                />
-                <TextInput
-                  accessibilityLabel="Second semimonthly day of month"
-                  placeholder="Day 2 (e.g. 15)"
-                  placeholderTextColor={color.textMuted}
-                  keyboardType="number-pad"
-                  value={semiDay2}
-                  onChangeText={setSemiDay2}
-                  style={{ color: color.text, flex: 1, borderBottomWidth: 1, borderBottomColor: color.hairline }}
-                />
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label="Day 1"
+                    placeholder="e.g. 1"
+                    keyboardType="number-pad"
+                    value={semiDay1}
+                    onChangeText={setSemiDay1}
+                    accessibilityLabel="First semimonthly day of month"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label="Day 2"
+                    placeholder="e.g. 15"
+                    keyboardType="number-pad"
+                    value={semiDay2}
+                    onChangeText={setSemiDay2}
+                    accessibilityLabel="Second semimonthly day of month"
+                  />
+                </View>
               </View>
             ) : null}
 
@@ -228,27 +238,19 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
               Split (ratios, e.g. 70 / 30)
             </Text>
             {accounts.map((a) => (
-              <View
+              <Field
                 key={a.key}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}
-              >
-                <Text style={[type.body, { color: color.text, flex: 1 }]}>{a.name}</Text>
-                <TextInput
-                  accessibilityLabel={`Split ratio for ${a.name}`}
-                  placeholder="0"
-                  placeholderTextColor={color.textMuted}
-                  keyboardType="decimal-pad"
-                  value={ratios[a.key] ?? ''}
-                  onChangeText={(v) => setRatios((prev) => ({ ...prev, [a.key]: v }))}
-                  style={{
-                    color: color.text,
-                    width: 64,
-                    borderBottomWidth: 1,
-                    borderBottomColor: color.hairline,
-                  }}
-                />
-              </View>
+                label={a.name}
+                placeholder="0"
+                keyboardType="decimal-pad"
+                value={ratios[a.key] ?? ''}
+                onChangeText={(v) => setRatios((prev) => ({ ...prev, [a.key]: v }))}
+                accessibilityLabel={`Split ratio for ${a.name}`}
+              />
             ))}
+            {splitsError ? (
+              <Text style={[type.caption, { color: color.danger }]}>{splitsError}</Text>
+            ) : null}
 
             {preview ? (
               <View style={{ gap: 2 }}>
@@ -260,7 +262,6 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
               </View>
             ) : null}
 
-            {error ? <Text style={[type.caption, { color: color.danger }]}>{error}</Text> : null}
             <HardButton
               label="Add income source"
               accessibilityLabel="Add income source"

@@ -133,8 +133,19 @@ export interface CarryoverEntry {
  * CONSERVATION LAW (adversary-tested): paired entries (roll_out/roll_in,
  * borrow_in/borrow_repay) share a pairId and have EQUAL amounts, so summed
  * budget across all weeks equals configured budget × weeks − sweeps.
- * Borrow caps: counterpart is always the immediately following week, and
- * total borrow_in for a week ≤ 50% of that following week's configured budget.
+ *
+ * BORROWING (v0.3, cadence-aware & uncapped): every envelope can borrow from
+ * ITS OWN next cycle — a weekly-cadence envelope from next week, a
+ * monthly-cadence envelope from next calendar month. There is NO cap; the
+ * only limits are that the amount is a positive whole number of cents and the
+ * category exists with a configured budget. The honest math is the guardrail
+ * (see `nextCycleStartState` — the UI shows exactly what the next cycle starts
+ * with). For a MONTHLY borrow the two legs live at the first-of-month
+ * (`YYYY-MM-01`) of the current and next month; for a WEEKLY borrow they live
+ * at the current and next Monday (as before). Both legs of any borrow attribute
+ * to the ORIGIN period's month (the month the spend belongs to) so a
+ * cross-period borrow can never dodge that month's duck verdict (duck guard
+ * §5.4).
  */
 
 export interface EnvelopeWeekState {
@@ -149,6 +160,23 @@ export interface EnvelopeWeekState {
   spent: Cents;
   /** configured + rolledIn + borrowedIn − rolledOut − sweptOut − repaying − spent */
   remaining: Cents;
+}
+
+/**
+ * What an envelope's NEXT cycle will start with, for the borrow prompt (F3).
+ * Composed from committed caches (sync). `budget` is the next cycle's
+ * configured budget; `alreadyOwed` is the sum of borrow repayments already
+ * charged to that next cycle by prior borrows; `startsWith = budget −
+ * alreadyOwed` — the plan money the next cycle currently begins with, before
+ * the contemplated borrow. The prompt shows `startsWith`, then subtracts the
+ * amount the user is about to borrow to preview the result.
+ */
+export interface NextCycleState {
+  /** ISODate the next cycle begins: next Monday (weekly) or first-of-next-month (monthly). */
+  cycleStart: ISODate;
+  budget: Cents;
+  alreadyOwed: Cents;
+  startsWith: Cents;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,8 +351,26 @@ export interface StoreContract {
   // --- carryover -----------------------------------------------------------
   rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;
   sweepToSavings(categoryId: string, fromWeek: WeekStart, savingsAccountId: string): Promise<void>;
-  /** Throws if cap exceeded (one week ahead, ≤50% of next week's budget). */
+  /**
+   * Borrow from an envelope's OWN next cycle, dispatching on the category's
+   * cadence: a weekly-cadence envelope borrows from next week, a
+   * monthly-cadence envelope from next calendar month. Uncapped — throws only
+   * if the amount is not a positive whole number of cents, the category does
+   * not exist, or it has no configured envelope budget. `currentPeriodStart`
+   * is any date inside the current cycle (normalized internally: to the
+   * Monday for weekly, to the month for monthly).
+   */
+  borrowFromNextCycle(categoryId: string, currentPeriodStart: ISODate, amount: Cents): Promise<void>;
+  /**
+   * @deprecated Use `borrowFromNextCycle`. Thin delegate kept for existing
+   * weekly-envelope callers; throws if invoked on a monthly-cadence category.
+   */
   borrowFromNextWeek(categoryId: string, week: WeekStart, amount: Cents): Promise<void>;
+  /**
+   * What the envelope's next cycle will start with (for the borrow prompt).
+   * Sync read over committed caches. Throws on an unknown category id.
+   */
+  nextCycleStartState(categoryId: string, currentPeriodStart: ISODate): NextCycleState;
 
   // --- read surface (screens + engine) --------------------------------------
   listAccounts(): AccountConfig[];

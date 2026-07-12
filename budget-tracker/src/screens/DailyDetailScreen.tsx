@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { Cents, formatCents, sumCents, toDecimalString, ZERO } from '../lib/money';
-import { PixelBox, HardButton, RuledList, CategoryChip } from '../components/kit';
+import { PixelBox, HardButton, RuledList, CategoryChip, EmptyState } from '../components/kit';
+import { DuckSprite } from '../ducks/DuckSprite';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { Sheet } from '../components/Sheet';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
+import { isDayEmpty } from './DailyDetailScreen.logic';
 import { tryParseCents } from '../format/moneyInput';
 import { longDate, weekStartOf } from '../format/dates';
 import type {
@@ -49,7 +51,7 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
     const catName = catById(t.categoryId)?.name ?? 'transaction';
     showUndo(`Deleted ${t.kind === 'income' ? (t.note ?? 'income') : catName}`, async () => {
       const ok = await undo();
-      if (!ok) showUndo('Too late — the undo window closed.');
+      if (!ok) showUndo('Too late, the undo window closed.');
     });
   };
 
@@ -72,24 +74,37 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
         <Kpi label="Envelope left" amount={envelopeLeft} kind="income" />
       </View>
 
-      {/* Ruled transaction list: press/long-press → context menu. */}
+      {/* Ruled transaction list: press/long-press → context menu. Zero state
+          swaps in the kit EmptyState (§3.3) instead of an empty list. */}
       <SectionLabel>Transactions</SectionLabel>
-      <RuledList<TransactionRecord>
-        data={dayTxns}
-        keyExtractor={(t) => t.id}
-        renderRow={(t) => (
-          <Pressable
-            onPress={() => setMenuTxn(t)}
-            onLongPress={() => setMenuTxn(t)}
-            delayLongPress={350}
-            accessibilityRole="button"
-            accessibilityLabel={txnA11yLabel(t, catById, acctById)}
-            accessibilityHint="Opens edit, recategorize and delete actions"
-          >
-            <TxnRow txn={t} cat={catById(t.categoryId)} acctById={acctById} />
-          </Pressable>
-        )}
-      />
+      {isDayEmpty(dayTxns.length) ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            message="Nothing logged for this day yet. Add an expense to get started."
+            actionLabel="Add expense"
+            onAction={() => setAddKind('expense')}
+            renderDuck={(props) => <DuckSprite {...props} />}
+            accessibilityLabel="No transactions logged for this day"
+          />
+        </View>
+      ) : (
+        <RuledList<TransactionRecord>
+          data={dayTxns}
+          keyExtractor={(t) => t.id}
+          renderRow={(t) => (
+            <Pressable
+              onPress={() => setMenuTxn(t)}
+              onLongPress={() => setMenuTxn(t)}
+              delayLongPress={350}
+              accessibilityRole="button"
+              accessibilityLabel={txnA11yLabel(t, catById, acctById)}
+              accessibilityHint="Opens edit, recategorize and delete actions"
+            >
+              <TxnRow txn={t} cat={catById(t.categoryId)} acctById={acctById} />
+            </Pressable>
+          )}
+        />
+      )}
 
       <Row style={styles.addRow}>
         <HardButton
@@ -455,6 +470,9 @@ function AddIncomeSheet({
 }
 
 const styles = StyleSheet.create({
+  emptyWrap: {
+    marginTop: space.sm,
+  },
   kpiRow: {
     flexDirection: 'row',
     gap: space.sm,

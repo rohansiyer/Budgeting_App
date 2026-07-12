@@ -5,10 +5,12 @@ import * as tokens from '../theme/tokens';
 import { Cents, formatCents, sumCents, ZERO } from '../lib/money';
 import { PixelBox, RuledList, CategoryChip, HardButton } from '../components/kit';
 import PondView from '../ducks/PondView';
+import { DuckSprite } from '../ducks/DuckSprite';
 import { useFlock } from '../ducks/appEngine';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { useStore } from '../providers/StoreProvider';
 import { useBudgetStore } from '../store';
+import { isDayOnePond } from './PondScreen.logic';
 import { todayISO, monthKeyOf, monthTitle } from '../format/dates';
 import type { CategoryConfig, Duck } from '../types/contracts';
 
@@ -28,12 +30,43 @@ interface Slice {
   actual: Cents;
 }
 
+/**
+ * How many months have ever been evaluated for the active chapter, straight
+ * from the duck persistence port (the same one src/ducks/appEngine.ts wires
+ * to the real store). `null` while loading; resolves to 0 for a pre-wizard
+ * chapter rather than throwing into the UI (mirrors useFlock's own fallback).
+ */
+function useEvaluationsCount(refreshKey = 0): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const s = useBudgetStore.getState();
+        const chapter = s.getActiveChapter();
+        const state = await s.duckPersistence.loadState(chapter.id);
+        if (alive) setCount(state.evaluations.length);
+      } catch {
+        if (alive) setCount(0);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [refreshKey]);
+  return count;
+}
+
 export function PondScreen() {
   const store = useStore();
   const [flockKey, setFlockKey] = useState(0);
   const flock = useFlock(flockKey);
+  const evaluationsCount = useEvaluationsCount(flockKey);
+  const dayOne =
+    flock !== null && evaluationsCount !== null && isDayOnePond(flock.ducks.length, evaluationsCount);
   const [naming, setNaming] = useState<Duck | null>(null);
   const [draft, setDraft] = useState('');
+  const [howDucksWork, setHowDucksWork] = useState(false);
   const today = todayISO();
   const month = monthKeyOf(today);
 
@@ -67,6 +100,34 @@ export function PondScreen() {
 
   return (
     <Screen title="The Pond">
+      {/* Day one (§3.3): introduces the starter duck and the three-goal rule
+          above the donut. Only shows before any month has ever been
+          evaluated for this chapter, per the STARTER DUCK INVARIANT. */}
+      {dayOne ? (
+        <PixelBox style={styles.dayOneBox}>
+          <View style={styles.dayOneRoot}>
+            <DuckSprite accessoryTier={flock?.accessoryTier ?? 0} scale={6} animation="idle" />
+            <Text style={styles.dayOneMessage}>
+              Meet your first duck, it's yours from day one. Hit all three goals this month and a
+              second one waddles in.
+            </Text>
+            <View style={styles.dayOneGoals}>
+              <GoalRow ok={false} pending label="Fixed bills" detail="not evaluated yet" />
+              <GoalRow ok={false} pending label="Variable budgets" detail="not evaluated yet" />
+              <GoalRow ok={false} pending label="Savings" detail="not evaluated yet" />
+            </View>
+          </View>
+          <View style={styles.dayOneAction}>
+            <HardButton
+              label="How ducks work"
+              variant="ghost"
+              onPress={() => setHowDucksWork(true)}
+              accessibilityLabel="Learn how ducks work"
+            />
+          </View>
+        </PixelBox>
+      ) : null}
+
       {/* Dual-layer donut: INNER = plan, OUTER = month-to-date actual (§4.4). */}
       <PixelBox style={styles.donutBox}>
         <View style={styles.donutWrap}>
@@ -169,9 +230,61 @@ export function PondScreen() {
           </PixelBox>
         </View>
       </Modal>
+
+      {/* "How ducks work" explainer (§3.3 day one), earning-framed rules from
+          the duck economy (handoff v3 §1.1). Plain read-only PixelBox. */}
+      <Modal
+        visible={howDucksWork}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHowDucksWork(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalScrim} />
+          <PixelBox style={styles.modalBox}>
+            <Text style={styles.modalTitle}>How ducks work</Text>
+            <RuledList<{ id: string; text: string }>
+              data={DUCK_RULES}
+              keyExtractor={(rule) => rule.id}
+              renderRow={(rule) => (
+                <Text style={styles.ruleText} accessibilityLabel={rule.text}>
+                  {rule.text}
+                </Text>
+              )}
+            />
+            <Row style={styles.modalActions}>
+              <HardButton
+                label="Got it"
+                onPress={() => setHowDucksWork(false)}
+                accessibilityLabel="Close how ducks work"
+              />
+            </Row>
+          </PixelBox>
+        </View>
+      </Modal>
     </Screen>
   );
 }
+
+/** Earning-framed duck rules for the "How ducks work" explainer (§1.1). */
+const DUCK_RULES: ReadonlyArray<{ id: string; text: string }> = [
+  {
+    id: 'starter',
+    text: 'Your first duck is yours from day one. The pond is never empty.',
+  },
+  {
+    id: 'gain',
+    text: 'Hit all three goals in a month, bills paid on time, every envelope under budget, and savings on target, and you earn a new duck.',
+  },
+  {
+    id: 'hold',
+    text: 'Hit one or two of three goals and your flock holds steady. A partial month is never a loss.',
+  },
+  {
+    id: 'lose',
+    text: 'Miss all three goals in a month and one duck waddles off. Only a fully missed month costs you a duck.',
+  },
+];
 
 function renderRing(
   slices: Slice[],
@@ -237,7 +350,7 @@ function GoalTrackerCard({ slices, month }: { slices: Slice[]; month: string }) 
 
   return (
     <>
-      <SectionLabel>Duck goals — live</SectionLabel>
+      <SectionLabel>Live duck goals</SectionLabel>
       <PixelBox>
         <GoalRow
           ok={bills !== null && bills.paid >= bills.expected}
@@ -302,6 +415,36 @@ function GoalRow({
 }
 
 const styles = StyleSheet.create({
+  dayOneBox: {
+    marginTop: space.sm,
+  },
+  dayOneRoot: {
+    alignItems: 'center',
+    gap: space.md,
+  },
+  dayOneMessage: {
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
+    textAlign: 'center',
+    lineHeight: typo.body.fontSize * 1.5,
+    maxWidth: 260,
+  },
+  dayOneGoals: {
+    width: '100%',
+    gap: space.xs,
+  },
+  dayOneAction: {
+    marginTop: space.md,
+    alignItems: 'center',
+  },
+  ruleText: {
+    color: color.textSecondary,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.body.fontWeight,
+    lineHeight: typo.body.fontSize * 1.5,
+    paddingVertical: space.xs,
+  },
   donutBox: {
     marginTop: space.sm,
     alignItems: 'center',
