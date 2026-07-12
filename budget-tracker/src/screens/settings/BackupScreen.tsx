@@ -10,6 +10,9 @@ import { exportBackup, importBackupFromPicker } from '../../backup/exportImport'
 import { createDrizzleBackupPort } from '../../backup/drizzleBackupPort';
 import { BackupValidationError } from '../../backup/types';
 import { LAST_BACKUP_EXPORT_KEY, IMPORT_CONFIRM_TITLE, IMPORT_CONFIRM_MESSAGE, formatExportTimestamp } from './config';
+import { useStore } from '../../providers/StoreProvider';
+import { todayISO } from '../../format/dates';
+import { exportTransactionsCsv } from './csvExport';
 
 const { color, space } = tokens;
 const typo = tokens.type;
@@ -20,9 +23,11 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
   // Real Drizzle-backed port (CONTRACTS.md: backup ships wired to Team 1's
   // schema, not the fake port used by the module's own unit tests).
   const port = useMemo(() => createDrizzleBackupPort(), []);
+  const store = useStore();
   const [lastExportIso, setLastExportIso] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [csvExporting, setCsvExporting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
 
   useEffect(() => {
@@ -72,6 +77,30 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handleCsvExport = async () => {
+    setFeedback(null);
+    setCsvExporting(true);
+    try {
+      const chapter = store.getActiveChapter();
+      const to = todayISO();
+      // Wide, safe window: from the chapter's start through today. Chapters
+      // never carry future-dated transactions in normal use.
+      const transactions = store.getTransactions({ from: chapter.startedAt, to });
+      const categories = store.listCategories();
+      const result = await exportTransactionsCsv(transactions, categories);
+      setFeedback({
+        kind: 'success',
+        text: result.shared
+          ? 'CSV exported and ready to share.'
+          : `CSV exported. Sharing isn't available here; the file is saved at ${result.uri}`,
+      });
+    } catch (e) {
+      setFeedback({ kind: 'error', text: `CSV export failed: ${(e as Error).message}` });
+    } finally {
+      setCsvExporting(false);
+    }
+  };
+
   const handleImportPress = () => {
     Alert.alert(IMPORT_CONFIRM_TITLE, IMPORT_CONFIRM_MESSAGE, [
       { text: 'Cancel', style: 'cancel' },
@@ -80,7 +109,7 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
   };
 
   const lastExportLabel = formatExportTimestamp(lastExportIso);
-  const busy = exporting || importing;
+  const busy = exporting || importing || csvExporting;
 
   return (
     <Screen scroll>
@@ -109,6 +138,22 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
           onPress={handleImportPress}
           disabled={busy}
           accessibilityLabel="Import a backup file, replacing all current data"
+        />
+      </View>
+
+      {/* Every number is a door (F10): CSV export of the active chapter's
+          transactions, alongside the JSON backup above. */}
+      <Text style={styles.body}>
+        Export every transaction in your active chapter as a CSV file: date, category, title,
+        amount, and note.
+      </Text>
+      <View style={styles.actions}>
+        <HardButton
+          label={csvExporting ? 'Exporting CSV…' : 'Export CSV'}
+          variant="ghost"
+          onPress={() => void handleCsvExport()}
+          disabled={busy}
+          accessibilityLabel="Export all transactions as a CSV file"
         />
       </View>
 

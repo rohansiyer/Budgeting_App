@@ -12,10 +12,13 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { CalendarScreen } from '../screens/CalendarScreen';
 import { PondScreen } from '../screens/PondScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { SafeToSpendLedger } from '../screens/ledger/SafeToSpendLedger';
+import { EnvelopeLedgerScreen } from '../screens/ledger/EnvelopeLedgerScreen';
 import { SetupRoute } from './SetupRoute';
-import { openSetup } from './navigationRef';
+import { openSetup, openSafeToSpendLedger, openEnvelopeLedger } from './navigationRef';
 import { buildTabDescriptors, activeRouteName } from './TabBar.logic';
 import type { RootStackParamList } from './navigationRef';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 const { color } = tokens;
 
@@ -70,7 +73,14 @@ export const TabsNavigator = () => {
       screenOptions={{ headerShown: false }}
       tabBar={(props) => <CustomTabBar {...props} />}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Home">
+        {() => (
+          <HomeScreen
+            onOpenLedger={() => openSafeToSpendLedger()}
+            onOpenEnvelope={(categoryId) => openEnvelopeLedger(categoryId)}
+          />
+        )}
+      </Tab.Screen>
       <Tab.Screen name="Calendar" component={CalendarScreen} />
       <Tab.Screen name="Pond" component={PondScreen} />
       <Tab.Screen name="Settings">
@@ -85,6 +95,34 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
 /** Route wrapper: reads the `mode` param and hands it to the setup host. */
 function SetupScreen({ route }: { route: { params: RootStackParamList['Setup'] } }) {
   return <SetupRoute mode={route.params?.mode ?? 'edit'} />;
+}
+
+type LedgerNavProps = NativeStackScreenProps<RootStackParamList, 'SafeToSpendLedger'>;
+type EnvelopeLedgerNavProps = NativeStackScreenProps<RootStackParamList, 'EnvelopeLedger'>;
+
+/**
+ * Route wrapper for the safe-to-spend drill-down (v0.3 §3.7). Mounted as a
+ * full-screen modal on the root stack — the same "local full-screen overlay"
+ * shape DailyDetailScreen uses via AppShell, reached through React Navigation
+ * since AppShell.tsx belongs to a different wave's ownership this round.
+ */
+function SafeToSpendLedgerRoute({ navigation }: LedgerNavProps) {
+  return (
+    <SafeToSpendLedger
+      onClose={() => navigation.goBack()}
+      onOpenEnvelope={(categoryId) => openEnvelopeLedger(categoryId)}
+    />
+  );
+}
+
+/** Route wrapper for one envelope's full ledger. */
+function EnvelopeLedgerRoute({ route, navigation }: EnvelopeLedgerNavProps) {
+  return (
+    <EnvelopeLedgerScreen
+      categoryId={route.params.categoryId}
+      onClose={() => navigation.goBack()}
+    />
+  );
 }
 
 /**
@@ -106,6 +144,16 @@ export const RootNavigator = () => {
         component={SetupScreen}
         options={{ presentation: 'fullScreenModal' }}
         initialParams={{ mode: 'edit' }}
+      />
+      <RootStack.Screen
+        name="SafeToSpendLedger"
+        component={SafeToSpendLedgerRoute}
+        options={{ presentation: 'fullScreenModal' }}
+      />
+      <RootStack.Screen
+        name="EnvelopeLedger"
+        component={EnvelopeLedgerRoute}
+        options={{ presentation: 'fullScreenModal' }}
       />
     </RootStack.Navigator>
   );

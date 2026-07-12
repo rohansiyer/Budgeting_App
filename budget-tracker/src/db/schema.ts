@@ -6,7 +6,7 @@
  * Migration 1 (migrations/migration_001.ts) creates tables whose columns must
  * stay byte-for-byte aligned with the definitions below.
  */
-import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /** Applied-migration ledger. Managed by the MigrationRunner. */
 export const schemaVersion = sqliteTable('schema_version', {
@@ -148,6 +148,54 @@ export const duckEvaluations = sqliteTable(
   },
   (t) => ({
     monthIdx: index('idx_duck_eval_month').on(t.chapterId, t.month),
+  }),
+);
+
+/**
+ * Learned merchant → category corrections (Import engine, migration 3).
+ * "Assign TRADER JOE'S to Food once, it's Food forever." `normalizedMerchant`
+ * is the output of matching.normalizeMerchant and is UNIQUE per chapter, so an
+ * upsert re-points an existing merchant instead of duplicating it.
+ */
+export const merchantCorrections = sqliteTable(
+  'merchant_corrections',
+  {
+    id: text('id').primaryKey(),
+    chapterId: text('chapter_id').notNull(),
+    normalizedMerchant: text('normalized_merchant').notNull(),
+    categoryId: text('category_id').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    merchantIdx: uniqueIndex('idx_merchant_corrections_unique').on(
+      t.chapterId,
+      t.normalizedMerchant,
+    ),
+  }),
+);
+
+/**
+ * The explicit recurring-bill schedule the forecast and "Mark as bill" write
+ * to (Import engine, migration 3). `dueDay` is 1..31 with clamp-to-month-end
+ * semantics: a bill due on 31 resolves to the LAST day of a shorter month
+ * (Feb 28/29, Apr 30). Consumers resolve the concrete date per month via
+ * min(dueDay, daysInMonth). `active:false` is the non-destructive remove — the
+ * row is retained (history), just excluded from the forecast.
+ */
+export const recurringBills = sqliteTable(
+  'recurring_bills',
+  {
+    id: text('id').primaryKey(),
+    chapterId: text('chapter_id').notNull(),
+    name: text('name').notNull(),
+    categoryId: text('category_id').notNull(),
+    amountCents: integer('amount_cents').notNull(), // Cents
+    dueDay: integer('due_day').notNull(), // 1..31, clamp-to-month-end
+    active: integer('active', { mode: 'boolean' }).notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    chapterIdx: index('idx_recurring_bills_chapter').on(t.chapterId),
   }),
 );
 

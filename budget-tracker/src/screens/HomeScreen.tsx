@@ -32,11 +32,16 @@ const typo = tokens.type;
 const PAYDAY_LOOKAHEAD_DAYS = 45;
 
 export interface HomeScreenProps {
-  /** Opens the safe-to-spend ledger drill-down. Screen arrives a later wave; no-op default. */
+  /** Opens the safe-to-spend ledger drill-down (v0.3 §3.7). */
   onOpenLedger?: () => void;
+  /** Opens one envelope's full transaction/carryover/borrow ledger. */
+  onOpenEnvelope?: (categoryId: string) => void;
 }
 
-export function HomeScreen({ onOpenLedger = () => {} }: HomeScreenProps = {}) {
+export function HomeScreen({
+  onOpenLedger = () => {},
+  onOpenEnvelope = () => {},
+}: HomeScreenProps = {}) {
   const store = useStore();
   const flock = useFlock();
   const { openDay, showUndo } = useAppShell();
@@ -241,6 +246,7 @@ export function HomeScreen({ onOpenLedger = () => {} }: HomeScreenProps = {}) {
             cat={cat}
             st={st}
             onBorrow={() => setBorrowFor(cat)}
+            onOpenLedger={() => onOpenEnvelope(cat.id)}
           />
         );
       })}
@@ -286,36 +292,47 @@ function EnvelopeCard({
   cat,
   st,
   onBorrow,
+  onOpenLedger,
 }: {
   cat: CategoryConfig;
   st: EnvelopeWeekState;
   onBorrow: () => void;
+  onOpenLedger: () => void;
 }) {
   const budget = st.configuredBudget;
   const detail = envelopeDetailText(st);
   return (
     <PixelBox style={styles.envBox}>
-      <Row style={styles.envHead}>
-        <Row>
-          <CategoryChip colorKey={cat.colorKey} />
-          <Text style={styles.envName}>{cat.name}</Text>
+      {/* Every number is a door (v0.3 §3.7): the whole card opens the
+          envelope's full ledger; the nested Borrow button below keeps its
+          own tap target and behavior. */}
+      <Pressable
+        onPress={onOpenLedger}
+        accessibilityRole="button"
+        accessibilityLabel={`${cat.name} envelope, ${formatCents(st.remaining)} left. Opens the full ledger.`}
+      >
+        <Row style={styles.envHead}>
+          <Row>
+            <CategoryChip colorKey={cat.colorKey} />
+            <Text style={styles.envName}>{cat.name}</Text>
+          </Row>
+          <MoneyText
+            amount={st.remaining}
+            kind={st.remaining < 0 ? 'spend' : 'plain'}
+            size={typo.kpi.fontSize}
+            style={{ fontFamily: font.monoBold }}
+          />
         </Row>
-        <MoneyText
-          amount={st.remaining}
-          kind={st.remaining < 0 ? 'spend' : 'plain'}
-          size={typo.kpi.fontSize}
-          style={{ fontFamily: font.monoBold }}
+        <BlockMeter
+          budget={budget}
+          spent={st.spent}
+          blockValue={blockValueFor(budget)}
+          bonus={st.rolledIn}
+          debt={st.repaying}
+          accessibilityLabel={`${cat.name} envelope`}
         />
-      </Row>
-      <BlockMeter
-        budget={budget}
-        spent={st.spent}
-        blockValue={blockValueFor(budget)}
-        bonus={st.rolledIn}
-        debt={st.repaying}
-        accessibilityLabel={`${cat.name} envelope`}
-      />
-      <Text style={styles.envDetail}>{detail}</Text>
+        <Text style={styles.envDetail}>{detail}</Text>
+      </Pressable>
       {st.remaining < 0 ? (
         <View style={styles.envAction}>
           <HardButton

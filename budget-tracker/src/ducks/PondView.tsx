@@ -1,25 +1,32 @@
 /**
- * Team 4 (Pond) — pond centerpiece.
+ * Team 4 (Pond) — pond centerpiece (handoff v3 §2.2, "The Pond, redrawn").
  *
- * Renders the water (radial gradient) with ripples and lays out the flock by
- * population tier (§ Duck System pond behavior):
- *   1–3  casual   — loosely scattered near the middle
- *   4–7  groupings — two social clusters
- *   8–11 full      — filling the pond in rows
- *   12   formation — a tidy V
+ * Flat water (no gradients, per the design system's aesthetic invariants):
+ * a solid `pondDeep` disc with a 6px `pondEdge` stroke, a handful of 4px
+ * pixel-ripple squares whose opacity alternates on a stepped ~800ms timer
+ * (no easing), and a deterministic wandering flock driven by
+ * `src/ducks/wander.logic.ts`:
+ *   - SHORE ducks walk a fixed-radius band just outside the water on land
+ *     poses (idle / preen), flipping to face their direction of travel.
+ *   - FLOATER ducks drift inside the water disc on the legless float pose.
  *
- * Designed to drop into Team 3's PondCenterSlot: it is a fixed-square,
- * self-contained View sized by `size`. Tapping a duck invokes onDuckPress
- * (Results/Pond wires the name prompt).
+ * Movement is stepped (~400ms ticks advancing a pure tickIndex through
+ * wander.logic's `step`), never tweened, and freezes entirely under the OS
+ * reduced-motion setting (both the wander and the ripple flicker).
+ *
+ * Public contract unchanged from v0.2: a fixed-square View sized by `size`,
+ * dropped into a PondCenterSlot; ducks stay Pressable and invoke
+ * onDuckPress (Results/Pond wire the name prompt).
  */
 
-import React from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
-import Svg, { Defs, RadialGradient, Stop, Circle, Ellipse } from 'react-native-svg';
-import { color } from '../theme/tokens';
+import React, { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, View, Pressable, StyleSheet } from 'react-native';
+import Svg, { Circle, Rect } from 'react-native-svg';
+import { color, motion } from '../theme/tokens';
 import type { Duck } from '../types/contracts';
 import { DuckSprite } from './DuckSprite';
 import { SPRITE_H, SPRITE_W } from './sprites';
+import { TICK_MS, initWander, step as wanderStep, type WanderState } from './wander.logic';
 
 export interface PondViewProps {
   ducks: readonly Duck[];
@@ -29,84 +36,69 @@ export interface PondViewProps {
   onDuckPress?: (duck: Duck) => void;
 }
 
-type Offset = { ox: number; oy: number }; // unit-disk offsets in [-1, 1]
+/** Water disc radius as a fraction of the usable (margin-adjusted) radius. */
+const WATER_R_FRACTION = 0.66;
+/** Ripple flicker cadence, per handoff §2.2 ("a stepped timer"). */
+const RIPPLE_MS = 800;
+/** Fixed, deterministic ripple placements (unit-disk fractions of water radius). */
+const RIPPLE_SPOTS: readonly { ox: number; oy: number; phase: 0 | 1 }[] = [
+  { ox: -0.4, oy: -0.15, phase: 0 },
+  { ox: 0.3, oy: 0.35, phase: 1 },
+  { ox: 0.05, oy: -0.45, phase: 0 },
+  { ox: -0.3, oy: 0.3, phase: 1 },
+  { ox: 0.45, oy: -0.05, phase: 0 },
+];
+const RIPPLE_OPACITY_LOW = 0.22;
+const RIPPLE_OPACITY_HIGH = 0.42;
 
-function casual(n: number): Offset[] {
-  // Loosely along a gentle line through the middle with slight deterministic drift.
-  const out: Offset[] = [];
-  for (let i = 0; i < n; i++) {
-    const t = n === 1 ? 0 : i / (n - 1) - 0.5; // -0.5..0.5
-    out.push({ ox: t * 0.8, oy: (i % 2 === 0 ? 0.06 : -0.06) });
-  }
-  return out;
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((v) => {
+      if (alive) setReduced(v);
+    });
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (v) => setReduced(v));
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+  return motion.reducedMotionRespect ? reduced : false;
 }
 
-function clusterAround(cx: number, cy: number, n: number, spread: number): Offset[] {
-  const out: Offset[] = [];
-  for (let i = 0; i < n; i++) {
-    const a = (i / Math.max(1, n)) * Math.PI * 2;
-    const r = n === 1 ? 0 : spread;
-    out.push({ ox: cx + Math.cos(a) * r, oy: cy + Math.sin(a) * r });
-  }
-  return out;
-}
+export const PondView: React.FC<PondViewProps> = ({ ducks, accessoryTier, size = 240, onDuckPress }) => {
+  const reducedMotion = useReducedMotion();
+  const ids = ducks.map((d) => d.id);
+  const idsKey = ids.join('|');
 
-function groupings(n: number): Offset[] {
-  const leftN = Math.ceil(n / 2);
-  const rightN = n - leftN;
-  return [
-    ...clusterAround(-0.42, 0.0, leftN, 0.22),
-    ...clusterAround(0.42, 0.05, rightN, 0.22),
-  ];
-}
+  const [wander, setWander] = useState<WanderState>(() => initWander(ids));
+  const tickRef = useRef(0);
 
-function full(n: number): Offset[] {
-  // Fill in up to three rows, spread across the width.
-  const rows = 3;
-  const perRow = Math.ceil(n / rows);
-  const out: Offset[] = [];
-  for (let i = 0; i < n; i++) {
-    const row = Math.floor(i / perRow);
-    const col = i % perRow;
-    const oy = (row - (rows - 1) / 2) * 0.42;
-    const ox = perRow === 1 ? 0 : (col / (perRow - 1) - 0.5) * 0.86;
-    out.push({ ox, oy });
-  }
-  return out;
-}
+  // Duck roster changed (gained/lost a duck) — reseed the wander state so
+  // ids stay in sync; wander.logic assigns role/trajectory purely from id.
+  useEffect(() => {
+    tickRef.current = 0;
+    setWander(initWander(ids));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
 
-function formation(n: number): Offset[] {
-  // A V: the lead duck at the front, two arms trailing back.
-  const out: Offset[] = [{ ox: 0, oy: -0.55 }];
-  let placed = 1;
-  let step = 1;
-  while (placed < n) {
-    const depth = step * 0.2;
-    out.push({ ox: -step * 0.15, oy: -0.55 + depth });
-    placed++;
-    if (placed < n) {
-      out.push({ ox: step * 0.15, oy: -0.55 + depth });
-      placed++;
-    }
-    step++;
-  }
-  return out.slice(0, n);
-}
+  useEffect(() => {
+    if (reducedMotion) return; // frozen: no timer at all
+    const interval = setInterval(() => {
+      setWander((prev) => wanderStep(prev, tickRef.current));
+      tickRef.current += 1;
+    }, TICK_MS);
+    return () => clearInterval(interval);
+  }, [reducedMotion, idsKey]);
 
-function layoutFor(count: number): Offset[] {
-  if (count <= 0) return [];
-  if (count <= 3) return casual(count);
-  if (count <= 7) return groupings(count);
-  if (count <= 11) return full(count);
-  return formation(count);
-}
+  const [rippleFlip, setRippleFlip] = useState(false);
+  useEffect(() => {
+    if (reducedMotion) return; // frozen: hold the last ripple state
+    const interval = setInterval(() => setRippleFlip((v) => !v), RIPPLE_MS);
+    return () => clearInterval(interval);
+  }, [reducedMotion]);
 
-export const PondView: React.FC<PondViewProps> = ({
-  ducks,
-  accessoryTier,
-  size = 240,
-  onDuckPress,
-}) => {
   const count = ducks.length;
   const scale = count <= 3 ? 3 : count <= 7 ? 2.4 : 2;
   const spriteW = SPRITE_W * scale;
@@ -114,46 +106,50 @@ export const PondView: React.FC<PondViewProps> = ({
   const R = size / 2;
   const margin = Math.max(spriteW, spriteH) / 2 + 8;
   const usable = Math.max(0, R - margin);
-  const offsets = layoutFor(count);
+  const waterR = usable * WATER_R_FRACTION;
 
-  const placed = ducks.map((duck, i) => {
-    const off = offsets[i] ?? { ox: 0, oy: 0 };
-    const cx = R + off.ox * usable;
-    const cy = R + off.oy * usable;
-    return { duck, left: cx - spriteW / 2, top: cy - spriteH / 2, footY: cy + spriteH / 2 };
+  const wanderById = new Map(wander.ducks.map((d) => [d.id, d] as const));
+
+  const placed = ducks.map((duck) => {
+    const w = wanderById.get(duck.id);
+    const ox = w?.ox ?? 0;
+    const oy = w?.oy ?? 0;
+    const cx = R + ox * usable;
+    const cy = R + oy * usable;
+    return {
+      duck,
+      left: cx - spriteW / 2,
+      top: cy - spriteH / 2,
+      flip: w?.flip ?? false,
+      animation: w?.animation ?? 'idle',
+    };
   });
 
   return (
     <View style={[styles.root, { width: size, height: size }]}>
       <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-        <Defs>
-          <RadialGradient id="water" cx="50%" cy="45%" r="60%">
-            <Stop offset="0%" stopColor={color.pondEdge} />
-            <Stop offset="100%" stopColor={color.pondDeep} />
-          </RadialGradient>
-        </Defs>
-        <Circle cx={R} cy={R} r={R} fill="url(#water)" />
-        {/* Ambient ripple rings. */}
-        <Circle cx={R} cy={R} r={R * 0.6} stroke={color.pondEdge} strokeWidth={1} fill="none" opacity={0.35} />
-        <Circle cx={R} cy={R} r={R * 0.82} stroke={color.pondEdge} strokeWidth={1} fill="none" opacity={0.2} />
-        {/* A small ripple under each duck's feet. */}
-        {placed.map(({ duck, left, footY }) => (
-          <Ellipse
-            key={`ripple-${duck.id}`}
-            cx={left + spriteW / 2}
-            cy={footY - 2}
-            rx={spriteW * 0.42}
-            ry={spriteW * 0.14}
-            fill={color.pondEdge}
-            opacity={0.4}
-          />
-        ))}
+        {/* Flat pond fill: no gradients, per the aesthetic invariants. */}
+        <Circle cx={R} cy={R} r={waterR} fill={color.pondDeep} stroke={color.pondEdge} strokeWidth={6} />
+        {RIPPLE_SPOTS.map((spot, i) => {
+          const lit = spot.phase === 0 ? rippleFlip : !rippleFlip;
+          const cx = R + spot.ox * waterR;
+          const cy = R + spot.oy * waterR;
+          return (
+            <Rect
+              key={`ripple-${i}`}
+              x={cx - 2}
+              y={cy - 2}
+              width={4}
+              height={4}
+              fill={color.pondEdge}
+              opacity={lit ? RIPPLE_OPACITY_HIGH : RIPPLE_OPACITY_LOW}
+            />
+          );
+        })}
       </Svg>
 
-      {placed.map(({ duck, left, top }) => {
-        const label = duck.name
-          ? `Duck named ${duck.name}. Tap to rename.`
-          : 'Unnamed duck. Tap to name.';
+      {placed.map(({ duck, left, top, flip, animation }) => {
+        const label = duck.name ? `Duck named ${duck.name}. Tap to rename.` : 'Unnamed duck. Tap to name.';
         return (
           <Pressable
             key={duck.id}
@@ -163,7 +159,7 @@ export const PondView: React.FC<PondViewProps> = ({
             accessibilityLabel={label}
             style={[styles.duck, { left, top, width: spriteW, height: spriteH }]}
           >
-            <DuckSprite accessoryTier={accessoryTier} scale={scale} animation="idle" />
+            <DuckSprite accessoryTier={accessoryTier} scale={scale} flip={flip} animation={animation} />
           </Pressable>
         );
       })}

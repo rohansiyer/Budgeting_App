@@ -180,6 +180,40 @@ export interface NextCycleState {
 }
 
 // ---------------------------------------------------------------------------
+// Import data layer (Team 1 owns tables + store; src/import owns the engine)
+// ---------------------------------------------------------------------------
+
+/**
+ * A learned merchant → category mapping. `normalizedMerchant` is the output of
+ * `matching.normalizeMerchant` (uppercased, store-number/punctuation stripped),
+ * UNIQUE per chapter. Assigning a merchant once makes every future import of
+ * that merchant land in the same category ("Food forever").
+ */
+export interface MerchantCorrection {
+  id: string;
+  normalizedMerchant: string;
+  categoryId: string;
+  createdAt: string;
+}
+
+/**
+ * An explicit recurring bill the forecast and "Mark as bill" write to.
+ * `dueDay` is 1..31 with CLAMP-TO-MONTH-END semantics: a bill due on 31 falls on
+ * the last day of a shorter month (resolve per month via min(dueDay, daysInMonth)).
+ * `active:false` is the non-destructive remove (row retained, excluded from the
+ * forecast).
+ */
+export interface RecurringBill {
+  id: string;
+  name: string;
+  categoryId: string;
+  amountCents: Cents;
+  dueDay: number;
+  active: boolean;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Duck System (Team 4 owns engine; Team 1 owns tables + read port)
 // ---------------------------------------------------------------------------
 
@@ -348,6 +382,30 @@ export interface StoreContract {
   ): Promise<void>;
   updateIncomeSource(sourceId: string, patch: Partial<Omit<IncomeSourceConfig, 'id'>>): Promise<void>;
 
+  // --- import data layer ---------------------------------------------------
+  /**
+   * Learn (or re-point) a merchant → category mapping. Keyed by
+   * `normalizedMerchant` within the active chapter: an existing mapping for the
+   * same normalized merchant is UPDATED in place (never duplicated). Validates
+   * the category exists before writing.
+   */
+  upsertMerchantCorrection(input: {
+    normalizedMerchant: string;
+    categoryId: string;
+  }): Promise<MerchantCorrection>;
+  /** Add a recurring bill (active). Validates category, a 1..31 dueDay, and a positive integer amount. */
+  addRecurringBill(input: {
+    name: string;
+    categoryId: string;
+    amountCents: Cents;
+    dueDay: number;
+  }): Promise<RecurringBill>;
+  /** Patch a recurring bill in place. `active:false` is the non-destructive remove. */
+  updateRecurringBill(
+    id: string,
+    patch: Partial<Pick<RecurringBill, 'name' | 'categoryId' | 'amountCents' | 'dueDay' | 'active'>>,
+  ): Promise<void>;
+
   // --- carryover -----------------------------------------------------------
   rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;
   sweepToSavings(categoryId: string, fromWeek: WeekStart, savingsAccountId: string): Promise<void>;
@@ -377,6 +435,11 @@ export interface StoreContract {
   listCategories(): CategoryConfig[];
   listIncomeSources(): IncomeSourceConfig[];
   getActiveChapter(): Chapter;
+
+  /** Learned merchant → category corrections for the active chapter. */
+  getMerchantCorrections(): MerchantCorrection[];
+  /** Recurring bills for the active chapter (active AND inactive; consumers filter on `active`). */
+  getRecurringBills(): RecurringBill[];
 
   getTransactions(range: DateRange): TransactionRecord[];
   /** date → net outflow, for week bars + calendar heatmap (income excluded). */

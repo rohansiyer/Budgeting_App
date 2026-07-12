@@ -21,6 +21,10 @@ export type SetupMode = 'firstRun' | 'edit' | 'newChapter';
 export type RootStackParamList = {
   Tabs: { screen?: keyof RootTabParamList } | undefined;
   Setup: { mode: SetupMode };
+  /** "Every number is a door" (v0.3 §3.7): the math behind Home's hero figure. */
+  SafeToSpendLedger: undefined;
+  /** The full drill-down behind one envelope. */
+  EnvelopeLedger: { categoryId: string };
 };
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -41,4 +45,14 @@ export function openTab(tab: keyof RootTabParamList): void {
 /** Return to the tab stack (Home by default), collapsing any modal above it. */
 export function goToTabs(tab: keyof RootTabParamList = 'Home'): void {
   openTab(tab);
+}
+
+/** Open the safe-to-spend ledger drill-down (v0.3 §3.7) as a full-screen modal. */
+export function openSafeToSpendLedger(): void {
+  if (navigationRef.isReady()) navigationRef.navigate('SafeToSpendLedger');
+}
+
+/** Open one envelope's full transaction/carryover/borrow ledger. */
+export function openEnvelopeLedger(categoryId: string): void {
+  if (navigationRef.isReady()) navigationRef.navigate('EnvelopeLedger', { categoryId });
 }

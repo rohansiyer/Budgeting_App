@@ -48,8 +48,10 @@ import type {
   IncomeSchedule,
   IncomeSourceConfig,
   ISODate,
+  MerchantCorrection,
   MonthKey,
   NextCycleState,
+  RecurringBill,
   StoreContract,
   TransactionRecord,
   WeekStart,
@@ -178,6 +180,23 @@ interface CarryoverRow {
   attributionMonth: string;
   createdAt: string;
 }
+interface MerchantCorrectionRow {
+  id: string;
+  chapterId: string;
+  normalizedMerchant: string;
+  categoryId: string;
+  createdAt: string;
+}
+interface RecurringBillRow {
+  id: string;
+  chapterId: string;
+  name: string;
+  categoryId: string;
+  amountCents: number;
+  dueDay: number;
+  active: boolean;
+  createdAt: string;
+}
 
 // ---------------------------------------------------------------------------
 // AtomicDb — BEGIN/COMMIT/ROLLBACK bracket on the single connection. Nested
@@ -255,6 +274,25 @@ function toAccountConfig(row: AccountRow): AccountConfig {
     openedOn: row.openedOn,
   };
 }
+function toMerchantCorrection(row: MerchantCorrectionRow): MerchantCorrection {
+  return {
+    id: row.id,
+    normalizedMerchant: row.normalizedMerchant,
+    categoryId: row.categoryId,
+    createdAt: row.createdAt,
+  };
+}
+function toRecurringBill(row: RecurringBillRow): RecurringBill {
+  return {
+    id: row.id,
+    name: row.name,
+    categoryId: row.categoryId,
+    amountCents: C(row.amountCents),
+    dueDay: row.dueDay,
+    active: Boolean(row.active),
+    createdAt: row.createdAt,
+  };
+}
 
 interface StoreState extends StoreContract {
   // Internal caches (money as Cents).
@@ -264,6 +302,8 @@ interface StoreState extends StoreContract {
   _incomeSources: IncomeSourceConfig[];
   _txnRows: TxnRow[];
   _carryover: CarryoverRow[];
+  _merchantCorrections: MerchantCorrectionRow[];
+  _recurringBills: RecurringBillRow[];
   _ducks: Duck[];
   _evaluations: DuckEvaluation[];
   _settingsRow: (Settings & { notificationsEnabled: boolean }) | null;
@@ -463,6 +503,12 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     const carryover = (db.select().from(schema.carryoverEntries).all() as CarryoverRow[]).filter(
       (e) => !chId || e.chapterId === chId,
     );
+    const merchantCorrections = (
+      db.select().from(schema.merchantCorrections).all() as MerchantCorrectionRow[]
+    ).filter((r) => !chId || r.chapterId === chId);
+    const recurringBills = (
+      db.select().from(schema.recurringBills).all() as RecurringBillRow[]
+    ).filter((r) => !chId || r.chapterId === chId);
     const sourceRows = (db.select().from(schema.incomeSources).all() as Array<{
       id: string; chapterId: string; name: string; amount: number;
       scheduleKind: string; scheduleAnchorDate: string;
@@ -576,6 +622,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       _incomeSources: incomeSources,
       _txnRows: txnRows,
       _carryover: carryover,
+      _merchantCorrections: merchantCorrections,
+      _recurringBills: recurringBills,
       _ducks: ducks,
       _evaluations: evaluations,
       _settingsRow: settingsRows[0] ?? null,
@@ -770,6 +818,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     _incomeSources: [],
     _txnRows: [],
     _carryover: [],
+    _merchantCorrections: [],
+    _recurringBills: [],
     _ducks: [],
     _evaluations: [],
     _settingsRow: null,
@@ -932,6 +982,125 @@ export const useBudgetStore = create<StoreState>((set, get) => {
             envelopeCarryoverDefault: envelope?.carryoverDefault ?? null,
           })
           .where(eq(schema.categories.id, categoryId))
+          .run();
+      });
+      await refresh();
+    },
+
+    // ---------------------------------------------------------- import data layer
+    // Learn or re-point a merchant → category mapping (unique per chapter on the
+    // normalized merchant). Validates the category before writing so a phantom
+    // category can never be learned. Upsert: an existing mapping for the same
+    // normalized merchant is UPDATED in place, never duplicated.
+    upsertMerchantCorrection: async (input) => {
+      const normalized = input.normalizedMerchant.trim();
+      if (normalized.length === 0) {
+        throw new Error('upsertMerchantCorrection: normalizedMerchant must be non-empty');
+      }
+      assertCategoryExists(input.categoryId);
+      const chapterId = activeChapterId();
+      const now = new Date().toISOString();
+      const existing = get()._merchantCorrections.find(
+        (r) => r.normalizedMerchant === normalized,
+      );
+      const id = existing?.id ?? generateId();
+      await withTransaction(async () => {
+        const db = getDb();
+        if (existing) {
+          db.update(schema.merchantCorrections)
+            .set({ categoryId: input.categoryId })
+            .where(eq(schema.merchantCorrections.id, existing.id))
+            .run();
+        } else {
+          db.insert(schema.merchantCorrections)
+            .values({
+              id,
+              chapterId,
+              normalizedMerchant: normalized,
+              categoryId: input.categoryId,
+              createdAt: now,
+            })
+            .run();
+        }
+      });
+      await refresh();
+      return {
+        id,
+        normalizedMerchant: normalized,
+        categoryId: input.categoryId,
+        createdAt: existing?.createdAt ?? now,
+      };
+    },
+
+    addRecurringBill: async (input) => {
+      assertCategoryExists(input.categoryId);
+      if (!Number.isInteger(input.dueDay) || input.dueDay < 1 || input.dueDay > 31) {
+        throw new Error('addRecurringBill: dueDay must be a whole number 1..31');
+      }
+      if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+        throw new Error('addRecurringBill: amountCents must be a positive whole number of cents');
+      }
+      const id = generateId();
+      const chapterId = activeChapterId();
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        getDb()
+          .insert(schema.recurringBills)
+          .values({
+            id,
+            chapterId,
+            name: input.name,
+            categoryId: input.categoryId,
+            amountCents: input.amountCents,
+            dueDay: input.dueDay,
+            active: true,
+            createdAt: now,
+          })
+          .run();
+      });
+      await refresh();
+      return {
+        id,
+        name: input.name,
+        categoryId: input.categoryId,
+        amountCents: input.amountCents,
+        dueDay: input.dueDay,
+        active: true,
+        createdAt: now,
+      };
+    },
+
+    updateRecurringBill: async (id, patch) => {
+      if (!get()._recurringBills.some((b) => b.id === id)) {
+        throw new Error(`updateRecurringBill: unknown bill "${id}"`);
+      }
+      if (patch.categoryId !== undefined) assertCategoryExists(patch.categoryId);
+      if (
+        patch.dueDay !== undefined &&
+        (!Number.isInteger(patch.dueDay) || patch.dueDay < 1 || patch.dueDay > 31)
+      ) {
+        throw new Error('updateRecurringBill: dueDay must be a whole number 1..31');
+      }
+      if (
+        patch.amountCents !== undefined &&
+        (!Number.isInteger(patch.amountCents) || patch.amountCents <= 0)
+      ) {
+        throw new Error(
+          'updateRecurringBill: amountCents must be a positive whole number of cents',
+        );
+      }
+      await withTransaction(async () => {
+        const set_: Record<string, unknown> = {};
+        if (patch.name !== undefined) set_.name = patch.name;
+        if (patch.categoryId !== undefined) set_.categoryId = patch.categoryId;
+        if (patch.amountCents !== undefined) set_.amountCents = patch.amountCents;
+        if (patch.dueDay !== undefined) set_.dueDay = patch.dueDay;
+        if (patch.active !== undefined) set_.active = patch.active;
+        if (Object.keys(set_).length === 0) return;
+        getDb()
+          .update(schema.recurringBills)
+          .set(set_)
+          .where(eq(schema.recurringBills.id, id))
           .run();
       });
       await refresh();
@@ -1297,6 +1466,9 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       if (!ch) throw new Error('No active chapter. Run the setup wizard first.');
       return ch;
     },
+
+    getMerchantCorrections: () => get()._merchantCorrections.map(toMerchantCorrection),
+    getRecurringBills: () => get()._recurringBills.map(toRecurringBill),
 
     getTransactions: (range) =>
       liveTxns()

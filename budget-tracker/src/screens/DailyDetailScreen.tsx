@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { Cents, formatCents, sumCents, toDecimalString, ZERO } from '../lib/money';
-import { PixelBox, HardButton, RuledList, CategoryChip, EmptyState } from '../components/kit';
+import { PixelBox, HardButton, RuledList, CategoryChip, EmptyState, Snackbar } from '../components/kit';
 import { DuckSprite } from '../ducks/DuckSprite';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { Sheet } from '../components/Sheet';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
 import { isDayEmpty } from './DailyDetailScreen.logic';
+import { AddExpenseSheet, type AddExpenseCommitInfo } from './expense/AddExpenseSheet';
+import { commitSnackbarMessage } from './expense/AddExpenseSheet.logic';
 import { tryParseCents } from '../format/moneyInput';
 import { longDate, weekStartOf } from '../format/dates';
 import type {
@@ -45,6 +47,9 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
   const [menuTxn, setMenuTxn] = useState<TransactionRecord | null>(null);
   const [editTxn, setEditTxn] = useState<TransactionRecord | null>(null);
   const [addKind, setAddKind] = useState<'expense' | 'income' | null>(null);
+  const [expenseSnack, setExpenseSnack] = useState<{ message: string; transactionId: string } | null>(
+    null,
+  );
 
   const handleDelete = async (t: TransactionRecord) => {
     const { undo } = await store.deleteTransaction(t.id);
@@ -56,6 +61,7 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
   };
 
   return (
+    <>
     <Screen
       title={longDate(date)}
       right={
@@ -163,17 +169,14 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
       {addKind === 'expense' ? (
         <AddExpenseSheet
           categories={categories}
+          accountId={spendingAccount?.id}
+          date={date}
           onClose={() => setAddKind(null)}
-          onSave={async (amount, categoryId, note) => {
-            if (!spendingAccount) return; // no accounts configured yet
-            await store.addExpense({
-              accountId: spendingAccount.id,
-              categoryId,
-              amount,
-              date,
-              note,
+          onCommitted={(info: AddExpenseCommitInfo) => {
+            setExpenseSnack({
+              message: commitSnackbarMessage(info.categoryName, info.amount, info.borrowed),
+              transactionId: info.transactionId,
             });
-            setAddKind(null);
           }}
         />
       ) : null}
@@ -189,6 +192,20 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
         />
       ) : null}
     </Screen>
+
+    <View style={styles.snackbarWrap} pointerEvents="box-none">
+      <Snackbar
+        visible={expenseSnack !== null}
+        message={expenseSnack?.message ?? ''}
+        onAction={() => {
+          const pending = expenseSnack;
+          setExpenseSnack(null);
+          if (pending) void store.deleteTransaction(pending.transactionId);
+        }}
+        onTimeout={() => setExpenseSnack(null)}
+      />
+    </View>
+    </>
   );
 }
 
@@ -372,50 +389,6 @@ function EditSheet({
   );
 }
 
-function AddExpenseSheet({
-  categories,
-  onClose,
-  onSave,
-}: {
-  categories: CategoryConfig[];
-  onClose: () => void;
-  onSave: (amount: Cents, categoryId: string, note?: string) => void;
-}) {
-  const spendable = categories.filter((c) => c.envelope !== null || c.fixed);
-  const [amountText, setAmountText] = useState('');
-  const [note, setNote] = useState('');
-  const [catId, setCatId] = useState(spendable[0]?.id ?? '');
-  const parsed = tryParseCents(amountText);
-  const valid = parsed !== null && parsed > 0 && catId !== '';
-  return (
-    <Sheet visible onClose={onClose} title="Add expense">
-      <SectionLabel>Amount</SectionLabel>
-      <MoneyField value={amountText} onChangeText={setAmountText} autoFocus />
-      <SectionLabel>Category</SectionLabel>
-      <CategoryPicker categories={spendable} selected={catId} onSelect={setCatId} />
-      <SectionLabel>Note</SectionLabel>
-      <TextInput
-        value={note}
-        onChangeText={setNote}
-        placeholder="Note (optional)"
-        placeholderTextColor={color.textMuted}
-        accessibilityLabel="Note"
-        style={styles.input}
-      />
-      <Row style={styles.formActions}>
-        <HardButton
-          label="Add expense"
-          disabled={!valid}
-          onPress={() => {
-            if (valid && parsed !== null) onSave(parsed, catId, note || undefined);
-          }}
-          accessibilityLabel="Save the new expense"
-        />
-      </Row>
-    </Sheet>
-  );
-}
-
 function AddIncomeSheet({
   sources,
   onClose,
@@ -470,6 +443,12 @@ function AddIncomeSheet({
 }
 
 const styles = StyleSheet.create({
+  snackbarWrap: {
+    position: 'absolute',
+    left: space.md,
+    right: space.md,
+    bottom: space.lg,
+  },
   emptyWrap: {
     marginTop: space.sm,
   },
