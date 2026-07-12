@@ -67,6 +67,10 @@ export interface AccountConfig {
   openedOn: ISODate;
 }
 
+/** Budget cadence: the whole envelope UI (meters, borrow prompts, warnings)
+ * respects an envelope's own cadence. Defaults to 'weekly'. */
+export type CadenceType = 'weekly' | 'monthly';
+
 /**
  * Categories cover ALL spend. Variable-spend categories additionally have
  * an envelope (budget + carryover). Fixed categories (rent, utilities…)
@@ -77,6 +81,8 @@ export interface CategoryConfig {
   name: string;
   colorKey: CategoryColorKey;
   fixed: boolean;
+  /** 'weekly' | 'monthly'. Always present on reads (stored notNull, default 'weekly'). */
+  cadence: CadenceType;
   envelope: EnvelopeConfig | null;
 }
 
@@ -296,7 +302,10 @@ export interface StoreContract {
   }): Promise<AccountConfig>;
   renameAccount(accountId: string, name: string): Promise<void>;
   createIncomeSource(input: Omit<IncomeSourceConfig, 'id'>): Promise<IncomeSourceConfig>;
-  createCategory(input: Omit<CategoryConfig, 'id'>): Promise<CategoryConfig>;
+  /** `cadence` is optional at the write boundary; omitted defaults to 'weekly'. */
+  createCategory(
+    input: Omit<CategoryConfig, 'id' | 'cadence'> & { cadence?: CadenceType },
+  ): Promise<CategoryConfig>;
   updateEnvelope(categoryId: string, envelope: EnvelopeConfig | null): Promise<void>;
   createChapter(input: { name: string; startedAt: ISODate }): Promise<Chapter>;
   archiveChapter(chapterId: string, archivedAt: ISODate): Promise<void>;
@@ -307,7 +316,7 @@ export interface StoreContract {
   ): Promise<void>;
   updateCategory(
     categoryId: string,
-    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed'>>,
+    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed' | 'cadence'>>,
   ): Promise<void>;
   updateIncomeSource(sourceId: string, patch: Partial<Omit<IncomeSourceConfig, 'id'>>): Promise<void>;
 

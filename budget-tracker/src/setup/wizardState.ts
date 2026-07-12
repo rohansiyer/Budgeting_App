@@ -6,7 +6,7 @@
  */
 import type { Cents } from '../lib/money';
 import { toEpochDay } from '../lib/schedule';
-import type { CategoryColorKey, EnvelopeConfig, IncomeSchedule, IncomeSplitConfig } from '../types/contracts';
+import type { CadenceType, CategoryColorKey, EnvelopeConfig, IncomeSchedule, IncomeSplitConfig } from '../types/contracts';
 import type { AccountConfig } from '../types/contracts';
 
 export type WizardStep = 'accounts' | 'income' | 'envelopes' | 'review';
@@ -39,6 +39,8 @@ export interface CategoryDraft {
   name: string;
   colorKey: CategoryColorKey;
   fixed: boolean;
+  /** Optional; omitted at save defaults to 'weekly' (create) or preserves the stored value (edit). */
+  cadence?: CadenceType;
   envelope: EnvelopeConfig | null;
 }
 
@@ -342,6 +344,7 @@ export function prefilledWizardState(
     name: c.name,
     colorKey: c.colorKey,
     fixed: c.fixed,
+    cadence: c.cadence,
     envelope: c.envelope,
   }));
   return { step: 'accounts', chapterName, accounts, incomeSources, categories };

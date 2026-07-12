@@ -221,6 +221,75 @@ describe('undo window', () => {
   });
 });
 
+describe('envelope cadence plumbing', () => {
+  it('defaults to weekly when unspecified and round-trips a monthly cadence', async () => {
+    await freshChapter();
+    const weekly = await store().createCategory({
+      name: 'Groceries',
+      colorKey: 'amber',
+      fixed: false,
+      envelope: { period: 'weekly', budget: cents(10000), carryoverDefault: 'ask' },
+    });
+    expect(weekly.cadence).toBe('weekly');
+
+    const monthly = await store().createCategory({
+      name: 'Fun',
+      colorKey: 'pink',
+      fixed: false,
+      cadence: 'monthly',
+      envelope: { period: 'monthly', budget: cents(20000), carryoverDefault: 'ask' },
+    });
+    expect(monthly.cadence).toBe('monthly');
+
+    // Cadence survives a reload from committed DB state.
+    const reloaded = store().listCategories();
+    expect(reloaded.find((c) => c.id === weekly.id)!.cadence).toBe('weekly');
+    expect(reloaded.find((c) => c.id === monthly.id)!.cadence).toBe('monthly');
+  });
+
+  it('updateCategory changes cadence, and preserves it when the patch omits it', async () => {
+    await freshChapter();
+    const cat = await store().createCategory({
+      name: 'Fun',
+      colorKey: 'pink',
+      fixed: false,
+      cadence: 'monthly',
+      envelope: { period: 'monthly', budget: cents(20000), carryoverDefault: 'ask' },
+    });
+
+    // A rename that doesn't mention cadence leaves it at monthly.
+    await store().updateCategory(cat.id, { name: 'Fun Money' });
+    expect(store().listCategories().find((c) => c.id === cat.id)!.cadence).toBe('monthly');
+
+    // An explicit cadence change lands.
+    await store().updateCategory(cat.id, { cadence: 'weekly' });
+    expect(store().listCategories().find((c) => c.id === cat.id)!.cadence).toBe('weekly');
+  });
+
+  it('rejects an invalid cadence at the mutation boundary', async () => {
+    await freshChapter();
+    await expect(
+      store().createCategory({
+        name: 'Bad',
+        colorKey: 'blue',
+        fixed: false,
+        cadence: 'daily' as never,
+        envelope: { period: 'weekly', budget: cents(1000), carryoverDefault: 'ask' },
+      }),
+    ).rejects.toThrow(/cadence/i);
+
+    const ok = await store().createCategory({
+      name: 'Ok',
+      colorKey: 'blue',
+      fixed: false,
+      envelope: { period: 'weekly', budget: cents(1000), carryoverDefault: 'ask' },
+    });
+    await expect(
+      store().updateCategory(ok.id, { cadence: 'yearly' as never }),
+    ).rejects.toThrow(/cadence/i);
+  });
+});
+
 describe('EvaluationReadPort attribution (duck guard §5.4)', () => {
   it('cross-month borrow attributes both legs to the origin month', async () => {
     await freshChapter();

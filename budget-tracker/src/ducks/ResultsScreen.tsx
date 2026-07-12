@@ -30,6 +30,7 @@ import type { DuckEvaluation, Duck, GoalResult, MonthKey } from '../types/contra
 import { DuckSprite } from './DuckSprite';
 import { PondView } from './PondView';
 import type { AnimationName } from './sprites';
+import { MONTH_END_RECAP_EYEBROW, monthLabel as defaultMonthLabel, outcomeCopy } from './copy';
 
 export type NameDuck = (duckId: string, name: string) => void;
 
@@ -45,17 +46,6 @@ export interface ResultsScreenProps {
   monthLabel?: (month: MonthKey) => string;
 }
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-function defaultMonthLabel(month: MonthKey): string {
-  const [y, m] = month.split('-');
-  const idx = parseInt(m, 10) - 1;
-  return `${MONTHS[idx] ?? month} ${y}`;
-}
-
 function animationFor(outcome: DuckEvaluation['outcome'], bigWin: boolean): AnimationName {
   if (bigWin) return 'happy-dance';
   switch (outcome) {
@@ -67,20 +57,6 @@ function animationFor(outcome: DuckEvaluation['outcome'], bigWin: boolean): Anim
       return 'walk-off';
     default:
       return 'idle';
-  }
-}
-
-function outcomeCopy(outcome: DuckEvaluation['outcome'], bigWin: boolean): string {
-  if (bigWin) return 'Huge month — under budget everywhere. The flock is dancing.';
-  switch (outcome) {
-    case 'gain':
-      return 'All three goals met. A new duck joins the pond.';
-    case 'fancy_upgrade':
-      return 'A perfect month at full flock — everyone got a little fancier.';
-    case 'hold':
-      return 'Some goals met. The flock holds steady — you can save them next month.';
-    case 'lose':
-      return 'A tough month. One duck waddles off, but the pond is still here for you.';
   }
 }
 
@@ -151,7 +127,7 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {results.map(({ evaluation, bigWin }) => (
         <View key={evaluation.id} style={styles.card}>
-          <Text style={styles.eyebrow}>Time to count ducks!</Text>
+          <Text style={styles.eyebrow}>{MONTH_END_RECAP_EYEBROW}</Text>
           <Text style={styles.title}>{monthLabel(evaluation.month)}</Text>
 
           <View style={styles.stage}>

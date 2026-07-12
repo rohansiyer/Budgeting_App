@@ -3,6 +3,14 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
+import {
+  SpaceGrotesk_400Regular,
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+} from '@expo-google-fonts/space-grotesk';
+import { SpaceMono_400Regular, SpaceMono_700Bold } from '@expo-google-fonts/space-mono';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AppErrorBoundary } from './src/components/AppErrorBoundary';
 import { StoreProvider } from './src/providers/StoreProvider';
@@ -40,6 +48,14 @@ export default function App() {
   const [locked, setLocked] = useState(false);
   // First-run gate: no accounts yet ⇒ land on the setup wizard (skippable).
   const [firstRun, setFirstRun] = useState(false);
+  const [fontsLoaded, fontError] = useFonts({
+    SpaceGrotesk_400Regular,
+    SpaceGrotesk_500Medium,
+    SpaceGrotesk_600SemiBold,
+    SpaceGrotesk_700Bold,
+    SpaceMono_400Regular,
+    SpaceMono_700Bold,
+  });
   useAutoLock(() => setLocked(true));
   useEffect(() => {
     void isAppLockEnabled().then((enabled) => {
@@ -66,6 +82,12 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  // Keep the splash up while fonts load; a load error proceeds with the
+  // system font rather than blocking startup forever.
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   if (boot.phase !== 'ready') {
     return (

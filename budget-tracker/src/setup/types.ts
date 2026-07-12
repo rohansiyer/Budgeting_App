@@ -15,6 +15,7 @@
 import type { Cents } from '../lib/money';
 import type {
   AccountConfig,
+  CadenceType,
   CategoryColorKey,
   CategoryConfig,
   Chapter,
@@ -50,6 +51,8 @@ export interface CategoryDraftInput {
   name: string;
   colorKey: CategoryColorKey;
   fixed: boolean;
+  /** Optional at the write boundary; omitted defaults to 'weekly'. */
+  cadence?: CadenceType;
   envelope: EnvelopeConfig | null;
 }
 

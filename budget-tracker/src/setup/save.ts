@@ -94,17 +94,25 @@ export async function saveSetup(
     }
   }
 
+  // Existing cadences, so an update whose draft omits cadence preserves the
+  // stored value in the returned result (the store preserves it too — passing
+  // cadence: undefined leaves the column untouched).
+  const storedCadence = new Map(
+    (await writer.listCategories()).map((c) => [c.id, c.cadence] as const),
+  );
   const categories: CategoryConfig[] = [];
   for (const draft of state.categories) {
     const input = {
       name: draft.name.trim(),
       colorKey: draft.colorKey,
       fixed: draft.fixed,
+      cadence: draft.cadence,
       envelope: draft.envelope,
     };
     if (draft.existingId) {
       await writer.updateCategory(draft.existingId, input);
-      categories.push({ id: draft.existingId, ...input });
+      const cadence = draft.cadence ?? storedCadence.get(draft.existingId) ?? 'weekly';
+      categories.push({ id: draft.existingId, ...input, cadence });
     } else {
       const category = await writer.createCategory(input);
       categories.push(category);

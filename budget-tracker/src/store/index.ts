@@ -31,6 +31,7 @@ import {
 import { paydaysBetween as schedulePaydaysBetween } from '../lib/schedule';
 import type {
   AccountConfig,
+  CadenceType,
   CarryoverEntry,
   CategoryColorKey,
   CategoryConfig,
@@ -127,6 +128,7 @@ interface CategoryRow {
   name: string;
   colorKey: string;
   fixed: boolean;
+  cadence: string;
   envelopePeriod: string | null;
   envelopeBudget: number | null;
   envelopeCarryoverDefault: string | null;
@@ -212,8 +214,18 @@ function toCategoryConfig(row: CategoryRow): CategoryConfig {
     name: row.name,
     colorKey: row.colorKey as CategoryColorKey,
     fixed: row.fixed,
+    cadence: (row.cadence as CadenceType) ?? 'weekly',
     envelope: toEnvelope(row),
   };
+}
+
+/** Validate a cadence at the mutation boundary; reject anything but the two
+ * legal values so a bad write can never enter the store. */
+function assertCadence(value: unknown): CadenceType {
+  if (value !== 'weekly' && value !== 'monthly') {
+    throw new Error(`Invalid cadence "${String(value)}" (expected 'weekly' | 'monthly')`);
+  }
+  return value;
 }
 function toAccountConfig(row: AccountRow): AccountConfig {
   return {
@@ -263,7 +275,7 @@ interface StoreState extends StoreContract {
   ) => Promise<void>;
   updateCategory: (
     id: string,
-    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed'>>,
+    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed' | 'cadence'>>,
   ) => Promise<void>;
   updateIncomeSource: (
     id: string,
@@ -873,6 +885,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const id = generateId();
       const chapterId = activeChapterId();
       const now = new Date().toISOString();
+      const cadence = input.cadence === undefined ? 'weekly' : assertCadence(input.cadence);
       await withTransaction(async () => {
         getDb().insert(schema.categories).values({
           id,
@@ -880,6 +893,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           name: input.name,
           colorKey: input.colorKey,
           fixed: input.fixed,
+          cadence,
           envelopePeriod: input.envelope?.period ?? null,
           envelopeBudget: input.envelope?.budget ?? null,
           envelopeCarryoverDefault: input.envelope?.carryoverDefault ?? null,
@@ -887,7 +901,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         }).run();
       });
       await refresh();
-      return { id, ...input };
+      return { id, ...input, cadence };
     },
 
     updateEnvelope: async (categoryId, envelope) => {
@@ -1301,6 +1315,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         if (patch.name !== undefined) set_.name = patch.name;
         if (patch.colorKey !== undefined) set_.colorKey = patch.colorKey;
         if (patch.fixed !== undefined) set_.fixed = patch.fixed ? 1 : 0;
+        // Undefined cadence preserves the stored value (edit-reconcile).
+        if (patch.cadence !== undefined) set_.cadence = assertCadence(patch.cadence);
         if (Object.keys(set_).length === 0) return;
         getDb().update(schema.categories).set(set_).where(eq(schema.categories.id, id)).run();
       });

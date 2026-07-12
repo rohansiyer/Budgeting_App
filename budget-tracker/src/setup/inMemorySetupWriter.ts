@@ -119,6 +119,7 @@ export function createInMemorySetupWriter(): SetupWriter {
         name: input.name,
         colorKey: input.colorKey,
         fixed: input.fixed,
+        cadence: input.cadence ?? 'weekly',
         envelope: input.envelope,
       };
       categories.push(category);
@@ -147,6 +148,8 @@ export function createInMemorySetupWriter(): SetupWriter {
       if (patch.name !== undefined) category.name = patch.name;
       if (patch.colorKey !== undefined) category.colorKey = patch.colorKey;
       if (patch.fixed !== undefined) category.fixed = patch.fixed;
+      // Undefined cadence preserves the stored value (edit-reconcile).
+      if (patch.cadence !== undefined) category.cadence = patch.cadence;
       if (patch.envelope !== undefined) category.envelope = patch.envelope;
     },
   };

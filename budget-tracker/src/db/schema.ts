@@ -41,6 +41,10 @@ export const categories = sqliteTable('categories', {
   name: text('name').notNull(),
   colorKey: text('color_key').notNull(), // CategoryColorKey
   fixed: integer('fixed', { mode: 'boolean' }).notNull(),
+  // Budget cadence the whole envelope UI respects (CadenceType). Migration 2
+  // adds it with DEFAULT 'weekly' so legacy rows backfill; new inserts default
+  // 'weekly' at the mutation boundary.
+  cadence: text('cadence').notNull().default('weekly'), // 'weekly' | 'monthly'
   // Envelope config (null => fixed/no-envelope category). See EnvelopeConfig.
   envelopePeriod: text('envelope_period'), // 'weekly' | 'monthly' | null
   envelopeBudget: integer('envelope_budget'), // Cents | null
