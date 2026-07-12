@@ -72,6 +72,7 @@ export function PondScreen() {
     flock !== null && evaluationsCount !== null && isDayOnePond(flock.ducks.length, evaluationsCount);
   const [naming, setNaming] = useState<Duck | null>(null);
   const [draft, setDraft] = useState('');
+  const [nameFocused, setNameFocused] = useState(false);
   const [howDucksWork, setHowDucksWork] = useState(false);
   const today = todayISO();
   const month = monthKeyOf(today);
@@ -254,7 +255,9 @@ export function PondScreen() {
               onChangeText={setDraft}
               placeholder="e.g. Gerald"
               placeholderTextColor={color.textMuted}
-              style={styles.input}
+              onFocus={() => setNameFocused(true)}
+              onBlur={() => setNameFocused(false)}
+              style={[styles.input, nameFocused && styles.inputFocused]}
               accessibilityLabel="Duck name"
               autoFocus
               maxLength={24}
@@ -579,6 +582,11 @@ const styles = StyleSheet.create({
     fontVariant: [...typo.tabularNums.fontVariant],
     paddingHorizontal: space.md,
     paddingVertical: space.sm + space.xs,
+  },
+  // Focus ring (handoff v3 "Type and accessibility patches"): swap to the
+  // accent border on focus, matching kit Field's treatment (§3.1).
+  inputFocused: {
+    borderColor: tokens.focus.color,
   },
   modalActions: {
     marginTop: space.md,

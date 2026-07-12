@@ -103,6 +103,11 @@ export const PondView: React.FC<PondViewProps> = ({ ducks, accessoryTier, size =
   const scale = count <= 3 ? 3 : count <= 7 ? 2.4 : 2;
   const spriteW = SPRITE_W * scale;
   const spriteH = SPRITE_H * scale;
+  // Larger flocks scale sprites below the 48px tap-target minimum; pad the
+  // touchable area back out symmetrically rather than resizing the sprite
+  // itself (a11y hit-slop fix, no visual/layout change).
+  const duckHitSlopX = Math.max(0, (48 - spriteW) / 2);
+  const duckHitSlopY = Math.max(0, (48 - spriteH) / 2);
   const R = size / 2;
   const margin = Math.max(spriteW, spriteH) / 2 + 8;
   const usable = Math.max(0, R - margin);
@@ -157,6 +162,12 @@ export const PondView: React.FC<PondViewProps> = ({ ducks, accessoryTier, size =
             disabled={!onDuckPress}
             accessibilityRole="button"
             accessibilityLabel={label}
+            hitSlop={{
+              top: duckHitSlopY,
+              bottom: duckHitSlopY,
+              left: duckHitSlopX,
+              right: duckHitSlopX,
+            }}
             style={[styles.duck, { left, top, width: spriteW, height: spriteH }]}
           >
             <DuckSprite accessoryTier={accessoryTier} scale={scale} flip={flip} animation={animation} />

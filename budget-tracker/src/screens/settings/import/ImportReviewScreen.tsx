@@ -107,6 +107,7 @@ export function ImportReviewScreen({
                         ? `Accept ${cat.name} for ${merchantLabel}`
                         : `Choose a category for ${merchantLabel}`
                     }
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                     style={[styles.chip, !row.skipped && styles.chipSelected]}
                   >
                     {cat ? <CategoryChip colorKey={cat.colorKey} /> : null}
@@ -118,6 +119,7 @@ export function ImportReviewScreen({
                     onPress={() => setPickerIndex(index)}
                     accessibilityRole="button"
                     accessibilityLabel={`Change category for ${merchantLabel}`}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                     style={styles.smallButton}
                   >
                     <Text style={styles.smallButtonLabel}>Change</Text>
@@ -130,6 +132,7 @@ export function ImportReviewScreen({
                         ? `Include ${merchantLabel} in the import`
                         : `Skip ${merchantLabel}, don't import it`
                     }
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                     style={styles.smallButton}
                   >
                     <Text style={styles.smallButtonLabel}>{row.skipped ? 'Include' : 'Skip'}</Text>

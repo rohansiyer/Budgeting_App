@@ -7,6 +7,7 @@ import { SecurityScreen } from './settings/SecurityScreen';
 import { NotificationsScreen } from './settings/NotificationsScreen';
 import { BillsScreen } from './settings/BillsScreen';
 import { SearchLedgerScreen } from './settings/SearchLedgerScreen';
+import { GoalsScreen } from './goals/GoalsScreen';
 import { AboutScreen } from './settings/AboutScreen';
 import {
   NEW_CHAPTER_CONFIRM_TITLE,
@@ -61,6 +62,7 @@ export function SettingsScreen({ onOpenSetup = noopOpenSetup }: SettingsScreenPr
         case 'notifications':
         case 'bills':
         case 'searchLedger':
+        case 'goals':
         case 'about':
           setRoute(id);
           break;
@@ -80,6 +82,8 @@ export function SettingsScreen({ onOpenSetup = noopOpenSetup }: SettingsScreenPr
       return <BillsScreen onBack={goRoot} />;
     case 'searchLedger':
       return <SearchLedgerScreen onBack={goRoot} />;
+    case 'goals':
+      return <GoalsScreen onBack={goRoot} />;
     case 'about':
       return <AboutScreen onBack={goRoot} />;
     case 'root':

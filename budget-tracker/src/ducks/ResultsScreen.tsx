@@ -122,6 +122,7 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
 }) => {
   const [naming, setNaming] = useState<Duck | null>(null);
   const [draft, setDraft] = useState('');
+  const [nameFocused, setNameFocused] = useState(false);
   const [backingFor, setBackingFor] = useState<{
     insight: InsightSentence;
     periodStart: ISODate;
@@ -186,7 +187,7 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
               <GoalSquare label="Savings" result={evaluation.goalSavingsRate} />
             </View>
 
-            <Text style={styles.outcomeCopy}>{outcomeCopy(evaluation.outcome, bigWin)}</Text>
+            <Text style={styles.outcomeCopy}>{outcomeCopy(evaluation.outcome, bigWin, evaluation.month)}</Text>
             <Text style={styles.flockLine}>
               {`Flock: ${evaluation.duckCountAfter} ${evaluation.duckCountAfter === 1 ? 'duck' : 'ducks'}`}
             </Text>
@@ -198,6 +199,7 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
                     key={insight.id}
                     onPress={() => setBackingFor({ insight, periodStart })}
                     accessibilityRole="button"
+                    accessibilityLabel={`${insight.prefix ?? ''}${insight.amountText ?? ''}${insight.suffix ? ` ${insight.suffix}` : ''}`}
                     accessibilityHint="Opens the numbers behind this insight"
                   >
                     <InsightRow
@@ -222,7 +224,7 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
         );
       })}
 
-      <Text style={styles.sectionLabel}>Your pond — tap a duck to name it</Text>
+      <Text style={styles.sectionLabel}>Your pond: tap a duck to name it</Text>
       <PondView
         ducks={flock.ducks}
         accessoryTier={flock.accessoryTier}
@@ -250,7 +252,9 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
               onChangeText={setDraft}
               placeholder="e.g. Gerald"
               placeholderTextColor={color.textMuted}
-              style={styles.input}
+              onFocus={() => setNameFocused(true)}
+              onBlur={() => setNameFocused(false)}
+              style={[styles.input, nameFocused && styles.inputFocused]}
               accessibilityLabel="Duck name"
               autoFocus
               maxLength={24}
@@ -460,6 +464,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.sm,
     paddingVertical: space.sm,
     ...typo.body,
+  },
+  // Focus ring (handoff v3 "Type and accessibility patches"): swap to the
+  // accent border on focus, matching kit Field's treatment (§3.1).
+  inputFocused: {
+    borderColor: color.accent,
   },
   modalActions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
   backingRow: {

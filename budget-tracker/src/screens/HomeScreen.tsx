@@ -20,6 +20,8 @@ import {
   monthKeyOf,
 } from '../format/dates';
 import { getInsightPort } from '../insights';
+import { projectGoalFunding } from '../projections';
+import { GoalCard } from './goals/GoalCard';
 import { GoalStrip } from './home/GoalStrip';
 import { computePacingLine, daysToPaydayPhrase } from './home/pacing.logic';
 import type { VariableEnvelopeInput } from './home/goalStatus.logic';
@@ -104,6 +106,11 @@ export function HomeScreen({
     );
 
   const [borrowFor, setBorrowFor] = useState<CategoryConfig | null>(null);
+
+  // Named goal teaser: first active goal only (v0.3 §3.10); the full list
+  // and create/remove flows live in the Goals settings subscreen.
+  const goals = store.getGoals();
+  const firstGoal = goals[0];
 
   return (
     <Screen title={greeting()} right={<DuckChipSlot
@@ -250,6 +257,16 @@ export function HomeScreen({
           />
         );
       })}
+
+      {/* Named goal teaser (v0.3 §3.10): only when a goal exists. */}
+      {firstGoal ? (
+        <GoalCard
+          goal={firstGoal}
+          progress={store.goalProgress(firstGoal.id, today)}
+          funding={projectGoalFunding(firstGoal.id, today)}
+          today={today}
+        />
+      ) : null}
 
       {/* Add expense — opens today's Daily detail (the add form lives there). */}
       <View style={styles.addRow}>

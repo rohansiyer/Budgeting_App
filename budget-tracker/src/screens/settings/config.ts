@@ -17,6 +17,7 @@ export type SettingsRouteName =
   | 'notifications'
   | 'bills'
   | 'searchLedger'
+  | 'goals'
   | 'about';
 
 /** Every id the root list can produce, including the two that don't push a
@@ -37,6 +38,7 @@ export const ROOT_SETTINGS_ITEMS: readonly RootSettingsItem[] = [
   { id: 'notifications', title: 'Notifications', subtitle: 'Bill reminders, payday, envelope warnings' },
   { id: 'bills', title: 'Bills', subtitle: 'Upcoming bills and subscriptions' },
   { id: 'searchLedger', title: 'Search ledger', subtitle: 'Find any transaction, filter by category' },
+  { id: 'goals', title: 'Goals', subtitle: 'Name a target, watch the blocks fill' },
   { id: 'newChapter', title: 'New chapter', subtitle: 'Archive this setup, keep the flock' },
   { id: 'about', title: 'About', subtitle: 'App info' },
 ];
@@ -44,7 +46,7 @@ export const ROOT_SETTINGS_ITEMS: readonly RootSettingsItem[] = [
 export const NEW_CHAPTER_CONFIRM_TITLE = 'Start a new chapter?';
 /** Archiving copy per DucksInARow_DesignDoc_v2.md §4.6 / §7. */
 export const NEW_CHAPTER_CONFIRM_MESSAGE =
-  'Start a new chapter — your history and your ducks survive. This archives your current ' +
+  'Start a new chapter: your history and your ducks survive. This archives your current ' +
   'accounts, income, and envelopes, then walks you through setting up fresh ones.';
 
 export const IMPORT_CONFIRM_TITLE = 'Replace everything?';

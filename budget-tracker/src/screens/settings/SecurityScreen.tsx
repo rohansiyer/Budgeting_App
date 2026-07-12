@@ -157,7 +157,7 @@ export function SecurityScreen({ onBack }: { onBack: () => void }) {
         <View style={styles.toggleMeta}>
           <Text style={styles.rowTitle}>App lock</Text>
           <Text style={styles.rowSub}>
-            {appLockEnabled ? 'On — PIN required to open the app.' : 'Off — anyone can open the app.'}
+            {appLockEnabled ? 'On. PIN required to open the app.' : 'Off. Anyone can open the app.'}
           </Text>
         </View>
         <Switch

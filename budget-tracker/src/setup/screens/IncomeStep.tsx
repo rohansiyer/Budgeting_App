@@ -164,7 +164,7 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
 
       {accounts.length === 0 ? (
         <Text style={[type.caption, { color: color.warn }]}>
-          Add an account first — income needs somewhere to land.
+          Add an account first, income needs somewhere to land.
         </Text>
       ) : (
         <PixelBox>

@@ -298,6 +298,7 @@ function MoneyField({
   autoFocus?: boolean;
   label?: string;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <TextInput
       value={value}
@@ -306,8 +307,10 @@ function MoneyField({
       placeholder="0.00"
       placeholderTextColor={color.textMuted}
       autoFocus={autoFocus}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       accessibilityLabel={label}
-      style={styles.input}
+      style={[styles.input, focused && styles.inputFocused]}
     />
   );
 }
@@ -353,6 +356,7 @@ function EditSheet({
 }) {
   const [amountText, setAmountText] = useState(toDecimalString(txn.amount));
   const [note, setNote] = useState(txn.note ?? '');
+  const [noteFocused, setNoteFocused] = useState(false);
   const [catId, setCatId] = useState(txn.categoryId);
   const parsed = tryParseCents(amountText);
   const isExpense = txn.kind === 'expense';
@@ -372,8 +376,10 @@ function EditSheet({
         onChangeText={setNote}
         placeholder="Note (optional)"
         placeholderTextColor={color.textMuted}
+        onFocus={() => setNoteFocused(true)}
+        onBlur={() => setNoteFocused(false)}
         accessibilityLabel="Note"
-        style={styles.input}
+        style={[styles.input, noteFocused && styles.inputFocused]}
       />
       <Row style={styles.formActions}>
         <HardButton
@@ -518,6 +524,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
     paddingVertical: space.sm + space.xs,
   },
+  // Focus ring (handoff v3 "Type and accessibility patches"): swap to the
+  // accent border on focus, matching kit Field's treatment (§3.1).
+  inputFocused: {
+    borderColor: color.accent,
+  },
   pickerWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -527,6 +538,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.xs,
+    minHeight: 48, // minimum tap target
     paddingVertical: space.xs,
     paddingHorizontal: space.sm,
     borderWidth: pixel.hairlineWidth,

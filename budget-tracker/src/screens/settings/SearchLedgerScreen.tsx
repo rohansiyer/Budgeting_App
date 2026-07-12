@@ -85,6 +85,7 @@ export function SearchLedgerScreen({ onBack }: { onBack: () => void }) {
           accessibilityRole="button"
           accessibilityState={{ selected: categoryIds.length === 0 }}
           accessibilityLabel="Show all categories"
+          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
           style={[styles.chip, categoryIds.length === 0 ? styles.chipSelected : styles.chipUnselected]}
         >
           <Text style={[styles.chipLabel, { color: categoryIds.length === 0 ? color.accent : color.textSecondary }]}>
@@ -100,6 +101,7 @@ export function SearchLedgerScreen({ onBack }: { onBack: () => void }) {
               accessibilityRole="button"
               accessibilityState={{ selected }}
               accessibilityLabel={`Filter by ${c.name}${selected ? ', selected' : ''}`}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               style={[styles.chip, selected ? styles.chipSelected : styles.chipUnselected]}
             >
               <CategoryChip colorKey={c.colorKey} />

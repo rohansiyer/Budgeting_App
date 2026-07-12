@@ -17,6 +17,7 @@ describe('ROOT_SETTINGS_ITEMS', () => {
       'notifications',
       'bills',
       'searchLedger',
+      'goals',
       'newChapter',
       'about',
     ]);
