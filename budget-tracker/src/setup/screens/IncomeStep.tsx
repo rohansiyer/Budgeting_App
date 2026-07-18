@@ -4,15 +4,25 @@
  * monthly; split bar between accounts)"). The split editor takes a ratio
  * per account and previews the actual cent split via `money.allocate`
  * (cent-conserving) rather than doing its own float division.
+ *
+ * Tapping a row loads it into the form for in-place editing (F1-1/F1-3): the
+ * primary button becomes "Save changes" and dispatches UPDATE_INCOME_SOURCE.
  */
 import React, { useMemo, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import type { Dispatch } from 'react';
 import { ChoiceRow, Field, HardButton, PixelBox, RuledList } from '../../components/kit';
-import { allocate, formatCents, MoneyError, parseDecimal } from '../../lib/money';
+import { allocate, formatCents, MoneyError, parseDecimal, toDecimalString } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import { paydaysBetween } from '../../lib/schedule';
-import { nextDraftKey, type AccountDraft, type IncomeSourceDraft, type WizardAction } from '../wizardState';
+import { todayISO } from '../../format/dates';
+import {
+  nextDraftKey,
+  splitDropWarningText,
+  type AccountDraft,
+  type IncomeSourceDraft,
+  type WizardAction,
+} from '../wizardState';
 import type { IncomeScheduleKind, IncomeSplitConfig } from '../../types/contracts';
 import { stepSubtextStyle, stepTitleStyle } from './stepTypography';
 
@@ -20,6 +30,8 @@ interface IncomeStepProps {
   accounts: AccountDraft[];
   incomeSources: IncomeSourceDraft[];
   dispatch: Dispatch<WizardAction>;
+  /** F1-5: per-source names of accounts whose removal dropped a split. */
+  splitDropNotices?: Record<string, string[]>;
 }
 
 const KIND_OPTIONS: Array<{ key: IncomeScheduleKind; label: string }> = [
@@ -29,7 +41,10 @@ const KIND_OPTIONS: Array<{ key: IncomeScheduleKind; label: string }> = [
   { key: 'monthly', label: 'Monthly' },
 ];
 
-export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProps) {
+const AMOUNT_HINT = 'Enter an amount with up to 2 decimals (e.g. 12.34)';
+
+export function IncomeStep({ accounts, incomeSources, dispatch, splitDropNotices }: IncomeStepProps) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [amountInput, setAmountInput] = useState('');
   const [kind, setKind] = useState<IncomeScheduleKind>('biweekly');
@@ -41,6 +56,44 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
   const [amountError, setAmountError] = useState<string | null>(null);
   const [anchorError, setAnchorError] = useState<string | null>(null);
   const [splitsError, setSplitsError] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setEditingKey(null);
+    setName('');
+    setAmountInput('');
+    setKind('biweekly');
+    setAnchorDate('');
+    setSemiDay1('1');
+    setSemiDay2('15');
+    setRatios({});
+    setNameError(null);
+    setAmountError(null);
+    setAnchorError(null);
+    setSplitsError(null);
+  };
+
+  const beginEdit = (s: IncomeSourceDraft) => {
+    setEditingKey(s.key);
+    setName(s.name);
+    setAmountInput(toDecimalString(s.amount));
+    setKind(s.schedule.kind);
+    setAnchorDate(s.schedule.anchorDate);
+    if (s.schedule.semimonthlyDays) {
+      setSemiDay1(String(s.schedule.semimonthlyDays[0]));
+      setSemiDay2(String(s.schedule.semimonthlyDays[1]));
+    } else {
+      setSemiDay1('1');
+      setSemiDay2('15');
+    }
+    // Splits reference account draft keys; rebuild the ratio inputs from them.
+    const nextRatios: Record<string, string> = {};
+    for (const sp of s.splits) nextRatios[sp.accountId] = String(sp.ratio);
+    setRatios(nextRatios);
+    setNameError(null);
+    setAmountError(null);
+    setAnchorError(null);
+    setSplitsError(null);
+  };
 
   const preview = useMemo(() => {
     let amount;
@@ -67,9 +120,12 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
   const nextPaydayPreview = useMemo(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDate)) return null;
     try {
-      const from = anchorDate;
+      // F1-7: preview the paydays that are still upcoming — never the anchor
+      // itself when it is already in the past.
+      const today = todayISO();
+      const from = anchorDate > today ? anchorDate : today;
       // A one-year lookahead window is enough to preview a few upcoming paydays.
-      const to = `${Number(anchorDate.slice(0, 4)) + 1}-12-31`;
+      const to = `${Number(from.slice(0, 4)) + 1}-12-31`;
       const schedule =
         kind === 'semimonthly'
           ? {
@@ -84,7 +140,7 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
     }
   }, [anchorDate, kind, semiDay1, semiDay2]);
 
-  const handleAdd = () => {
+  const handleSubmit = () => {
     setNameError(null);
     setAmountError(null);
     setAnchorError(null);
@@ -98,7 +154,8 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
     try {
       amount = parseDecimal(amountInput || '0');
     } catch (e) {
-      setAmountError(e instanceof MoneyError ? e.message : 'Enter a valid amount.');
+      // F1-8: never surface the raw MoneyError text.
+      setAmountError(e instanceof MoneyError ? AMOUNT_HINT : 'Enter a valid amount.');
       return;
     }
     if (amount <= 0) {
@@ -117,49 +174,83 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
       return;
     }
 
-    const draft: IncomeSourceDraft = {
-      key: nextDraftKey('income'),
-      name: name.trim(),
-      amount,
-      schedule:
-        kind === 'semimonthly'
-          ? { kind, anchorDate, semimonthlyDays: [Number(semiDay1), Number(semiDay2)] }
-          : { kind, anchorDate },
-      splits,
-    };
-    dispatch({ type: 'ADD_INCOME_SOURCE', draft });
-    setName('');
-    setAmountInput('');
-    setRatios({});
+    const schedule =
+      kind === 'semimonthly'
+        ? { kind, anchorDate, semimonthlyDays: [Number(semiDay1), Number(semiDay2)] as [number, number] }
+        : { kind, anchorDate };
+
+    if (editingKey) {
+      dispatch({
+        type: 'UPDATE_INCOME_SOURCE',
+        key: editingKey,
+        patch: { name: name.trim(), amount, schedule, splits },
+      });
+    } else {
+      dispatch({
+        type: 'ADD_INCOME_SOURCE',
+        draft: { key: nextDraftKey('income'), name: name.trim(), amount, schedule, splits },
+      });
+    }
+    resetForm();
   };
+
+  const isEditing = editingKey !== null;
 
   return (
     <View style={{ gap: space.md }}>
       <Text style={stepTitleStyle}>Where does your money come from?</Text>
       <Text style={stepSubtextStyle}>
-        Add each paycheck or recurring deposit and how it splits across your accounts.
+        Add each paycheck or recurring deposit and how it splits across your accounts. Tap a row to
+        edit it.
       </Text>
 
       <RuledList
         sectionLabel="Income sources"
         data={incomeSources}
         keyExtractor={(s) => s.key}
-        renderRow={(s) => (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <View>
-              <Text style={[type.body, { color: color.text }]}>{s.name}</Text>
-              <Text style={[type.caption, { color: color.textMuted }]}>
-                {s.schedule.kind} · {formatCents(s.amount)}
-              </Text>
+        renderRow={(s) => {
+          const warning = splitDropWarningText(splitDropNotices?.[s.key]);
+          return (
+            <View style={{ gap: space.xs }}>
+              <Pressable
+                onPress={() => beginEdit(s)}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit income source ${s.name}`}
+                accessibilityState={{ selected: s.key === editingKey }}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <View>
+                  <Text style={[type.body, { color: color.text }]}>{s.name}</Text>
+                  <Text style={[type.caption, { color: color.textMuted }]}>
+                    {s.schedule.kind} · {formatCents(s.amount)}
+                  </Text>
+                </View>
+                <HardButton
+                  label="Remove"
+                  variant="ghost"
+                  accessibilityLabel={`Remove income source ${s.name}`}
+                  onPress={() => {
+                    if (s.key === editingKey) resetForm();
+                    dispatch({ type: 'REMOVE_INCOME_SOURCE', key: s.key });
+                  }}
+                />
+              </Pressable>
+              {warning ? (
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}
+                >
+                  <Text style={[type.caption, { color: color.warn, flexShrink: 1 }]}>{warning}</Text>
+                  <HardButton
+                    label="Got it"
+                    variant="ghost"
+                    accessibilityLabel={`Dismiss split warning for ${s.name}`}
+                    onPress={() => dispatch({ type: 'ACK_SPLIT_DROP', key: s.key })}
+                  />
+                </View>
+              ) : null}
             </View>
-            <HardButton
-              label="Remove"
-              variant="ghost"
-              accessibilityLabel={`Remove income source ${s.name}`}
-              onPress={() => dispatch({ type: 'REMOVE_INCOME_SOURCE', key: s.key })}
-            />
-          </View>
-        )}
+          );
+        }}
       />
 
       {accounts.length === 0 ? (
@@ -169,6 +260,9 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
       ) : (
         <PixelBox>
           <View style={{ gap: space.sm }}>
+            {isEditing ? (
+              <Text style={[type.sectionLabel, { color: color.accent }]}>Editing income source</Text>
+            ) : null}
             <Field
               label="Source name"
               placeholder="e.g. Day job"
@@ -262,11 +356,21 @@ export function IncomeStep({ accounts, incomeSources, dispatch }: IncomeStepProp
               </View>
             ) : null}
 
-            <HardButton
-              label="Add income source"
-              accessibilityLabel="Add income source"
-              onPress={handleAdd}
-            />
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <HardButton
+                label={isEditing ? 'Save changes' : 'Add income source'}
+                accessibilityLabel={isEditing ? 'Save income source changes' : 'Add income source'}
+                onPress={handleSubmit}
+              />
+              {isEditing ? (
+                <HardButton
+                  label="Cancel"
+                  variant="ghost"
+                  accessibilityLabel="Cancel editing income source"
+                  onPress={resetForm}
+                />
+              ) : null}
+            </View>
           </View>
         </PixelBox>
       )}

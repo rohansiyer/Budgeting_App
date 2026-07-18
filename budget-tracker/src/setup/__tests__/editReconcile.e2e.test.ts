@@ -11,8 +11,15 @@ import { initDatabase, resetDatabaseForTests } from '../../db/client';
 import { useBudgetStore } from '../../store';
 import { createStoreSetupWriter } from '../storeSetupWriter';
 import { saveSetup } from '../save';
-import { prefilledWizardState, nextDraftKey, validateStep, type WizardState } from '../wizardState';
+import {
+  prefilledWizardState,
+  nextDraftKey,
+  validateStep,
+  wizardReducer,
+  type WizardState,
+} from '../wizardState';
 import { cents } from '../../lib/money';
+import type { Chapter } from '../../types/contracts';
 
 const store = () => useBudgetStore.getState();
 
@@ -150,5 +157,152 @@ describe('edit setup reconciles in place (verifier finding #1)', () => {
     // Untouched rows keep their identity too.
     const savingsAfter = accountsAfter.find((a) => a.name === 'Savings')!;
     expect(accountsBefore.some((a) => a.id === savingsAfter.id)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.3 — real deletion on save (F1-1/F1-2/F1-3) against the REAL store.
+// ---------------------------------------------------------------------------
+
+async function bootChapter(name = 'Chapter 1') {
+  resetDatabaseForTests();
+  await initDatabase();
+  await store().init();
+  return store().createChapter({ name, startedAt: '2026-01-01' });
+}
+
+/** Seed a minimal valid config: 2 accounts + Fun (enveloped) + Rent (fixed). */
+async function seedBase(writer: ReturnType<typeof createStoreSetupWriter>, chapter: Chapter) {
+  const state: WizardState = {
+    step: 'review',
+    chapterName: chapter.name,
+    accounts: [
+      { key: nextDraftKey('acct'), name: 'Checking', institution: null, kind: 'spending', startingBalance: cents(0) },
+      { key: nextDraftKey('acct'), name: 'Savings', institution: null, kind: 'savings', startingBalance: cents(0) },
+    ],
+    incomeSources: [],
+    categories: [
+      { key: nextDraftKey('cat'), name: 'Fun', colorKey: 'amber', fixed: false, envelope: { period: 'weekly', budget: cents(4000), carryoverDefault: 'ask' } },
+      { key: nextDraftKey('cat'), name: 'Rent', colorKey: 'violet', fixed: true, envelope: null },
+    ],
+  };
+  await saveSetup(writer, state, chapter);
+  return state;
+}
+
+describe('v0.3 wizard real deletion (F1-1/F1-2/F1-3)', () => {
+  it('removing a prefilled row archives it — it no longer appears on the next prefill', async () => {
+    const chapter = await bootChapter();
+    const writer = createStoreSetupWriter();
+    await seedBase(writer, chapter);
+
+    // Prefill, drop the "Savings" account (Checking remains as the last active).
+    const prefilled = prefilledWizardState(chapter.name, {
+      accounts: await writer.listAccounts(),
+      incomeSources: await writer.listIncomeSources(),
+      categories: await writer.listCategories(),
+    });
+    const savingsDraft = prefilled.accounts.find((a) => a.name === 'Savings')!;
+    const edited = { ...wizardReducer(prefilled, { type: 'REMOVE_ACCOUNT', key: savingsDraft.key }), step: 'review' as const };
+
+    await saveSetup(writer, edited, chapter);
+
+    // Store's default (active-only) list no longer has Savings.
+    expect(store().listAccounts().map((a) => a.name)).toEqual(['Checking']);
+    // Crucially, a fresh prefill (as SetupRoute does) does NOT resurrect it.
+    const reprefilled = prefilledWizardState(chapter.name, {
+      accounts: await writer.listAccounts(),
+      incomeSources: await writer.listIncomeSources(),
+      categories: await writer.listCategories(),
+    });
+    expect(reprefilled.accounts.map((a) => a.name)).toEqual(['Checking']);
+    // But history/id-joins still resolve the archived row.
+    expect(store().listAccounts({ includeArchived: true }).some((a) => a.name === 'Savings')).toBe(true);
+  });
+
+  it('remove "Fun" + re-add "Fun" with a new budget saves clean, no duplicate, no uniqueness trip', async () => {
+    const chapter = await bootChapter();
+    const writer = createStoreSetupWriter();
+    await seedBase(writer, chapter);
+
+    const prefilled = prefilledWizardState(chapter.name, {
+      accounts: await writer.listAccounts(),
+      incomeSources: await writer.listIncomeSources(),
+      categories: await writer.listCategories(),
+    });
+    const funDraft = prefilled.categories.find((c) => c.name === 'Fun')!;
+    let edited = wizardReducer(prefilled, { type: 'REMOVE_CATEGORY', key: funDraft.key });
+    edited = wizardReducer(edited, {
+      type: 'ADD_CATEGORY',
+      draft: { key: nextDraftKey('cat'), name: 'Fun', colorKey: 'mint', fixed: false, envelope: { period: 'weekly', budget: cents(12000), carryoverDefault: 'roll' } },
+    });
+    edited = { ...edited, step: 'review' };
+
+    // The remove happens before the create at save time, so uniqueness holds.
+    expect(validateStep(edited, 'review').valid).toBe(true);
+    await saveSetup(writer, edited, chapter);
+
+    const cats = store().listCategories();
+    expect(cats.filter((c) => c.name === 'Fun')).toHaveLength(1);
+    const fun = cats.find((c) => c.name === 'Fun')!;
+    expect(fun.envelope).toEqual({ period: 'weekly', budget: 12000, carryoverDefault: 'roll' });
+    expect(fun.id).not.toBe(funDraft.existingId); // the original was archived, this is fresh
+  });
+
+  it('tap-to-edit (UPDATE_CATEGORY) re-budgets in place — row count unchanged, same id', async () => {
+    const chapter = await bootChapter();
+    const writer = createStoreSetupWriter();
+    await seedBase(writer, chapter);
+
+    const prefilled = prefilledWizardState(chapter.name, {
+      accounts: await writer.listAccounts(),
+      incomeSources: await writer.listIncomeSources(),
+      categories: await writer.listCategories(),
+    });
+    const funDraft = prefilled.categories.find((c) => c.name === 'Fun')!;
+    // This is exactly what the tap-to-edit UI dispatches.
+    let edited = wizardReducer(prefilled, {
+      type: 'UPDATE_CATEGORY',
+      key: funDraft.key,
+      patch: { name: 'Fun Money', envelope: { period: 'weekly', budget: cents(7000), carryoverDefault: 'sweep' } },
+    });
+    edited = { ...edited, step: 'review' };
+
+    await saveSetup(writer, edited, chapter);
+
+    const cats = store().listCategories();
+    expect(cats).toHaveLength(2); // no new row
+    const fun = cats.find((c) => c.id === funDraft.existingId)!;
+    expect(fun.name).toBe('Fun Money');
+    expect(fun.envelope).toEqual({ period: 'weekly', budget: 7000, carryoverDefault: 'sweep' });
+  });
+
+  it('recovers a pre-corrupted store: two same-name categories are fixable via Remove', async () => {
+    const chapter = await bootChapter();
+    // Corrupt the store directly (as a pre-v0.3 build could): two "Fun" rows.
+    await store().createAccount({ name: 'Checking', institution: null, kind: 'spending', startingBalance: cents(0), openedOn: '2026-01-01' });
+    await store().createCategory({ name: 'Fun', colorKey: 'amber', fixed: false, envelope: { period: 'weekly', budget: cents(4000), carryoverDefault: 'ask' } });
+    await store().createCategory({ name: 'Fun', colorKey: 'mint', fixed: false, envelope: { period: 'weekly', budget: cents(5000), carryoverDefault: 'roll' } });
+
+    const writer = createStoreSetupWriter();
+    const prefilled = prefilledWizardState(chapter.name, {
+      accounts: await writer.listAccounts(),
+      incomeSources: await writer.listIncomeSources(),
+      categories: await writer.listCategories(),
+    });
+    // Both duplicates render, so review validation is blocked initially...
+    expect(prefilled.categories.filter((c) => c.name === 'Fun')).toHaveLength(2);
+    expect(validateStep(prefilled, 'review').valid).toBe(false);
+
+    // ...but the user can Remove one dup BEFORE that block matters.
+    const firstFun = prefilled.categories.find((c) => c.name === 'Fun')!;
+    let fixed = wizardReducer(prefilled, { type: 'REMOVE_CATEGORY', key: firstFun.key });
+    fixed = { ...fixed, step: 'review' };
+    expect(validateStep(fixed, 'review').valid).toBe(true);
+
+    await saveSetup(writer, fixed, chapter);
+
+    // One Fun remains active; the corrupt duplicate is archived.
+    expect(store().listCategories().filter((c) => c.name === 'Fun')).toHaveLength(1);
   });
 });

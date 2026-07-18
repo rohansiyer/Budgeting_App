@@ -1,8 +1,10 @@
 import { cents } from '../../lib/money';
 import {
   canGoNext,
+  duplicateNameError,
   initialWizardState,
   nextDraftKey,
+  splitDropWarningText,
   validateAccountsStep,
   validateEnvelopesStep,
   validateIncomeStep,
@@ -262,6 +264,94 @@ describe('validateEnvelopesStep', () => {
     expect(validateEnvelopesStep({ ...initialWizardState(), categories: [fixed] }).valid).toBe(
       true,
     );
+  });
+});
+
+describe('duplicateNameError (F1-6 inline dup at Add/Save)', () => {
+  it('flags a case-insensitive, trimmed clash against other rows', () => {
+    expect(duplicateNameError('Fun', ['fun', 'Rent'], 'category')).not.toBeNull();
+    expect(duplicateNameError('  FUN ', ['Fun'], 'category')).not.toBeNull();
+  });
+
+  it('passes a unique name and ignores empties (handled elsewhere)', () => {
+    expect(duplicateNameError('Groceries', ['Fun', 'Rent'], 'category')).toBeNull();
+    expect(duplicateNameError('   ', ['Fun'])).toBeNull();
+  });
+
+  it('uses the noun in the message', () => {
+    expect(duplicateNameError('Checking', ['checking'], 'account')).toContain('account');
+    expect(duplicateNameError('Fun', ['fun'], 'category')).toContain('category');
+  });
+});
+
+describe('splitDropWarningText + REMOVE_ACCOUNT notices (F1-5)', () => {
+  it('records a per-source notice when an account removal drops a split', () => {
+    const acc = account({ name: 'Joint Checking' });
+    const source: IncomeSourceDraft = {
+      key: nextDraftKey('income'),
+      name: 'Paycheck',
+      amount: cents(100000),
+      schedule: { kind: 'weekly', anchorDate: '2024-01-03' },
+      splits: [{ accountId: acc.key, ratio: 1 }],
+    };
+    let state: WizardState = initialWizardState();
+    state = wizardReducer(state, { type: 'ADD_ACCOUNT', draft: acc });
+    state = wizardReducer(state, { type: 'ADD_INCOME_SOURCE', draft: source });
+    state = wizardReducer(state, { type: 'REMOVE_ACCOUNT', key: acc.key });
+
+    const names = state.splitDropNotices?.[source.key];
+    expect(names).toEqual(['Joint Checking']);
+    expect(splitDropWarningText(names)).toContain('Joint Checking');
+  });
+
+  it('does not record a notice for sources that never referenced the account', () => {
+    const kept = account({ name: 'Keep' });
+    const gone = account({ name: 'Gone' });
+    const source: IncomeSourceDraft = {
+      key: nextDraftKey('income'),
+      name: 'Paycheck',
+      amount: cents(100000),
+      schedule: { kind: 'weekly', anchorDate: '2024-01-03' },
+      splits: [{ accountId: kept.key, ratio: 1 }],
+    };
+    let state: WizardState = initialWizardState();
+    state = wizardReducer(state, { type: 'ADD_ACCOUNT', draft: kept });
+    state = wizardReducer(state, { type: 'ADD_ACCOUNT', draft: gone });
+    state = wizardReducer(state, { type: 'ADD_INCOME_SOURCE', draft: source });
+    state = wizardReducer(state, { type: 'REMOVE_ACCOUNT', key: gone.key });
+
+    expect(state.splitDropNotices?.[source.key]).toBeUndefined();
+  });
+
+  it('clears the notice once the source is touched (splits reset) or acknowledged', () => {
+    const acc = account({ name: 'Old' });
+    const source: IncomeSourceDraft = {
+      key: nextDraftKey('income'),
+      name: 'Paycheck',
+      amount: cents(100000),
+      schedule: { kind: 'weekly', anchorDate: '2024-01-03' },
+      splits: [{ accountId: acc.key, ratio: 1 }],
+    };
+    let state: WizardState = initialWizardState();
+    state = wizardReducer(state, { type: 'ADD_ACCOUNT', draft: acc });
+    state = wizardReducer(state, { type: 'ADD_INCOME_SOURCE', draft: source });
+    state = wizardReducer(state, { type: 'REMOVE_ACCOUNT', key: acc.key });
+    expect(state.splitDropNotices?.[source.key]).toBeDefined();
+
+    const touched = wizardReducer(state, {
+      type: 'SET_INCOME_SPLITS',
+      key: source.key,
+      splits: [],
+    });
+    expect(touched.splitDropNotices?.[source.key]).toBeUndefined();
+
+    const acked = wizardReducer(state, { type: 'ACK_SPLIT_DROP', key: source.key });
+    expect(acked.splitDropNotices?.[source.key]).toBeUndefined();
+  });
+
+  it('splitDropWarningText returns null for no dropped names', () => {
+    expect(splitDropWarningText(undefined)).toBeNull();
+    expect(splitDropWarningText([])).toBeNull();
   });
 });
 

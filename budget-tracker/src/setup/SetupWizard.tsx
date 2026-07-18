@@ -106,7 +106,12 @@ export function SetupWizard({ writer, chapter, onComplete, initialChapterName, i
         <AccountsStep accounts={state.accounts} dispatch={dispatch} />
       ) : null}
       {state.step === 'income' ? (
-        <IncomeStep accounts={state.accounts} incomeSources={state.incomeSources} dispatch={dispatch} />
+        <IncomeStep
+          accounts={state.accounts}
+          incomeSources={state.incomeSources}
+          dispatch={dispatch}
+          splitDropNotices={state.splitDropNotices}
+        />
       ) : null}
       {state.step === 'envelopes' ? (
         <EnvelopesStep categories={state.categories} dispatch={dispatch} />

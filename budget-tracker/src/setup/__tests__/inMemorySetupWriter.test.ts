@@ -104,6 +104,104 @@ describe('createInMemorySetupWriter', () => {
     expect(await writer.listCategories()).toEqual([category]);
   });
 
+  it('removeAccount archives the account and hides it from listAccounts', async () => {
+    const writer = createInMemorySetupWriter();
+    const a = await writer.createAccount({
+      name: 'Checking',
+      institution: null,
+      kind: 'spending',
+      startingBalance: cents(0),
+    });
+    await writer.createAccount({
+      name: 'Savings',
+      institution: null,
+      kind: 'savings',
+      startingBalance: cents(0),
+    });
+    await writer.removeAccount(a.id);
+    const remaining = await writer.listAccounts();
+    expect(remaining.map((x) => x.id)).not.toContain(a.id);
+    expect(remaining).toHaveLength(1);
+  });
+
+  it('removeAccount refuses the last active account and rejects re-archiving', async () => {
+    const writer = createInMemorySetupWriter();
+    const only = await writer.createAccount({
+      name: 'Solo',
+      institution: null,
+      kind: 'spending',
+      startingBalance: cents(0),
+    });
+    await expect(writer.removeAccount(only.id)).rejects.toThrow(/last active account/);
+
+    const second = await writer.createAccount({
+      name: 'Second',
+      institution: null,
+      kind: 'savings',
+      startingBalance: cents(0),
+    });
+    await writer.removeAccount(second.id);
+    await expect(writer.removeAccount(second.id)).rejects.toThrow(/already archived/);
+    await expect(writer.removeAccount('nope')).rejects.toThrow(/unknown/);
+  });
+
+  it('removeAccount scrubs income splits that referenced it', async () => {
+    const writer = createInMemorySetupWriter();
+    const checking = await writer.createAccount({
+      name: 'Checking',
+      institution: null,
+      kind: 'spending',
+      startingBalance: cents(0),
+    });
+    const savings = await writer.createAccount({
+      name: 'Savings',
+      institution: null,
+      kind: 'savings',
+      startingBalance: cents(0),
+    });
+    await writer.createIncomeSource({
+      name: 'Job',
+      amount: cents(100000),
+      schedule: { kind: 'weekly', anchorDate: '2026-01-02' },
+      splits: [
+        { accountId: checking.id, ratio: 0.5 },
+        { accountId: savings.id, ratio: 0.5 },
+      ],
+    });
+    await writer.removeAccount(savings.id);
+    const [source] = await writer.listIncomeSources();
+    expect(source.splits.map((s) => s.accountId)).toEqual([checking.id]);
+  });
+
+  it('removeCategory / removeIncomeSource archive and hide from their lists', async () => {
+    const writer = createInMemorySetupWriter();
+    const category = await writer.createCategory({
+      name: 'Fun',
+      colorKey: 'amber',
+      fixed: false,
+      envelope: { period: 'weekly', budget: cents(4000), carryoverDefault: 'ask' },
+    });
+    await writer.removeCategory(category.id);
+    expect(await writer.listCategories()).toHaveLength(0);
+    await expect(writer.removeCategory(category.id)).rejects.toThrow(/already archived/);
+
+    const account = await writer.createAccount({
+      name: 'Checking',
+      institution: null,
+      kind: 'spending',
+      startingBalance: cents(0),
+    });
+    const source = await writer.createIncomeSource({
+      name: 'Job',
+      amount: cents(100000),
+      schedule: { kind: 'weekly', anchorDate: '2026-01-02' },
+      splits: [{ accountId: account.id, ratio: 1 }],
+    });
+    await writer.removeIncomeSource(source.id);
+    expect(await writer.listIncomeSources()).toHaveLength(0);
+    await expect(writer.removeIncomeSource(source.id)).rejects.toThrow(/already archived/);
+  });
+
   it('generates unique ids across many creates', async () => {
     const writer = createInMemorySetupWriter();
     const ids = new Set<string>();

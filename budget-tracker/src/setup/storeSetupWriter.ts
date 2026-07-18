@@ -49,5 +49,10 @@ export function createStoreSetupWriter(): SetupWriter {
       if (Object.keys(rest).length > 0) await store().updateCategory(categoryId, rest);
       if (envelope !== undefined) await store().updateEnvelope(categoryId, envelope);
     },
+
+    // v0.3 real delete: thin delegates to the store's archival primitives.
+    removeAccount: (accountId) => store().removeAccount(accountId),
+    removeCategory: (categoryId) => store().removeCategory(categoryId),
+    removeIncomeSource: (sourceId) => store().removeIncomeSource(sourceId),
   };
 }

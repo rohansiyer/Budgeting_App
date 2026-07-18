@@ -33,6 +33,11 @@ export function createInMemorySetupWriter(): SetupWriter {
   let accounts: AccountConfig[] = [];
   let incomeSources: IncomeSourceConfig[] = [];
   let categories: CategoryConfig[] = [];
+  // v0.3 archival: rows are retained (history/id-joins still resolve) but
+  // excluded from the default list reads, mirroring the real store.
+  const archivedAccounts = new Set<string>();
+  const archivedIncomeSources = new Set<string>();
+  const archivedCategories = new Set<string>();
 
   return {
     async getActiveChapter() {
@@ -66,7 +71,7 @@ export function createInMemorySetupWriter(): SetupWriter {
     },
 
     async listAccounts() {
-      return accounts.slice();
+      return accounts.filter((a) => !archivedAccounts.has(a.id));
     },
 
     async createAccount(input: AccountDraftInput) {
@@ -89,7 +94,7 @@ export function createInMemorySetupWriter(): SetupWriter {
     },
 
     async listIncomeSources() {
-      return incomeSources.slice();
+      return incomeSources.filter((s) => !archivedIncomeSources.has(s.id));
     },
 
     async createIncomeSource(input: IncomeSourceDraftInput) {
@@ -110,7 +115,7 @@ export function createInMemorySetupWriter(): SetupWriter {
     },
 
     async listCategories() {
-      return categories.slice();
+      return categories.filter((c) => !archivedCategories.has(c.id));
     },
 
     async createCategory(input: CategoryDraftInput) {
@@ -151,6 +156,42 @@ export function createInMemorySetupWriter(): SetupWriter {
       // Undefined cadence preserves the stored value (edit-reconcile).
       if (patch.cadence !== undefined) category.cadence = patch.cadence;
       if (patch.envelope !== undefined) category.envelope = patch.envelope;
+    },
+
+    // --- removal (v0.3): archive; mirror the store's semantics ---------------
+    async removeAccount(accountId) {
+      const account = accounts.find((a) => a.id === accountId);
+      if (!account) throw new Error(`removeAccount: unknown account "${accountId}"`);
+      if (archivedAccounts.has(accountId)) {
+        throw new Error(`removeAccount: account "${accountId}" is already archived`);
+      }
+      const activeCount = accounts.filter((a) => !archivedAccounts.has(a.id)).length;
+      if (activeCount <= 1) {
+        throw new Error('removeAccount: cannot archive the last active account');
+      }
+      archivedAccounts.add(accountId);
+      // Same as the store: drop this account's income_splits so an orphaned
+      // split can't misroute money.
+      for (const source of incomeSources) {
+        source.splits = source.splits.filter((sp) => sp.accountId !== accountId);
+      }
+    },
+    async removeCategory(categoryId) {
+      const category = categories.find((c) => c.id === categoryId);
+      if (!category) throw new Error(`removeCategory: unknown category "${categoryId}"`);
+      if (archivedCategories.has(categoryId)) {
+        throw new Error(`removeCategory: category "${categoryId}" is already archived`);
+      }
+      archivedCategories.add(categoryId);
+    },
+    async removeIncomeSource(sourceId) {
+      const source = incomeSources.find((s) => s.id === sourceId);
+      if (!source) throw new Error(`removeIncomeSource: unknown income source "${sourceId}"`);
+      if (archivedIncomeSources.has(sourceId)) {
+        throw new Error(`removeIncomeSource: income source "${sourceId}" is already archived`);
+      }
+      // Splits retained inert (historical income rows keep their split).
+      archivedIncomeSources.add(sourceId);
     },
   };
 }

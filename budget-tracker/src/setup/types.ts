@@ -80,4 +80,15 @@ export interface SetupWriter {
   updateAccount(accountId: string, patch: Partial<AccountDraftInput>): Promise<void>;
   updateIncomeSource(sourceId: string, patch: Partial<IncomeSourceDraftInput>): Promise<void>;
   updateCategory(categoryId: string, patch: Partial<CategoryDraftInput & { envelope: EnvelopeConfig | null }>): Promise<void>;
+
+  // --- removal (v0.3): the wizard's real delete (soft-archival) -------------
+  // A row dropped from the wizard in edit mode is archived in the store on
+  // Save (see save.ts). Archived rows never resurface on the next prefill,
+  // which is what breaks the F1-2 duplicate-name lockout at the root.
+  /** Archive an account. Throws on unknown/already-archived, or the last active account. */
+  removeAccount(accountId: string): Promise<void>;
+  /** Archive a category. Throws on unknown/already-archived. */
+  removeCategory(categoryId: string): Promise<void>;
+  /** Archive an income source. Throws on unknown/already-archived. */
+  removeIncomeSource(sourceId: string): Promise<void>;
 }
