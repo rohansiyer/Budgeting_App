@@ -181,7 +181,9 @@ export function envelopeLedger(
   periodStartISO: ISODate,
 ): EnvelopeLedger {
   const store = useBudgetStore.getState();
-  const cat = store.listCategories().find((c) => c.id === categoryId);
+  // includeArchived: a ledger is a by-id history read and must resolve an
+  // archived category's cadence (else it falls back to 'weekly' and mis-spans).
+  const cat = store.listCategories({ includeArchived: true }).find((c) => c.id === categoryId);
   const cadence: CadenceType = cat?.cadence ?? 'weekly';
   const carryover = (store as unknown as { _carryover: CarryoverCacheRow[] })._carryover;
 

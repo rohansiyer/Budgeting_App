@@ -97,7 +97,9 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
       // Wide, safe window: from the chapter's start through today. Chapters
       // never carry future-dated transactions in normal use.
       const transactions = store.getTransactions({ from: chapter.startedAt, to });
-      const categories = store.listCategories();
+      // includeArchived: the CSV spans the whole chapter and its category-name
+      // column must resolve archived categories' past rows, not blank them.
+      const categories = store.listCategories({ includeArchived: true });
       const result = await exportTransactionsCsv(transactions, categories);
       setFeedback({
         kind: 'success',

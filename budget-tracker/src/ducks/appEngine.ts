@@ -43,7 +43,10 @@ export function getDuckEngine(): DuckEngineImpl {
       store: useBudgetStore.getState().duckPersistence,
       getActiveChapter: () => s().getActiveChapter(),
       generateId,
-      categoryName: (id) => s().listCategories().find((c) => c.id === id)?.name ?? id,
+      // includeArchived: the duck engine evaluates history, so an archived
+      // category must still resolve its name for past-month verdicts.
+      categoryName: (id) =>
+        s().listCategories({ includeArchived: true }).find((c) => c.id === id)?.name ?? id,
     });
   }
   return engine;

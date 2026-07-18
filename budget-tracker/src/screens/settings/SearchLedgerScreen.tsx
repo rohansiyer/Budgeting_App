@@ -47,7 +47,14 @@ export function SearchLedgerScreen({ onBack }: { onBack: () => void }) {
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
 
   const categories = store.listCategories();
-  const catById = useMemo(() => new Map(categories.map((c) => [c.id, c] as const)), [categories]);
+  // Name join spans the whole-chapter ledger (which can include an archived
+  // category's past rows), so it must include archived; the filter chips below
+  // stay active-only.
+  const allCategories = store.listCategories({ includeArchived: true });
+  const catById = useMemo(
+    () => new Map(allCategories.map((c) => [c.id, c] as const)),
+    [allCategories],
+  );
 
   const chapter = store.getActiveChapter();
   // Wide, safe window: from the chapter's start through today (same window
