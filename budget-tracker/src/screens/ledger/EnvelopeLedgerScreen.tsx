@@ -7,7 +7,7 @@
  * a small caption tag ("borrowed from next week" style labels) so they read
  * distinctly from ordinary spend.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 import * as tokens from '../../theme/tokens';
 import { formatCents } from '../../lib/money';
@@ -17,7 +17,9 @@ import { DuckSprite } from '../../ducks/DuckSprite';
 import { useStore } from '../../providers/StoreProvider';
 import { envelopeLedger } from '../../ledger';
 import type { EnvelopeLedgerRow, EnvelopeLedgerRowKind } from '../../ledger';
-import { todayISO, weekStartOf, shortDate } from '../../format/dates';
+import { todayISO, shortDate } from '../../format/dates';
+import { periodStartFor, shiftPeriod, canGoToNextPeriod, periodLabel } from './EnvelopeLedgerScreen.logic';
+import type { CadenceType, ISODate } from '../../types/contracts';
 
 const { color, space } = tokens;
 const typo = tokens.type;
@@ -48,9 +50,25 @@ interface KeyedRow extends EnvelopeLedgerRow {
 
 export function EnvelopeLedgerScreen({ categoryId, onClose }: EnvelopeLedgerScreenProps) {
   const store = useStore();
-  const cat = store.listCategories().find((c) => c.id === categoryId);
-  const period = weekStartOf(todayISO());
-  const ledger = envelopeLedger(categoryId, period);
+  // includeArchived: this is an id->name join on a history screen — an
+  // archived category's past ledger must still resolve its name/color, not
+  // silently fall back to "Envelope" (F1-2's archival filtering map).
+  const cat = store.listCategories({ includeArchived: true }).find((c) => c.id === categoryId);
+  const cadence: CadenceType = cat?.cadence ?? 'weekly';
+  const today = todayISO();
+
+  // F3-4: prior/next period chevrons. Defaults to the current period; ±7
+  // days for weekly cadence, ±1 calendar month for monthly, clamped so
+  // "Next" never looks ahead of the period containing today.
+  const [viewedPeriodStart, setViewedPeriodStart] = useState<ISODate>(() =>
+    periodStartFor(today, cadence),
+  );
+  const canNext = canGoToNextPeriod(viewedPeriodStart, cadence, today);
+  const goPrev = () => setViewedPeriodStart((p) => shiftPeriod(p, cadence, -1));
+  const goNext = () =>
+    setViewedPeriodStart((p) => (canGoToNextPeriod(p, cadence, today) ? shiftPeriod(p, cadence, 1) : p));
+
+  const ledger = envelopeLedger(categoryId, viewedPeriodStart);
   const rows: KeyedRow[] = ledger.rows.map((r, i) => ({ ...r, key: `${r.dateISO}_${i}` }));
 
   return (
@@ -65,6 +83,25 @@ export function EnvelopeLedgerScreen({ categoryId, onClose }: EnvelopeLedgerScre
         />
       }
     >
+      <Row style={styles.periodNav}>
+        <HardButton
+          label="< Prev"
+          variant="ghost"
+          onPress={goPrev}
+          accessibilityLabel={cadence === 'monthly' ? 'Previous month' : 'Previous week'}
+        />
+        <Text style={styles.periodLabel} accessibilityRole="header">
+          {periodLabel(viewedPeriodStart, cadence)}
+        </Text>
+        <HardButton
+          label="Next >"
+          variant="ghost"
+          disabled={!canNext}
+          onPress={goNext}
+          accessibilityLabel={cadence === 'monthly' ? 'Next month' : 'Next week'}
+        />
+      </Row>
+
       {cat ? (
         <PixelBox style={styles.header}>
           <Row>
@@ -130,6 +167,18 @@ function LedgerRow({ row }: { row: EnvelopeLedgerRow }) {
 }
 
 const styles = StyleSheet.create({
+  periodNav: {
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: space.sm,
+  },
+  periodLabel: {
+    flex: 1,
+    textAlign: 'center',
+    color: color.text,
+    fontSize: typo.body.fontSize,
+    fontWeight: typo.title.fontWeight,
+  },
   header: {
     marginBottom: space.md,
   },

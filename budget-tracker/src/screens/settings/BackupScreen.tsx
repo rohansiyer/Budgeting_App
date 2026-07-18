@@ -53,7 +53,12 @@ export function BackupScreen({ onBack }: { onBack: () => void }) {
       const result = await exportBackup(port);
       await AsyncStorage.setItem(LAST_BACKUP_EXPORT_KEY, result.file.exportedAt);
       setLastExportIso(result.file.exportedAt);
-      setFeedback({ kind: 'success', text: 'Backup exported and ready to share.' });
+      setFeedback({
+        kind: 'success',
+        text: result.shared
+          ? 'Backup exported and ready to share.'
+          : `Backup saved. Sharing isn't available here; the file is saved at ${result.uri}`,
+      });
     } catch (e) {
       setFeedback({ kind: 'error', text: `Export failed: ${(e as Error).message}` });
     } finally {

@@ -126,29 +126,56 @@ describe('filterLedger — sort', () => {
   });
 });
 
-describe('filterLedger — footer aggregate', () => {
-  it('counts and sums exactly the matched set (cent-exact)', () => {
+describe('filterLedger — footer aggregate (F5-6: sign-aware net)', () => {
+  it('counts and nets exactly the matched set of expenses (cent-exact, negative)', () => {
     const rows = [
-      row({ id: 'a', amount: cents(460) }),
-      row({ id: 'b', amount: cents(625) }),
-      row({ id: 'c', amount: cents(1799), categoryId: 'other' }),
+      row({ id: 'a', amount: cents(460), kind: 'expense' }),
+      row({ id: 'b', amount: cents(625), kind: 'expense' }),
+      row({ id: 'c', amount: cents(1799), categoryId: 'other', kind: 'expense' }),
     ];
     const result = filterLedger(rows, { query: '', categoryIds: ['food'] });
-    expect(result.footer).toEqual({ count: 2, totalCents: cents(1085) });
+    expect(result.footer).toEqual({ count: 2, netCents: cents(-1085) });
+  });
+
+  it('income counts positive, expense counts negative, in the same net', () => {
+    const rows = [
+      row({ id: 'a', amount: cents(200000), kind: 'income', categoryId: '' }),
+      row({ id: 'b', amount: cents(45916), kind: 'expense' }),
+    ];
+    const result = filterLedger(rows, { query: '', categoryIds: [] });
+    expect(result.footer).toEqual({ count: 2, netCents: cents(200000 - 45916) });
+  });
+
+  it('transfer_in counts positive, transfer_out counts negative', () => {
+    const rows = [
+      row({ id: 'a', amount: cents(5000), kind: 'transfer_in', categoryId: '' }),
+      row({ id: 'b', amount: cents(5000), kind: 'transfer_out', categoryId: '' }),
+    ];
+    const result = filterLedger(rows, { query: '', categoryIds: [] });
+    expect(result.footer).toEqual({ count: 2, netCents: cents(0) });
+  });
+
+  it('a net that goes negative overall reports a negative netCents (not clamped or absolute)', () => {
+    const rows = [
+      row({ id: 'a', amount: cents(50000), kind: 'expense' }),
+      row({ id: 'b', amount: cents(10000), kind: 'income', categoryId: '' }),
+    ];
+    const result = filterLedger(rows, { query: '', categoryIds: [] });
+    expect(result.footer.netCents).toBe(cents(-40000));
   });
 
   it('footer reflects the FULL matched set even when the render list is truncated', () => {
     const rows = Array.from({ length: MAX_RENDER_ROWS + 5 }, (_, i) =>
-      row({ id: `t${i}`, date: '2026-07-01', amount: cents(100) }),
+      row({ id: `t${i}`, date: '2026-07-01', amount: cents(100), kind: 'expense' }),
     );
     const result = filterLedger(rows, { query: '', categoryIds: [] });
     expect(result.footer.count).toBe(MAX_RENDER_ROWS + 5);
-    expect(result.footer.totalCents).toBe(cents((MAX_RENDER_ROWS + 5) * 100));
+    expect(result.footer.netCents).toBe(cents(-(MAX_RENDER_ROWS + 5) * 100));
   });
 
   it('footer is zero for an empty match', () => {
     const result = filterLedger([], { query: 'nothing', categoryIds: [] });
-    expect(result.footer).toEqual({ count: 0, totalCents: cents(0) });
+    expect(result.footer).toEqual({ count: 0, netCents: cents(0) });
   });
 });
 

@@ -78,14 +78,23 @@ export function validateBackupFile(raw: unknown): BackupFile {
   };
 }
 
-/** Parse a raw JSON string produced by `serializeBackupFile` and validate it. */
+/**
+ * Parse a raw JSON string produced by `serializeBackupFile` and validate it.
+ *
+ * F5-3: a malformed/corrupt file must never surface the raw JS engine parse
+ * error (e.g. "Unexpected token h in JSON at position 0") to the user — the
+ * `issues` list here stays a fixed, human-readable sentence, never
+ * `e.message`. Shape-validation issues from `validateBackupFile` are
+ * hand-authored English sentences ("schemaVersion must be an integer", …)
+ * and are safe to surface as-is.
+ */
 export function parseBackupFile(json: string): BackupFile {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
-  } catch (e) {
+  } catch {
     throw new BackupValidationError('Backup file is not valid JSON.', [
-      e instanceof Error ? e.message : String(e),
+      'the file could not be parsed as JSON',
     ]);
   }
   return validateBackupFile(raw);

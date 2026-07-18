@@ -5,7 +5,7 @@
  * (see SearchLedgerScreen.tsx) so this file has no store/UI imports and can
  * be unit-tested against plain fixtures.
  */
-import { sumCents, type Cents } from '../../lib/money';
+import { addCents, subCents, ZERO, type Cents } from '../../lib/money';
 import type { ISODate } from '../../types/contracts';
 
 export interface LedgerSearchRow {
@@ -29,7 +29,15 @@ export interface LedgerFilterState {
 
 export interface LedgerFooter {
   count: number;
-  totalCents: Cents;
+  /**
+   * Sign-aware net over the FULL matched set (F5-6): income/transfer_in are
+   * positive, expense/transfer_out are negative — never a bare sum of
+   * `TransactionRecord.amount` (which is always positive regardless of
+   * direction), which silently added spend to income into one meaningless
+   * total. Mirrors the isInflow convention SearchLedgerScreen already uses
+   * for row coloring.
+   */
+  netCents: Cents;
 }
 
 export interface FilterLedgerResult<T extends LedgerSearchRow> {
@@ -76,9 +84,14 @@ export function filterLedger<T extends LedgerSearchRow>(
 
   const sorted = stableSortByDateDesc(matched);
 
+  const netCents = sorted.reduce<Cents>((acc, r) => {
+    const isInflow = r.kind === 'income' || r.kind === 'transfer_in';
+    return isInflow ? addCents(acc, r.amount) : subCents(acc, r.amount);
+  }, ZERO);
+
   const footer: LedgerFooter = {
     count: sorted.length,
-    totalCents: sumCents(sorted.map((r) => r.amount)),
+    netCents,
   };
 
   const truncated = sorted.length > MAX_RENDER_ROWS;

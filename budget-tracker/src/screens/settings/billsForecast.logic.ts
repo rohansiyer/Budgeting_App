@@ -6,7 +6,7 @@
  * src/screens/settings/config.ts and csvExport.logic.ts are: BillsScreen.tsx
  * composes these functions with live store reads.
  */
-import type { ISODate, RecurringBill } from '../../types/contracts';
+import type { CategoryConfig, ISODate, RecurringBill } from '../../types/contracts';
 import type { SafeToSpendLine } from '../../ledger';
 import { addCents, ZERO, type Cents } from '../../lib/money';
 import { toISO, daysInMonth, addDaysISO } from '../../format/dates';
@@ -115,4 +115,28 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 export function shortMonthDay(iso: ISODate): string {
   const [, m, d] = iso.split('-').map((n) => parseInt(n, 10));
   return `${MONTHS_SHORT[m - 1]} ${d}`;
+}
+
+/**
+ * F5-5: the Setup wizard's "Fixed bill" categories (`category.fixed`) that
+ * have no matching ACTIVE recurring bill yet — the wizard prompts a user to
+ * flag rent/utilities/etc as fixed, but that flag alone never reached the
+ * Bills forecast (no `recurring_bills` row), so those bills silently got no
+ * "due before payday" coverage. "Matching" means an active bill whose
+ * `categoryId` points at the category — never inferred by name. Sorted by
+ * name so the nudge list renders in a stable order. No bill is ever
+ * auto-created here; this only decides which categories to nudge about.
+ */
+export function fixedCategoryNudges(
+  categories: readonly CategoryConfig[],
+  bills: readonly RecurringBill[],
+): CategoryConfig[] {
+  // Defensive: filter to active bills here rather than trusting the caller,
+  // so a removed (active:false) bill never counts as "coverage" — a nudge
+  // should reappear the moment its bill is removed, not just when it never
+  // existed.
+  const coveredCategoryIds = new Set(bills.filter((b) => b.active).map((b) => b.categoryId));
+  return categories
+    .filter((c) => c.fixed && !coveredCategoryIds.has(c.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -1,5 +1,5 @@
 import { cents } from '../../../lib/money';
-import type { RecurringBill } from '../../../types/contracts';
+import type { CategoryConfig, RecurringBill } from '../../../types/contracts';
 import type { SafeToSpendLine } from '../../../ledger';
 import {
   nextOccurrence,
@@ -9,6 +9,7 @@ import {
   totalDueCents,
   billsCoverageStatus,
   shortMonthDay,
+  fixedCategoryNudges,
 } from '../billsForecast.logic';
 
 function bill(over: Partial<RecurringBill>): RecurringBill {
@@ -20,6 +21,17 @@ function bill(over: Partial<RecurringBill>): RecurringBill {
     dueDay: over.dueDay ?? 1,
     active: over.active ?? true,
     createdAt: over.createdAt ?? '2026-01-01T00:00:00.000Z',
+  };
+}
+
+function category(over: Partial<CategoryConfig>): CategoryConfig {
+  return {
+    id: over.id ?? 'cat1',
+    name: over.name ?? 'Rent',
+    colorKey: over.colorKey ?? 'violet',
+    fixed: over.fixed ?? true,
+    cadence: over.cadence ?? 'monthly',
+    envelope: over.envelope ?? null,
   };
 }
 
@@ -168,5 +180,57 @@ describe('shortMonthDay', () => {
     expect(shortMonthDay('2026-07-12')).toBe('Jul 12');
     expect(shortMonthDay('2026-01-01')).toBe('Jan 1');
     expect(shortMonthDay('2026-12-31')).toBe('Dec 31');
+  });
+});
+
+describe('manually added bills appear in the forecast (F5-5)', () => {
+  it('a bill added through the manual Add-bill form resolves and forecasts identically to any other bill', () => {
+    // Shape produced by BillsScreen's Add-bill form -> store.addRecurringBill,
+    // not the subscription-detection path — the forecast math must not care.
+    const manuallyAdded = bill({ id: 'manual1', name: 'Rent', dueDay: 5, active: true });
+    const resolved = resolveActiveBills([manuallyAdded], '2026-07-01');
+    expect(resolved.map((r) => r.bill.id)).toEqual(['manual1']);
+
+    const due = dueBeforePayday(resolved, '2026-07-18');
+    expect(due.map((r) => r.bill.id)).toEqual(['manual1']);
+    expect(totalDueCents(due)).toBe(manuallyAdded.amountCents);
+  });
+});
+
+describe('fixedCategoryNudges', () => {
+  it('nudges a fixed category with no active bill at all', () => {
+    const cats = [category({ id: 'rent', name: 'Rent', fixed: true })];
+    expect(fixedCategoryNudges(cats, [])).toEqual(cats);
+  });
+
+  it('does not nudge a fixed category that already has a matching active bill', () => {
+    const cats = [category({ id: 'rent', name: 'Rent', fixed: true })];
+    const bills = [bill({ id: 'b1', categoryId: 'rent', active: true })];
+    expect(fixedCategoryNudges(cats, bills)).toEqual([]);
+  });
+
+  it('still nudges when the only matching bill is inactive (removed)', () => {
+    const cats = [category({ id: 'rent', name: 'Rent', fixed: true })];
+    const bills = [bill({ id: 'b1', categoryId: 'rent', active: false })];
+    expect(fixedCategoryNudges(cats, bills)).toEqual(cats);
+  });
+
+  it('never nudges a non-fixed (variable/enveloped) category', () => {
+    const cats = [category({ id: 'fun', name: 'Fun', fixed: false })];
+    expect(fixedCategoryNudges(cats, [])).toEqual([]);
+  });
+
+  it('a bill on a DIFFERENT category does not cover this one (no name-matching)', () => {
+    const cats = [category({ id: 'rent', name: 'Rent', fixed: true })];
+    const bills = [bill({ id: 'b1', categoryId: 'utilities', name: 'Rent', active: true })];
+    expect(fixedCategoryNudges(cats, bills)).toEqual(cats);
+  });
+
+  it('sorts nudges by category name', () => {
+    const cats = [
+      category({ id: 'water', name: 'Water', fixed: true }),
+      category({ id: 'rent', name: 'Rent', fixed: true }),
+    ];
+    expect(fixedCategoryNudges(cats, []).map((c) => c.id)).toEqual(['rent', 'water']);
   });
 });

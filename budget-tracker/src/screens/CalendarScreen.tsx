@@ -1,22 +1,29 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { formatCents, ZERO } from '../lib/money';
-import { Screen, SectionLabel } from '../components/Primitives';
-import { EmptyState } from '../components/kit';
+import { Screen, SectionLabel, Row } from '../components/Primitives';
+import { EmptyState, HardButton } from '../components/kit';
 import { DuckSprite } from '../ducks/DuckSprite';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
-import { isCalendarMonthEmpty } from './CalendarScreen.logic';
+import {
+  isCalendarMonthEmpty,
+  shiftMonthKey,
+  clampMonthKey,
+  canGoToPrevMonth,
+  canGoToNextMonth,
+} from './CalendarScreen.logic';
 import {
   todayISO,
+  monthKeyOf,
   monthRange,
   monthTitle,
   eachDay,
   dayOfWeek,
   dayNumber,
 } from '../format/dates';
-import type { ISODate } from '../types/contracts';
+import type { ISODate, MonthKey } from '../types/contracts';
 
 const { color, space, pixel } = tokens;
 const typo = tokens.type;
@@ -34,7 +41,23 @@ export function CalendarScreen() {
   const store = useStore();
   const { openDay } = useAppShell();
   const today = todayISO();
-  const range = monthRange(today);
+  const chapter = store.getActiveChapter();
+  const minMonth = monthKeyOf(chapter.startedAt);
+  const maxMonth = monthKeyOf(today);
+
+  // F4-6: a viewed month independent of today, clamped to
+  // [chapter start month, current month] — never a phantom month before the
+  // active chapter began or ahead of the present.
+  const [viewedMonth, setViewedMonth] = useState<MonthKey>(() =>
+    clampMonthKey(maxMonth, minMonth, maxMonth),
+  );
+  const viewedISO = `${viewedMonth}-01`;
+  const range = monthRange(viewedISO);
+
+  const canPrev = canGoToPrevMonth(viewedMonth, minMonth);
+  const canNext = canGoToNextMonth(viewedMonth, maxMonth);
+  const goPrev = () => setViewedMonth((m) => clampMonthKey(shiftMonthKey(m, -1), minMonth, maxMonth));
+  const goNext = () => setViewedMonth((m) => clampMonthKey(shiftMonthKey(m, 1), minMonth, maxMonth));
 
   const days = eachDay(range);
   const totals = store.getDaySpendTotals(range);
@@ -60,7 +83,23 @@ export function CalendarScreen() {
   const leadBlanks = mondayIndex(days[0]);
 
   return (
-    <Screen title={monthTitle(today)}>
+    <Screen title={monthTitle(viewedISO)}>
+      <Row style={styles.monthNav}>
+        <HardButton
+          label="< Prev"
+          variant="ghost"
+          disabled={!canPrev}
+          onPress={goPrev}
+          accessibilityLabel="Previous month"
+        />
+        <HardButton
+          label="Next >"
+          variant="ghost"
+          disabled={!canNext}
+          onPress={goNext}
+          accessibilityLabel="Next month"
+        />
+      </Row>
       <View style={styles.weekHeader}>
         {WEEK_HEADER.map((w, i) => (
           <Text key={i} style={styles.weekHeaderCell}>
@@ -151,6 +190,10 @@ function LegendRow({ swatch, label }: { swatch: React.ReactNode; label: string }
 }
 
 const styles = StyleSheet.create({
+  monthNav: {
+    justifyContent: 'space-between',
+    marginBottom: space.sm,
+  },
   emptyWrap: {
     marginTop: space.md,
   },

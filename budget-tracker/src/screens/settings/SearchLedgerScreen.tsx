@@ -133,7 +133,14 @@ export function SearchLedgerScreen({ onBack }: { onBack: () => void }) {
         <Text style={styles.footerCount}>
           {`${result.footer.count} ${result.footer.count === 1 ? 'transaction' : 'transactions'}`}
         </Text>
-        <Text style={styles.footerTotal}>{`${formatCents(result.footer.totalCents)} total`}</Text>
+        <Text
+          style={[
+            styles.footerTotal,
+            { color: result.footer.netCents >= 0 ? color.accent : color.danger },
+          ]}
+        >
+          {`Net: ${formatCents(result.footer.netCents, { signDisplay: 'always' })}`}
+        </Text>
       </Row>
     </Screen>
   );
