@@ -297,8 +297,16 @@ export function projectGoalFunding(goalId: string, today: ISODate): GoalFunding 
   const progress = store.goalProgress(goalId, today);
   const { weeklyIncomeCents, weeklySpendCents, historyCount } = medianWeeklyRates(store, today);
 
+  // Already-funded is a plain fact of today's balance vs. target — check it
+  // BEFORE the "no history" bailout, so a goal met/exceeded with zero
+  // trailing-month history still reports funded-as-of-today instead of
+  // falling through to the "unknown" (null/null) case. Never invent a PACE
+  // with no history (weeklyPaceCents stays null), but never hide a true fact
+  // either.
   if (historyCount === 0) {
-    return { fundedAroundISO: null, weeklyPaceCents: null };
+    return progress.currentCents >= progress.targetCents
+      ? { fundedAroundISO: today, weeklyPaceCents: null }
+      : { fundedAroundISO: null, weeklyPaceCents: null };
   }
   const weeklyBillsAvg = sumCents(
     activeBills(store).map((b) => weeklyFromMonthly(b.amountCents)),

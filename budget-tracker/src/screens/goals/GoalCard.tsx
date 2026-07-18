@@ -45,6 +45,7 @@ export function GoalCard({ goal, progress, funding, today }: GoalCardProps) {
         budget={progress.targetCents}
         spent={progress.currentCents}
         blockValue={GOAL_BLOCK_VALUE}
+        variant="goal"
         accessibilityLabel={`${goal.name} goal, ${currentText} of ${formatCents(progress.targetCents)}`}
       />
       <Text style={styles.pace}>{pace}</Text>

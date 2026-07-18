@@ -300,4 +300,27 @@ describe('projectGoalFunding (integration)', () => {
     const f = projectGoalFunding(goal.id, '2026-04-15');
     expect(f.fundedAroundISO).toBe('2026-04-15');
   });
+
+  it('F4-1: funded-with-zero-history returns funded-today, not the "unknown" null', async () => {
+    await freshChapter();
+    // No trailing-month activity at all: a fresh chapter, funded from the
+    // account's starting balance alone (mirrors the "no history" test above,
+    // but with a target the starting balance already covers).
+    const savings = await store().createAccount({
+      name: 'Savings',
+      institution: null,
+      kind: 'savings',
+      startingBalance: cents(50000),
+      openedOn: '2026-07-01',
+    });
+    const goal = await store().addGoal({
+      name: 'Already there',
+      targetCents: cents(10000), // 50000 current > 10000 target
+      savingsAccountId: savings.id,
+    });
+    const f = projectGoalFunding(goal.id, '2026-07-15');
+    expect(f.fundedAroundISO).toBe('2026-07-15');
+    expect(f.fundedAroundISO).not.toBeNull();
+    expect(f.weeklyPaceCents).toBeNull(); // no history => no invented pace
+  });
 });

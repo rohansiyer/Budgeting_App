@@ -52,6 +52,14 @@ describe('goalPaceLine', () => {
     expect(goalPaceLine(past, today)).toBe('Fully funded');
   });
 
+  it('F4-1: reports already funded even with a null pace (zero-history-but-funded goal)', () => {
+    // This is the exact shape projectGoalFunding now returns for a goal that
+    // is already met/exceeded with zero trailing-month history: no pace can
+    // be derived (never invent one), but the funded fact is still real.
+    const funding: GoalFunding = { fundedAroundISO: today, weeklyPaceCents: null };
+    expect(goalPaceLine(funding, today)).toBe('Fully funded');
+  });
+
   it('renders a month-only pace line for a real future date', () => {
     const funding: GoalFunding = { fundedAroundISO: '2027-03-09', weeklyPaceCents: cents(2500) };
     expect(goalPaceLine(funding, today)).toBe('At your pace: fully funded around March.');

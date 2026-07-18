@@ -15,7 +15,7 @@ import { Screen, SectionLabel } from '../../components/Primitives';
 import { SubscreenHeader } from '../settings/SubscreenHeader';
 import { GoalCard } from './GoalCard';
 import { SteppedChart } from './SteppedChart';
-import { useStore } from '../../providers/StoreProvider';
+import { useStore, useStoreVersion } from '../../providers/StoreProvider';
 import { todayISO, weekStartOf, addDaysISO } from '../../format/dates';
 import { tryParseCents } from '../../format/moneyInput';
 import { projectSavings, projectGoalFunding, type ProjectionPoint } from '../../projections';
@@ -56,21 +56,26 @@ function trailingSavingsHistory(
 
 export function GoalsScreen({ onBack }: { onBack: () => void }) {
   const store = useStore();
+  // F4-4: `store` is a referentially-stable object for the provider's
+  // lifetime (useStore only forces a re-render via useSyncExternalStore) —
+  // memoizing on [store, ...] never recomputes. Key on the store's monotonic
+  // version counter instead, so these recompute on every committed mutation.
+  const version = useStoreVersion();
   const today = todayISO();
 
   const goals = store.getGoals();
   const savingsAccounts = useMemo(
     () => store.listAccounts().filter((a) => a.kind === 'savings'),
-    [store],
+    [version],
   );
 
   const history = useMemo(
     () => trailingSavingsHistory(store, today, TRAILING_WEEKS),
-    [store, today],
+    [version, today],
   );
   const projection = useMemo(
     () => projectSavings(PROJECTION_WEEKS, today),
-    [store, today],
+    [version, today],
   );
   const chartTarget: Cents | null = goals.length > 0 ? goals[0].targetCents : null;
 

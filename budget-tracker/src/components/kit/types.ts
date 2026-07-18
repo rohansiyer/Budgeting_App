@@ -34,6 +34,13 @@ export interface BlockMeterProps {
   debt?: Cents; // repaying / borrowed against
   /** 0..1 fraction at which fill turns warn color. Default 0.9. */
   warnAt?: number;
+  /**
+   * 'envelope' (default): spent > available renders the danger/overflow
+   * color (overspending a budget is bad). 'goal': spent >= available (target
+   * met or exceeded) renders in the normal fill/accent color — hitting or
+   * beating a savings goal is a good outcome, never a danger color.
+   */
+  variant?: 'envelope' | 'goal';
   accessibilityLabel: string;
 }
 

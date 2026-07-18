@@ -36,10 +36,16 @@ export function goalAmountParts(
 }
 
 /**
- * Pace line under the meter. Never invents a date (handoff §3.9 house rule):
- * no history at all falls back to an action prompt rather than a fabricated
- * month, and a known-but-never-funding pace (flat/negative) does the same —
- * only an actual computed future date renders as a month.
+ * Pace line under the meter — three states, never a fourth:
+ *   - `fundedAroundISO` at/before today  => "Fully funded" (this includes an
+ *     already-met/exceeded goal with zero trailing-month history: F4-1 —
+ *     projectGoalFunding reports funded-as-of-today from the balance alone,
+ *     independent of whether a pace could be derived).
+ *   - `fundedAroundISO` null             => "Add to savings to start the
+ *     clock" — genuinely no progress-with-history to project from (no
+ *     history at all, or a known pace that never reaches the target).
+ *   - otherwise                          => the computed month, never a
+ *     fabricated one (handoff §3.9 house rule: never invent a number).
  */
 export function goalPaceLine(funding: GoalFunding, today: ISODate): string {
   if (funding.fundedAroundISO === null) {
