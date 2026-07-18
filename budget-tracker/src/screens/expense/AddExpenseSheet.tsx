@@ -290,7 +290,7 @@ function BorrowPrompt({
           variant="ghost"
           onPress={onNotNow}
           disabled={disabled}
-          accessibilityLabel="Add the expense without borrowing"
+          accessibilityLabel={`${copy.ghostLabel}, add the expense without borrowing`}
         />
       </View>
     </PixelBox>

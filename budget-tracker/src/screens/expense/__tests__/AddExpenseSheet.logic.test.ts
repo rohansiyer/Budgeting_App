@@ -7,6 +7,7 @@ import {
   overspendAmount,
   cadenceCycleNoun,
   borrowPromptCopy,
+  nextCycleConsequenceLine,
   confirmLabel,
   isValidDraft,
   recentCategories,
@@ -166,6 +167,38 @@ describe('borrow-prompt copy: weekly vs monthly cadence', () => {
     expect(copy.headline).not.toMatch(/—/);
     expect(copy.body).not.toMatch(/—/);
     expect(copy.primaryLabel).not.toMatch(/—/);
+  });
+});
+
+describe('nextCycleConsequenceLine (shared borrow-consequence derivation)', () => {
+  it('previews the reduced next-cycle start for a weekly envelope, uncapped', () => {
+    // $50.00 next-week start, borrowing $13.60 (the FULL requested amount —
+    // no 50% clamp): the line must reflect exactly that, not a capped figure.
+    expect(nextCycleConsequenceLine('weekly', cents(1360), cents(5000))).toBe(
+      'Next week would start with $36.40 instead of $50.00.',
+    );
+  });
+
+  it('previews a monthly envelope in month terms', () => {
+    expect(nextCycleConsequenceLine('monthly', cents(2000), cents(10000))).toBe(
+      'Next month would start with $80.00 instead of $100.00.',
+    );
+  });
+
+  it('allows the next cycle to start negative when the borrow exceeds it (uncapped by design)', () => {
+    expect(nextCycleConsequenceLine('weekly', cents(6000), cents(5000))).toBe(
+      'Next week would start with -$10.00 instead of $50.00.',
+    );
+  });
+
+  it('is the exact tail of borrowPromptCopy.body (both borrow entry points share this wording)', () => {
+    const copy = borrowPromptCopy({
+      categoryName: 'Fun',
+      cadence: 'weekly',
+      overspend: cents(1360),
+      nextCycleStartsWith: cents(5000),
+    });
+    expect(copy.body).toContain(nextCycleConsequenceLine('weekly', cents(1360), cents(5000)));
   });
 });
 

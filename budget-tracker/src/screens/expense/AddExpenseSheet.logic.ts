@@ -88,6 +88,23 @@ export interface BorrowPromptCopy {
 }
 
 /**
+ * The shared "honest math" consequence line for BOTH borrow entry points
+ * (Home's manual BorrowSheet and this auto-triggered overspend prompt) — the
+ * uncapped borrow's one guardrail is that the next cycle's reduced start is
+ * always on screen before the user commits (handoff v3 §1.2). Kept as one
+ * function so the wording can never drift between the two screens.
+ */
+export function nextCycleConsequenceLine(
+  cadence: CadenceType,
+  amount: Cents,
+  nextCycleStartsWith: Cents,
+): string {
+  const noun = cadenceCycleNoun(cadence);
+  const afterBorrow = subCents(nextCycleStartsWith, amount);
+  return `Next ${noun} would start with ${formatCents(afterBorrow)} instead of ${formatCents(nextCycleStartsWith)}.`;
+}
+
+/**
  * Copy for the inline borrow-prompt PixelBox. `nextCycleStartsWith` is the
  * next cycle's plan money BEFORE the contemplated borrow (StoreContract's
  * `nextCycleStartState(...).startsWith`); the body previews what it would
@@ -102,12 +119,11 @@ export function borrowPromptCopy(input: {
 }): BorrowPromptCopy {
   const { categoryName, cadence, overspend, nextCycleStartsWith } = input;
   const noun = cadenceCycleNoun(cadence);
-  const afterBorrow = subCents(nextCycleStartsWith, overspend);
   return {
     headline: `${categoryName} is ${formatCents(overspend)} over this ${noun}`,
     body:
       `Pull budget forward from ${categoryName}'s next cycle? ${categoryName} runs ${cadence} for you. ` +
-      `Next ${noun} would start with ${formatCents(afterBorrow)} instead of ${formatCents(nextCycleStartsWith)}.`,
+      nextCycleConsequenceLine(cadence, overspend, nextCycleStartsWith),
     primaryLabel: `Borrow ${formatCents(overspend)} from next ${noun}`,
     ghostLabel: 'Not now',
   };

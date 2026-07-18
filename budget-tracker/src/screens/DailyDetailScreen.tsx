@@ -28,11 +28,18 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
   const store = useStore();
   const { showUndo } = useAppShell();
 
+  // Active-only lists back pickers (you can't log a new expense/income
+  // against an archived category/account/source). History rows (the
+  // transaction list below) join ids to names via the includeArchived
+  // lists instead, so an archived entity's name still resolves correctly
+  // on old transactions rather than falling back to a placeholder.
   const categories = store.listCategories();
   const accounts = store.listAccounts();
   const incomeSources = store.listIncomeSources();
-  const catById = (id: string) => categories.find((c) => c.id === id);
-  const acctById = (id: string) => accounts.find((a) => a.id === id);
+  const allCategories = store.listCategories({ includeArchived: true });
+  const allAccounts = store.listAccounts({ includeArchived: true });
+  const catById = (id: string) => allCategories.find((c) => c.id === id);
+  const acctById = (id: string) => allAccounts.find((a) => a.id === id);
   const spendingAccount = accounts.find((a) => a.kind === 'spending') ?? accounts[0];
 
   const dayTxns = store.getTransactions({ from: date, to: date });
