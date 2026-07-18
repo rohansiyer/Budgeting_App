@@ -15,6 +15,7 @@ import { Screen, SectionLabel } from '../../components/Primitives';
 import { SubscreenHeader } from '../settings/SubscreenHeader';
 import { GoalCard } from './GoalCard';
 import { SteppedChart } from './SteppedChart';
+import { goalTargetError, GOAL_TARGET_MAX_MESSAGE } from './goalsForm.logic';
 import { useStore, useStoreVersion } from '../../providers/StoreProvider';
 import { todayISO, weekStartOf, addDaysISO } from '../../format/dates';
 import { tryParseCents } from '../../format/moneyInput';
@@ -83,6 +84,8 @@ export function GoalsScreen({ onBack }: { onBack: () => void }) {
   const [name, setName] = useState('');
   const [amountText, setAmountText] = useState('');
   const [linkedKey, setLinkedKey] = useState(ALL_SAVINGS_KEY);
+  // Backstop error for a store-side rejection (never the raw store message).
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const accountOptions: ChoiceOption[] = [
     { key: ALL_SAVINGS_KEY, label: 'All savings' },
@@ -90,15 +93,27 @@ export function GoalsScreen({ onBack }: { onBack: () => void }) {
   ];
 
   const parsedAmount = tryParseCents(amountText);
-  const canSubmit = name.trim().length > 0 && parsedAmount !== null && parsedAmount > 0;
+  // Inline validation mirrors the store's $1M target cap so the user gets
+  // friendly copy before the store would throw.
+  const targetError = goalTargetError(parsedAmount);
+  const canSubmit =
+    name.trim().length > 0 && parsedAmount !== null && parsedAmount > 0 && targetError === null;
 
   const handleCreate = async () => {
     if (!canSubmit || parsedAmount === null) return;
-    await store.addGoal({
-      name: name.trim(),
-      targetCents: parsedAmount,
-      savingsAccountId: linkedKey === ALL_SAVINGS_KEY ? null : linkedKey,
-    });
+    try {
+      await store.addGoal({
+        name: name.trim(),
+        targetCents: parsedAmount,
+        savingsAccountId: linkedKey === ALL_SAVINGS_KEY ? null : linkedKey,
+      });
+    } catch {
+      // The store enforces the same cap and throws with a raw dev-facing
+      // message; surface the friendly copy instead and keep the form intact.
+      setCreateError(GOAL_TARGET_MAX_MESSAGE);
+      return;
+    }
+    setCreateError(null);
     setName('');
     setAmountText('');
     setLinkedKey(ALL_SAVINGS_KEY);
@@ -160,9 +175,13 @@ export function GoalsScreen({ onBack }: { onBack: () => void }) {
         <Field
           label="Target amount"
           value={amountText}
-          onChangeText={setAmountText}
+          onChangeText={(text) => {
+            setAmountText(text);
+            setCreateError(null);
+          }}
           placeholder="0.00"
           keyboardType="decimal-pad"
+          error={targetError ?? createError ?? undefined}
           accessibilityLabel="Goal target amount"
         />
         <View style={styles.linkedField}>

@@ -65,9 +65,16 @@ export function CalendarScreen() {
   const isEmpty = isCalendarMonthEmpty(monthTxnCount);
   const paydays = useMemo(() => new Set(store.getPaydays(range)), [store, range.from, range.to]);
   const fixedHitDays = useMemo(() => {
+    // includeArchived: with month navigation (F4-6) this screen renders PAST
+    // months, and an archived fixed category's historical bill dots must not
+    // vanish (consistent with the store's history-aware
+    // getMonthFixedBillStatus — budget basis only zeroes AFTER archival).
+    // Dots derive from real expense rows in the viewed range, and the store
+    // rejects new expenses on archived categories, so this cannot invent
+    // present/future dots for an archived category.
     const fixedIds = new Set(
       store
-        .listCategories()
+        .listCategories({ includeArchived: true })
         .filter((c) => c.fixed)
         .map((c) => c.id),
     );
