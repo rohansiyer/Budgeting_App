@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, Switch, StyleSheet } from 'react-native';
+import { View, Text, Switch, StyleSheet, Linking } from 'react-native';
 
 import * as tokens from '../../theme/tokens';
-import { RuledList } from '../../components/kit';
+import { HardButton, RuledList } from '../../components/kit';
 import { Screen, Row } from '../../components/Primitives';
 import { SubscreenHeader } from './SubscreenHeader';
 import { getAllNotificationSettings, setNotificationKindEnabled } from '../../notifications/settings';
@@ -65,6 +65,10 @@ export function NotificationsScreen({ onBack }: { onBack: () => void }) {
     if (kind === 'billReminder') await scheduleBillReminder();
   }, []);
 
+  const openDeviceSettings = useCallback(() => {
+    void Linking.openSettings();
+  }, []);
+
   if (loading) {
     return (
       <Screen scroll>
@@ -97,10 +101,20 @@ export function NotificationsScreen({ onBack }: { onBack: () => void }) {
               />
             </Row>
             {denied[t.kind] ? (
-              <Text style={styles.deniedText} accessibilityLiveRegion="polite">
-                Notifications are turned off for this app in system settings, so {t.title.toLowerCase()}{' '}
-                couldn't be enabled. Allow notifications in your device Settings, then try again.
-              </Text>
+              <View style={styles.deniedBlock}>
+                <Text style={styles.deniedText} accessibilityLiveRegion="polite">
+                  Notifications are turned off for this app in system settings, so {t.title.toLowerCase()}{' '}
+                  couldn't be enabled. Allow notifications in your device Settings, then try again.
+                </Text>
+                <View style={styles.deniedAction}>
+                  <HardButton
+                    label="Open device settings"
+                    variant="ghost"
+                    onPress={openDeviceSettings}
+                    accessibilityLabel="Open device notification settings"
+                  />
+                </View>
+              </View>
             ) : null}
           </View>
         )}
@@ -133,12 +147,18 @@ const styles = StyleSheet.create({
     fontWeight: typo.caption.fontWeight,
     marginTop: 2,
   },
+  deniedBlock: {
+    marginTop: space.xs,
+  },
   deniedText: {
     color: color.danger,
     fontSize: typo.caption.fontSize,
     fontWeight: typo.caption.fontWeight,
-    marginTop: space.xs,
     lineHeight: 16,
+  },
+  deniedAction: {
+    marginTop: space.xs,
+    alignItems: 'flex-start',
   },
 });
 

@@ -17,6 +17,12 @@ import { color, pixel, space, type } from '../theme/tokens';
 import { PIN_LENGTH, verifyPin } from './pinStorage';
 import { authenticateWithBiometrics, isBiometricHardwareAvailable } from './biometrics';
 import { isBiometricEnabled } from './lockSettings';
+import {
+  isLocked as isThrottleLocked,
+  registerFailure,
+  remainingLockoutMs,
+  reset as resetThrottle,
+} from './lockThrottle';
 
 export interface LockScreenProps {
   /** Called once the user has proven identity (PIN or biometric). */
@@ -36,6 +42,13 @@ export function LockScreen({ onUnlock, title = 'Enter PIN' }: LockScreenProps) {
   const [error, setError] = useState(false);
   const [checking, setChecking] = useState(false);
   const [biometricReady, setBiometricReady] = useState(false);
+  // Throttle (F6-3) is a module-level singleton that survives remounts of
+  // this screen within the same app session, so initialize from it rather
+  // than assuming unlocked.
+  const [locked, setLocked] = useState(() => isThrottleLocked(Date.now()));
+  const [lockoutSecondsLeft, setLockoutSecondsLeft] = useState(() =>
+    Math.ceil(remainingLockoutMs(Date.now()) / 1000),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -48,22 +61,50 @@ export function LockScreen({ onUnlock, title = 'Enter PIN' }: LockScreenProps) {
     };
   }, []);
 
+  // Live countdown while locked out; stops (and clears `locked`) once the
+  // throttle's own clock says the window has elapsed.
+  useEffect(() => {
+    if (!locked) return;
+    const tick = () => {
+      const remaining = remainingLockoutMs(Date.now());
+      if (remaining <= 0) {
+        setLocked(false);
+        setLockoutSecondsLeft(0);
+      } else {
+        setLockoutSecondsLeft(Math.ceil(remaining / 1000));
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [locked]);
+
   const submit = useCallback(async (pin: string) => {
     setChecking(true);
     const ok = await verifyPin(pin);
     setChecking(false);
     if (ok) {
+      resetThrottle();
       onUnlock();
+      return;
+    }
+    setDigits('');
+    const now = Date.now();
+    const justLocked = registerFailure(now);
+    if (justLocked) {
+      setLocked(true);
+      setLockoutSecondsLeft(Math.ceil(remainingLockoutMs(now) / 1000));
+      setError(false);
+      AccessibilityInfo.announceForAccessibility?.('Too many attempts. Try again in 30 seconds.');
     } else {
       setError(true);
-      setDigits('');
       AccessibilityInfo.announceForAccessibility?.('Incorrect PIN');
     }
   }, [onUnlock]);
 
   const pressDigit = useCallback(
     (d: string) => {
-      if (checking) return;
+      if (checking || locked) return;
       setError(false);
       setDigits((prev) => {
         const next = (prev + d).slice(0, PIN_LENGTH);
@@ -73,17 +114,19 @@ export function LockScreen({ onUnlock, title = 'Enter PIN' }: LockScreenProps) {
         return next;
       });
     },
-    [checking, submit],
+    [checking, locked, submit],
   );
 
   const pressDelete = useCallback(() => {
+    if (locked) return;
     setError(false);
     setDigits((prev) => prev.slice(0, -1));
-  }, []);
+  }, [locked]);
 
   const pressBiometric = useCallback(async () => {
     const result = await authenticateWithBiometrics();
     if (result.success) {
+      resetThrottle();
       onUnlock();
     } else {
       setError(true);
@@ -107,27 +150,38 @@ export function LockScreen({ onUnlock, title = 'Enter PIN' }: LockScreenProps) {
         ))}
       </View>
 
-      {error ? (
+      {locked ? (
+        <Text style={styles.errorText} accessibilityLiveRegion="polite">
+          Too many attempts. Try again in {lockoutSecondsLeft}s.
+        </Text>
+      ) : error ? (
         <Text style={styles.errorText} accessibilityLiveRegion="polite">
           Incorrect PIN. Try again.
         </Text>
       ) : null}
 
-      <View style={styles.keypad}>
+      <View style={[styles.keypad, locked && styles.keypadLocked]}>
         {KEYPAD_ROWS.map((row, rowIndex) => (
           <View style={styles.keypadRow} key={rowIndex}>
             {row.map((key) => {
               if (key === 'bio') {
+                // F6-2: with no biometric hardware/enrollment, this control
+                // can never succeed — omit it from the tree entirely rather
+                // than exposing a focusable, permanently-disabled button.
+                // A plain non-accessible spacer keeps the 3-column grid.
+                if (!biometricReady) {
+                  return <View key={key} style={styles.key} />;
+                }
                 return (
                   <Pressable
                     key={key}
-                    style={[styles.key, !biometricReady && styles.keyDisabled]}
+                    style={styles.key}
                     onPress={pressBiometric}
-                    disabled={!biometricReady}
+                    disabled={locked}
                     accessibilityRole="button"
                     accessibilityLabel="Unlock with biometrics"
                   >
-                    <Text style={styles.keyLabel}>{biometricReady ? 'ID' : ''}</Text>
+                    <Text style={styles.keyLabel}>ID</Text>
                   </Pressable>
                 );
               }
@@ -137,6 +191,7 @@ export function LockScreen({ onUnlock, title = 'Enter PIN' }: LockScreenProps) {
                     key={key}
                     style={styles.key}
                     onPress={pressDelete}
+                    disabled={locked}
                     accessibilityRole="button"
                     accessibilityLabel="Delete last digit"
                   >
@@ -149,6 +204,7 @@ export function LockScreen({ onUnlock, title = 'Enter PIN' }: LockScreenProps) {
                   key={key}
                   style={styles.key}
                   onPress={() => pressDigit(key)}
+                  disabled={locked}
                   accessibilityRole="button"
                   accessibilityLabel={`Digit ${key}`}
                 >
@@ -206,6 +262,9 @@ const styles = StyleSheet.create({
   keypad: {
     marginTop: space.lg,
   },
+  keypadLocked: {
+    opacity: 0.4,
+  },
   keypadRow: {
     flexDirection: 'row',
   },
@@ -218,9 +277,6 @@ const styles = StyleSheet.create({
     borderColor: color.border,
     margin: space.xs,
     backgroundColor: color.surface,
-  },
-  keyDisabled: {
-    opacity: 0.3,
   },
   keyLabel: {
     color: color.text,

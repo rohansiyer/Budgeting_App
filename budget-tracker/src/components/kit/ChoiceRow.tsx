@@ -22,7 +22,7 @@ export function ChoiceRow({ options, selectedKey, onSelect, accessibilityLabel }
             key={option.key}
             onPress={() => onSelect(option.key)}
             accessibilityRole="radio"
-            accessibilityState={{ selected }}
+            accessibilityState={{ selected, checked: selected }}
             accessibilityLabel={option.label}
             style={[
               styles.cell,
