@@ -33,6 +33,9 @@ export const accounts = sqliteTable('accounts', {
   startingBalance: integer('starting_balance').notNull(), // Cents — basis for getAccountBalance
   openedOn: text('opened_on').notNull(), // ISODate (AccountConfig.openedOn)
   createdAt: text('created_at').notNull(),
+  // Soft-archival (migration 5). Null = active. Stamped once by removeAccount;
+  // read surfaces filter archived out of the active plan, by-id reads resolve it.
+  archivedAt: text('archived_at'), // ISO timestamp | null
 });
 
 export const categories = sqliteTable('categories', {
@@ -50,6 +53,9 @@ export const categories = sqliteTable('categories', {
   envelopeBudget: integer('envelope_budget'), // Cents | null
   envelopeCarryoverDefault: text('envelope_carryover_default'), // 'ask'|'roll'|'sweep'|'reset' | null
   createdAt: text('created_at').notNull(),
+  // Soft-archival (migration 5). Null = active. Stamped once by removeCategory;
+  // the configured budget lifetime-zeroes for periods starting after this date.
+  archivedAt: text('archived_at'), // ISO timestamp | null
 });
 
 export const incomeSources = sqliteTable('income_sources', {
@@ -63,6 +69,9 @@ export const incomeSources = sqliteTable('income_sources', {
   scheduleSemimonthlyDay1: integer('schedule_semimonthly_day1'), // number | null
   scheduleSemimonthlyDay2: integer('schedule_semimonthly_day2'), // number | null
   createdAt: text('created_at').notNull(),
+  // Soft-archival (migration 5). Null = active. Stamped once by
+  // removeIncomeSource; splits are retained inert, paydays exclude it.
+  archivedAt: text('archived_at'), // ISO timestamp | null
 });
 
 /** Per-account split weights for an income source. `ratio` is a weight, not money. */

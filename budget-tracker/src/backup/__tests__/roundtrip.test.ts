@@ -4,23 +4,34 @@ import { parseBackupFile } from '../validator';
 import { importBackupFromJson } from '../exportImport';
 import { BackupValidationError, TableDump } from '../types';
 
-/** A representative dump across every kind of table the design doc calls out. */
+/**
+ * A representative dump across ALL 14 tables the v0.3 schema defines, including
+ * the three tables the old registry omitted (merchant_corrections,
+ * recurring_bills, goals) and the archived_at column on the three archivable
+ * entity tables — so the round-trip proves every table (and the archival
+ * column) survives export/import unchanged.
+ */
 function sampleDump(): TableDump {
   return {
+    schema_version: [{ version: 5, name: 'entity_archival', appliedAt: '2026-07-01T00:00:00.000Z' }],
+    chapters: [{ id: 'chap-1', name: 'Default', startedAt: '2026-01-01', archivedAt: null }],
     accounts: [
-      { id: 'acc-1', name: 'Checking', kind: 'spending', institution: 'Local Bank' },
-      { id: 'acc-2', name: 'Savings', kind: 'savings', institution: null },
+      { id: 'acc-1', name: 'Checking', kind: 'spending', institution: 'Local Bank', archivedAt: null },
+      { id: 'acc-2', name: 'Savings', kind: 'savings', institution: null, archivedAt: '2026-06-15T00:00:00.000Z' },
     ],
     categories: [
-      { id: 'cat-1', name: 'Food', colorKey: 'amber', fixed: false },
-      { id: 'cat-2', name: 'Rent', colorKey: 'violet', fixed: true },
+      { id: 'cat-1', name: 'Food', colorKey: 'amber', fixed: false, archivedAt: null },
+      { id: 'cat-2', name: 'Rent', colorKey: 'violet', fixed: true, archivedAt: '2026-06-20T00:00:00.000Z' },
     ],
+    income_sources: [
+      { id: 'src-1', name: 'Paycheck', amount: 200000, scheduleKind: 'biweekly', archivedAt: null },
+    ],
+    income_splits: [{ id: 'split-1', sourceId: 'src-1', accountId: 'acc-1', ratio: 1 }],
     transactions: [
       { id: 'txn-1', accountId: 'acc-1', categoryId: 'cat-1', amount: 1285, kind: 'expense', date: '2026-07-01' },
       { id: 'txn-2', accountId: 'acc-1', categoryId: 'cat-2', amount: 150000, kind: 'expense', date: '2026-07-01' },
     ],
-    chapters: [{ id: 'chap-1', name: 'Default', startedAt: '2026-01-01', archivedAt: null }],
-    carryoverEntries: [
+    carryover_entries: [
       {
         id: 'co-1',
         categoryId: 'cat-1',
@@ -34,7 +45,7 @@ function sampleDump(): TableDump {
       },
     ],
     ducks: [{ id: 'duck-1', name: 'Gerald', earnedMonth: '2026-05' }],
-    duckEvaluations: [
+    duck_evaluations: [
       {
         id: 'eval-1',
         chapterId: 'chap-1',
@@ -46,6 +57,15 @@ function sampleDump(): TableDump {
       },
     ],
     settings: [{ id: 'settings-1', theme: 'dark', currency: 'USD' }],
+    merchant_corrections: [
+      { id: 'mc-1', normalizedMerchant: 'TRADER JOES', categoryId: 'cat-1', createdAt: '2026-07-01T00:00:00.000Z' },
+    ],
+    recurring_bills: [
+      { id: 'bill-1', name: 'Netflix', categoryId: 'cat-1', amountCents: 1599, dueDay: 5, active: true },
+    ],
+    goals: [
+      { id: 'goal-1', name: 'Emergency fund', targetCents: 500000, savingsAccountId: 'acc-2', active: true, achievedAt: null },
+    ],
   };
 }
 

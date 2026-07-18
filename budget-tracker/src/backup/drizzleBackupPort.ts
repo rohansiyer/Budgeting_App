@@ -9,10 +9,12 @@ import * as schema from '../db/schema';
 import { useBudgetStore, withTransaction } from '../store';
 import type { BackupPort, TableDump } from './types';
 
-// Table registry: name in the dump ↔ Drizzle table object. Adding a table
-// to schema.ts without registering it here is caught by the completeness
-// check in dumpAll.
-const TABLES = {
+// Table registry: name in the dump ↔ Drizzle table object. Ordered
+// parent-before-child so restore inserts parents first and (reversed) deletes
+// children first. Every table exported from schema.ts MUST appear here; the
+// completeness test (backup/__tests__/completeness.test.ts) iterates the
+// schema's SQLiteTable exports and fails if any is missing.
+export const TABLES = {
   schema_version: schema.schemaVersion,
   chapters: schema.chapters,
   accounts: schema.accounts,
@@ -24,6 +26,10 @@ const TABLES = {
   ducks: schema.ducks,
   duck_evaluations: schema.duckEvaluations,
   settings: schema.settings,
+  // Leaf tables (reference categories/accounts) — appended after their parents.
+  merchant_corrections: schema.merchantCorrections,
+  recurring_bills: schema.recurringBills,
+  goals: schema.goals,
 } as const;
 
 export function createDrizzleBackupPort(): BackupPort {

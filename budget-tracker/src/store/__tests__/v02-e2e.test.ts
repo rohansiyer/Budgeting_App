@@ -444,3 +444,138 @@ describe('v0.2 end-to-end: a full chapter life, ducks, and backup/restore', () =
     expect(flock.ducks).toHaveLength(2);
   });
 });
+
+// =====================================================================
+// v0.3-fixes CHAPTER — the F1-4 phantom-week guards and the reversible
+// carryover (F3-1/F3-2). getSettleableLeftovers must never synthesize a
+// leftover for a week predating the chapter or the category; rollForward/
+// sweepToSavings must early-return null on a phantom week and write nothing;
+// and both actions' undo() must fully reverse with conservation intact.
+// =====================================================================
+describe('v0.3-fixes: phantom-week guards + reversible carryover', () => {
+  // Local Monday helper (mirrors the store's week math) so the createdAt-gate
+  // assertions stay correct regardless of the calendar date the suite runs on.
+  const mondayOf = (iso: string): string => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+  const addDays = (iso: string, n: number): string => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + n);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  async function setup(startedAt = '2026-03-01') {
+    resetDatabaseForTests();
+    await initDatabase();
+    await store().init();
+    await store().createChapter({ name: 'v0.3-fixes', startedAt });
+    const checking = (
+      await store().createAccount({
+        name: 'Checking', institution: null, kind: 'spending',
+        startingBalance: cents(200000), openedOn: startedAt,
+      })
+    ).id;
+    const savings = (
+      await store().createAccount({
+        name: 'Savings', institution: null, kind: 'savings',
+        startingBalance: cents(0), openedOn: startedAt,
+      })
+    ).id;
+    const food = (
+      await store().createCategory({
+        name: 'Food', colorKey: 'amber', fixed: false,
+        envelope: { period: 'weekly', budget: cents(10000), carryoverDefault: 'ask' },
+      })
+    ).id;
+    return { checking, savings, food };
+  }
+
+  it('a freshly-created category yields NO settleable leftover for a week that predates it (createdAt gate)', async () => {
+    const { food } = await setup('2026-03-01');
+    // A week fully inside the chapter but well before the category was created
+    // (categories are created at real "now") must not synthesize a full-budget
+    // phantom leftover — the exact F1-4 mechanism.
+    const wayBack = mondayOf('2026-03-16');
+    expect(store().getSettleableLeftovers(wayBack)).toEqual([]);
+
+    // A current week (on/after the category's creation) with a genuine untouched
+    // budget DOES surface, proving the gate is date-aware, not a blanket empty.
+    const thisWeek = mondayOf(new Date().toISOString().slice(0, 10));
+    const settleable = store().getSettleableLeftovers(thisWeek);
+    expect(settleable).toEqual([{ categoryId: food, remaining: 10000 }]);
+  });
+
+  it('rollForward / sweepToSavings return null and write NOTHING on a phantom week before the chapter', async () => {
+    const { savings, food } = await setup('2026-03-01');
+    const phantomWeek = mondayOf('2026-02-16'); // ends 2026-02-22, before the chapter
+    const carryBefore = (await store().evaluation.getCarryoverEntries({})).length;
+    const savingsBefore = store().getAccountBalance(savings, '2026-03-31');
+
+    expect(await store().rollForward(food, phantomWeek)).toBeNull();
+    expect(await store().sweepToSavings(food, phantomWeek, savings)).toBeNull();
+
+    expect((await store().evaluation.getCarryoverEntries({})).length).toBe(carryBefore);
+    expect(store().getAccountBalance(savings, '2026-03-31')).toBe(savingsBefore);
+  });
+
+  it('rollForward → undo fully reverses the pair; conservation and balances intact; single-fire', async () => {
+    const { checking, food } = await setup('2026-03-01');
+    const week1 = mondayOf('2026-03-02');
+    const week2 = addDays(week1, 7);
+    await store().addExpense({ accountId: checking, categoryId: food, amount: cents(3000), date: week1 });
+    const chkBefore = store().getAccountBalance(checking, '2026-03-31');
+    expect(store().getEnvelopeWeekState(food, week1).remaining).toBe(7000);
+
+    const res = await store().rollForward(food, week1);
+    expect(res).not.toBeNull();
+    expect(res!.amount).toBe(7000);
+    expect(store().getEnvelopeWeekState(food, week1).remaining).toBe(0);
+    expect(store().getEnvelopeWeekState(food, week2).remaining).toBe(17000); // 10000 + 7000 rolled in
+    expect((await store().evaluation.getCarryoverEntries({})).map((e) => e.kind).sort())
+      .toEqual(['roll_in', 'roll_out']);
+
+    expect(await res!.undo()).toBe(true);
+    // Pair hard-deleted: the roll never happened, budget back in its origin week.
+    expect(await store().evaluation.getCarryoverEntries({})).toHaveLength(0);
+    expect(store().getEnvelopeWeekState(food, week1).remaining).toBe(7000);
+    expect(store().getEnvelopeWeekState(food, week2).remaining).toBe(10000);
+    // A roll moves no cash — the checking balance never changed.
+    expect(store().getAccountBalance(checking, '2026-03-31')).toBe(chkBefore);
+    // Single-fire: a second undo is a no-op.
+    expect(await res!.undo()).toBe(false);
+  });
+
+  it('sweepToSavings → undo returns the cash, deletes the carryover row, tombstones the transfer; single-fire', async () => {
+    const { checking, savings, food } = await setup('2026-03-01');
+    const week = mondayOf('2026-03-02');
+    const chkBefore = store().getAccountBalance(checking, '2026-03-31');
+    const savBefore = store().getAccountBalance(savings, '2026-03-31');
+    expect(store().getEnvelopeWeekState(food, week).remaining).toBe(10000);
+
+    const res = await store().sweepToSavings(food, week, savings);
+    expect(res).not.toBeNull();
+    expect(res!.amount).toBe(10000);
+    // Cash really moved checking -> savings; the sweep entry exists.
+    expect(store().getAccountBalance(checking, '2026-03-31')).toBe(chkBefore - 10000);
+    expect(store().getAccountBalance(savings, '2026-03-31')).toBe(savBefore + 10000);
+    expect((await store().evaluation.getCarryoverEntries({})).map((e) => e.kind)).toEqual(['sweep_to_savings']);
+
+    expect(await res!.undo()).toBe(true);
+    // Carryover row gone, transfer legs tombstoned => balances fully restored.
+    expect(await store().evaluation.getCarryoverEntries({})).toHaveLength(0);
+    expect(store().getAccountBalance(checking, '2026-03-31')).toBe(chkBefore);
+    expect(store().getAccountBalance(savings, '2026-03-31')).toBe(savBefore);
+    expect(store().getEnvelopeWeekState(food, week).remaining).toBe(10000);
+    expect(await res!.undo()).toBe(false); // single-fire
+  });
+});

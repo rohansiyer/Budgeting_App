@@ -413,3 +413,144 @@ describe('ledger reconciliation invariant machine', () => {
     }
   });
 });
+
+// ===========================================================================
+// 6. ENTITY ARCHIVAL — conservation + lifecycle (F1-1/F1-2/F1-3 foundation)
+// ===========================================================================
+describe('entity archival conservation + lifecycle', () => {
+  it('archiving a category drops it from safe-to-spend and paydays-plan but preserves history and by-id reads', async () => {
+    await freshChapter('2026-01-01');
+    const chk = await makeAccount('Chk', 500000, 'spending');
+    const food = await weeklyEnv('Food', 10000);
+    const fun = await weeklyEnv('Fun', 6000);
+    // Real historical spend on Fun in January.
+    await store().addExpense({ accountId: chk, categoryId: fun, amount: cents(2000), date: W(0) });
+
+    const funSpentBefore = (await store().evaluation.getMonthCategoryTotals('2026-01'))
+      .find((c) => c.categoryId === fun)!.spent;
+    const funBudgetBefore = (await store().evaluation.getMonthCategoryTotals('2026-01'))
+      .find((c) => c.categoryId === fun)!.budget;
+    const funWeekRemainingBefore = store().getEnvelopeWeekState(fun, W(0)).remaining;
+
+    // Safe-to-spend for a current week before archival includes both envelopes.
+    const thisWeek = (() => {
+      const iso = new Date().toISOString().slice(0, 10);
+      const [y, m, d] = iso.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    })();
+    const s2sBefore = store().getSafeToSpend(thisWeek); // Food 10000 + Fun 6000 (no bills)
+
+    await store().removeCategory(fun);
+
+    // Money-plan surface drops the archived envelope's budget exactly.
+    expect(s2sBefore - store().getSafeToSpend(thisWeek)).toBe(6000);
+    expect(store().listCategories().map((c) => c.id)).not.toContain(fun);
+    // History is untouched: the January spend + basis and the by-id week read
+    // still resolve for the archived category (id→name joins, ledgers).
+    const funTotalsAfter = (await store().evaluation.getMonthCategoryTotals('2026-01'))
+      .find((c) => c.categoryId === fun)!;
+    expect(funTotalsAfter.spent).toBe(funSpentBefore);
+    expect(funTotalsAfter.budget).toBe(funBudgetBefore);
+    expect(store().getEnvelopeWeekState(fun, W(0)).remaining).toBe(funWeekRemainingBefore);
+    expect(store().listCategories({ includeArchived: true }).map((c) => c.id)).toContain(fun);
+  });
+
+  it('remove + re-add same name yields one active row (old archived, new active) — the lockout fix at the root', async () => {
+    await freshChapter('2026-01-01');
+    await makeAccount('Chk', 0, 'spending');
+    const first = await weeklyEnv('Groceries', 8000);
+    await store().removeCategory(first);
+    const second = (
+      await store().createCategory({
+        name: 'Groceries', colorKey: 'mint', fixed: false,
+        envelope: { period: 'weekly', budget: cents(9000), carryoverDefault: 'ask' },
+      })
+    ).id;
+
+    const activeGroceries = store().listCategories().filter((c) => c.name === 'Groceries');
+    expect(activeGroceries.map((c) => c.id)).toEqual([second]);
+    const allGroceries = store()
+      .listCategories({ includeArchived: true })
+      .filter((c) => c.name === 'Groceries');
+    expect(allGroceries).toHaveLength(2);
+    expect(new Set(allGroceries.map((c) => c.id))).toEqual(new Set([first, second]));
+  });
+
+  it('archived fixed category stops being expected for later months but still counts for its live months', async () => {
+    await freshChapter('2026-01-01');
+    const chk = await makeAccount('Chk', 500000, 'spending');
+    const rent = (
+      await store().createCategory({ name: 'Rent', colorKey: 'violet', fixed: true, envelope: null })
+    ).id;
+    await store().addExpense({ accountId: chk, categoryId: rent, amount: cents(100000), date: '2026-01-10' });
+    // Live in January.
+    expect(await store().evaluation.getMonthFixedBillStatus('2026-01')).toEqual({ expected: 1, paid: 1 });
+    await store().removeCategory(rent);
+    // Still expected + paid for its live month (archived at real "now", well
+    // after January) — history is untouched...
+    expect(await store().evaluation.getMonthFixedBillStatus('2026-01')).toEqual({ expected: 1, paid: 1 });
+    // ...but a month AFTER the archival date no longer expects it (no perpetual
+    // Goal-1 failure from a deleted bill).
+    expect(await store().evaluation.getMonthFixedBillStatus('2027-01')).toEqual({ expected: 0, paid: 0 });
+  });
+});
+
+// ===========================================================================
+// 7. CARRYOVER UNDO — single-fire + post-expiry no-op (F3-1/F3-2)
+// ===========================================================================
+describe('carryover undo lifecycle', () => {
+  it('sweep undo is single-fire and a no-op after the undo window expires; conservation holds', async () => {
+    await freshChapter('2026-01-01');
+    const chk = await makeAccount('Chk', 100000, 'spending');
+    const sav = await makeAccount('Sav', 0, 'savings');
+    const cat = await weeklyEnv('Food', 10000);
+
+    // Sweep W(0)'s full leftover, undo it, then confirm a second undo is inert.
+    const res = await store().sweepToSavings(cat, W(0), sav);
+    expect(res).not.toBeNull();
+    expect(await res!.undo()).toBe(true);
+    expect(await res!.undo()).toBe(false); // double-fire guarded
+    expect((await store().evaluation.getCarryoverEntries({})).length).toBe(0);
+    expect(store().getAccountBalance(sav, W(6))).toBe(0);
+
+    // A fresh sweep whose window we jump past cannot be undone.
+    const res2 = await store().sweepToSavings(cat, W(1), sav);
+    expect(res2).not.toBeNull();
+    const savAfterSweep = store().getAccountBalance(sav, W(6));
+    expect(savAfterSweep).toBe(10000);
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(res2!.expiresAt + 1);
+    try {
+      expect(await res2!.undo()).toBe(false); // expired
+    } finally {
+      spy.mockRestore();
+    }
+    // Nothing reversed: the moved cash and the sweep entry remain intact.
+    expect(store().getAccountBalance(sav, W(6))).toBe(savAfterSweep);
+    expect(
+      (await store().evaluation.getCarryoverEntries({})).some((e) => e.kind === 'sweep_to_savings'),
+    ).toBe(true);
+    await assertPairInvariant();
+  });
+
+  it('roll undo hard-deletes the pair and never double-fires', async () => {
+    await freshChapter('2026-01-01');
+    const chk = await makeAccount('Chk', 100000, 'spending');
+    const cat = await weeklyEnv('Food', 10000);
+    await store().addExpense({ accountId: chk, categoryId: cat, amount: cents(4000), date: W(0) });
+
+    const res = await store().rollForward(cat, W(0));
+    expect(res!.amount).toBe(6000);
+    expect((await store().evaluation.getCarryoverEntries({})).length).toBe(2);
+    expect(await res!.undo()).toBe(true);
+    expect((await store().evaluation.getCarryoverEntries({})).length).toBe(0);
+    expect(store().getEnvelopeWeekState(cat, W(0)).remaining).toBe(6000);
+    expect(store().getEnvelopeWeekState(cat, W(1)).remaining).toBe(10000);
+    expect(await res!.undo()).toBe(false);
+    await assertPairInvariant();
+  });
+});

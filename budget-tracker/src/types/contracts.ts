@@ -348,6 +348,19 @@ export interface AtomicDb {
 /** Undo window for destructive actions. undo() after expiry resolves false. */
 export const UNDO_WINDOW_MS = 6000;
 
+/**
+ * A reversible carryover action (roll-forward / sweep-to-savings). `amount` is
+ * the settled leftover; `undo()` reverses the whole action atomically and
+ * resolves true on success, false after `expiresAt`, if the rows are already
+ * gone, or on a repeat call (single-fire). `expiresAt` is a Date.now()-epoch
+ * millisecond deadline (UNDO_WINDOW_MS after the action committed).
+ */
+export interface CarryoverActionResult {
+  amount: Cents;
+  undo(): Promise<boolean>;
+  expiresAt: number;
+}
+
 export interface TransactionRecord {
   id: string;
   accountId: string;
@@ -411,6 +424,29 @@ export interface StoreContract {
   ): Promise<void>;
   updateIncomeSource(sourceId: string, patch: Partial<Omit<IncomeSourceConfig, 'id'>>): Promise<void>;
 
+  // --- config removal (soft-archival; the wizard's "real delete") -----------
+  /**
+   * Archive an account (the wizard's real delete). Throws on an unknown or
+   * already-archived id, or when it is the LAST active account (a chapter must
+   * retain at least one account to receive income). Same transaction: DELETEs
+   * the account's income_splits rows (an orphaned split would misroute money).
+   * The row is retained so historical transactions/id-joins still resolve it.
+   */
+  removeAccount(accountId: string): Promise<void>;
+  /**
+   * Archive a category. Throws on an unknown or already-archived id. Same
+   * transaction: its recurring_bills are deactivated (active=0) and its
+   * merchant_corrections are DELETEd. The configured budget lifetime-zeroes for
+   * periods starting after the archival date; history is untouched.
+   */
+  removeCategory(categoryId: string): Promise<void>;
+  /**
+   * Archive an income source. Throws on an unknown or already-archived id. Its
+   * income_splits are retained inert (historical income rows keep their split);
+   * the source is excluded from getPaydays and addIncome rejects it.
+   */
+  removeIncomeSource(sourceId: string): Promise<void>;
+
   // --- import data layer ---------------------------------------------------
   /**
    * Learn (or re-point) a merchant → category mapping. Keyed by
@@ -460,8 +496,29 @@ export interface StoreContract {
   ): Promise<void>;
 
   // --- carryover -----------------------------------------------------------
-  rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;
-  sweepToSavings(categoryId: string, fromWeek: WeekStart, savingsAccountId: string): Promise<void>;
+  /**
+   * Settle a week's leftover forward into the next week. Returns a reversible
+   * action handle, or `null` when there is nothing to settle: leftover <= 0, or
+   * the week is a PHANTOM week that ends before the active chapter began
+   * (fresh-chapter F1-4 guard — writes nothing). `undo()` hard-deletes the
+   * roll_out/roll_in pair in one transaction (conservation preserved); it
+   * resolves false after `expiresAt`, if the rows are already gone, or on a
+   * second call (never double-fires).
+   */
+  rollForward(categoryId: string, fromWeek: WeekStart): Promise<CarryoverActionResult | null>;
+  /**
+   * Sweep a week's leftover out to savings (records a real transfer pair).
+   * Returns a reversible action handle, or `null` when there is nothing to
+   * sweep (leftover <= 0) or the week is a phantom week ending before the
+   * chapter began. `undo()` hard-deletes the sweep_to_savings carryover row and
+   * tombstones both transfer legs in one transaction; same expiry/idempotency
+   * rules as rollForward's undo.
+   */
+  sweepToSavings(
+    categoryId: string,
+    fromWeek: WeekStart,
+    savingsAccountId: string,
+  ): Promise<CarryoverActionResult | null>;
   /**
    * Borrow from an envelope's OWN next cycle, dispatching on the category's
    * cadence: a weekly-cadence envelope borrows from next week, a
@@ -484,10 +541,25 @@ export interface StoreContract {
   nextCycleStartState(categoryId: string, currentPeriodStart: ISODate): NextCycleState;
 
   // --- read surface (screens + engine) --------------------------------------
-  listAccounts(): AccountConfig[];
-  listCategories(): CategoryConfig[];
-  listIncomeSources(): IncomeSourceConfig[];
+  // The default (no opts / includeArchived:false) returns ACTIVE entities only
+  // — the F1-2 fix so pickers and the wizard never resurrect a deleted row.
+  // Pass { includeArchived: true } for id→name joins on history screens.
+  listAccounts(opts?: { includeArchived?: boolean }): AccountConfig[];
+  listCategories(opts?: { includeArchived?: boolean }): CategoryConfig[];
+  listIncomeSources(opts?: { includeArchived?: boolean }): IncomeSourceConfig[];
   getActiveChapter(): Chapter;
+
+  /**
+   * The weekly envelopes whose PREVIOUS week (`prevWeek`) has a genuine,
+   * unsettled leftover — the Monday "settle last week?" prompt basis (F1-4). A
+   * category qualifies iff it is an active weekly envelope with
+   * remaining > 0, rolledOut === 0 and sweptOut === 0 for `prevWeek`, AND
+   * `prevWeek`'s last day is on/after BOTH the active chapter's start and the
+   * category's creation date — so a category (or chapter) created this week
+   * never produces a phantom full-budget leftover for a week that predates it.
+   * The createdAt gate lives ONLY here (never in configuredWeeklyBudget).
+   */
+  getSettleableLeftovers(prevWeek: WeekStart): Array<{ categoryId: string; remaining: Cents }>;
 
   /** Learned merchant → category corrections for the active chapter. */
   getMerchantCorrections(): MerchantCorrection[];

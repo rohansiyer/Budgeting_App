@@ -35,6 +35,7 @@ import { paydaysBetween as schedulePaydaysBetween } from '../lib/schedule';
 import type {
   AccountConfig,
   CadenceType,
+  CarryoverActionResult,
   CarryoverEntry,
   CategoryColorKey,
   CategoryConfig,
@@ -63,6 +64,11 @@ import { UNDO_WINDOW_MS } from '../types/contracts';
 import type { Account, Category, Settings, Transaction } from '../types';
 
 const C = (n: number): Cents => cents(n);
+
+/** Upper bound on a goal target: $1,000,000 in cents (F4-3 store side). */
+const GOAL_TARGET_CAP_CENTS = 100_000_000;
+/** Max length of a user-given duck name; longer names are clamped (F4-5). */
+const DUCK_NAME_MAX = 24;
 
 // ---------------------------------------------------------------------------
 // Date / week helpers (local-time, 'YYYY-MM-DD'). A budget week runs Mon..Sun
@@ -140,6 +146,7 @@ interface AccountRow {
   startingBalance: number;
   openedOn: string;
   createdAt: string;
+  archivedAt: string | null;
 }
 interface CategoryRow {
   id: string;
@@ -152,6 +159,7 @@ interface CategoryRow {
   envelopeBudget: number | null;
   envelopeCarryoverDefault: string | null;
   createdAt: string;
+  archivedAt: string | null;
 }
 interface TxnRow {
   id: string;
@@ -320,6 +328,8 @@ interface StoreState extends StoreContract {
   _accountRows: AccountRow[];
   _categoryRows: CategoryRow[];
   _incomeSources: IncomeSourceConfig[];
+  /** Ids of archived income sources (config has no archivedAt field; tracked here). */
+  _archivedSourceIds: Set<string>;
   _txnRows: TxnRow[];
   _carryover: CarryoverRow[];
   _merchantCorrections: MerchantCorrectionRow[];
@@ -415,11 +425,47 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     }
   };
 
-  /** Configured envelope budget attributable to a single week (cent-conserving). */
+  // -- soft-archival predicates ---------------------------------------------
+  // Internal caches keep ALL rows (active + archived); filtering happens at the
+  // read surface. `_accountRows`/`_categoryRows` carry archivedAt directly;
+  // income sources track archival in a separate id set.
+  const dateOnly = (iso: string): ISODate => iso.slice(0, 10);
+  const accountArchivedAt = (id: string): string | null =>
+    get()._accountRows.find((a) => a.id === id)?.archivedAt ?? null;
+  const categoryArchivedAt = (id: string): string | null => categoryRow(id)?.archivedAt ?? null;
+  const isAccountArchived = (id: string): boolean => accountArchivedAt(id) != null;
+  const isCategoryArchived = (id: string): boolean => categoryArchivedAt(id) != null;
+  const isSourceArchived = (id: string): boolean => get()._archivedSourceIds.has(id);
+
+  /** A live user write may not target an archived account (money-plan surface). */
+  const assertAccountActive = (accountId: string, role: string): void => {
+    assertAccountExists(accountId, role);
+    if (isAccountArchived(accountId)) {
+      throw new Error(`${role}: account "${accountId}" is archived`);
+    }
+  };
+  /** A live user write may not target an archived category. */
+  const assertCategoryActive = (categoryId: string): void => {
+    assertCategoryExists(categoryId);
+    if (isCategoryArchived(categoryId)) {
+      throw new Error(`Category "${categoryId}" is archived`);
+    }
+  };
+
+  /**
+   * Configured envelope budget attributable to a single week (cent-conserving).
+   * Archival lifetime rule: a category's budget is 0 for any weekly period
+   * STARTING after its archival date — history (weeks on/before that date) is
+   * preserved, future periods auto-zero. The createdAt gate is NOT applied here
+   * (that lives only in getSettleableLeftovers) so historical-week tests keep
+   * their configured budget.
+   */
   const configuredWeeklyBudget = (categoryId: string, week: WeekStart): Cents => {
     const row = categoryRow(categoryId);
     const env = row ? toEnvelope(row) : null;
     if (!env) return ZERO;
+    const archived = row?.archivedAt ?? null;
+    if (archived != null && week > dateOnly(archived)) return ZERO;
     if (env.period === 'weekly') return env.budget;
     // monthly: split the month's budget across its weeks, conserving cents.
     const weeks = weeksInMonth(monthOfWeek(week));
@@ -428,11 +474,17 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     return allocate(env.budget, weeks.map(() => 1))[idx];
   };
 
-  /** Configured envelope budget for a whole month (weekly => ×weeks; monthly => once). */
+  /**
+   * Configured envelope budget for a whole month (weekly => ×weeks; monthly =>
+   * once). Archival lifetime rule: 0 for any month STARTING after the archival
+   * date (returns ZERO, not null — the envelope existed, it is just retired).
+   */
   const configuredMonthlyBudget = (categoryId: string, month: MonthKey): Cents | null => {
     const row = categoryRow(categoryId);
     const env = row ? toEnvelope(row) : null;
     if (!env) return null;
+    const archived = row?.archivedAt ?? null;
+    if (archived != null && firstOfMonth(month) > dateOnly(archived)) return ZERO;
     if (env.period === 'monthly') return env.budget;
     return sumCents(weeksInMonth(month).map(() => env.budget));
   };
@@ -540,7 +592,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
   // ~2-month horizon (enough to catch a monthly cadence). Null when no income
   // schedule projects a payday — the caller then reserves nothing (see below).
   const nextPaydayAfter = (from: ISODate): ISODate | null => {
-    const sources = get()._incomeSources;
+    const sources = get()._incomeSources.filter((s) => !isSourceArchived(s.id));
     if (sources.length === 0) return null;
     const range: DateRange = { from: addDays(from, 1), to: addDays(from, 62) };
     let best: ISODate | null = null;
@@ -633,6 +685,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       id: string; chapterId: string; name: string; amount: number;
       scheduleKind: string; scheduleAnchorDate: string;
       scheduleSemimonthlyDay1: number | null; scheduleSemimonthlyDay2: number | null;
+      archivedAt: string | null;
     }>).filter((s) => !chId || s.chapterId === chId);
     const splitRows = db.select().from(schema.incomeSplits).all() as Array<{
       id: string; sourceId: string; accountId: string; ratio: number;
@@ -735,11 +788,16 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         updatedAt: t.createdAt,
       }));
 
+    const archivedSourceIds = new Set(
+      sourceRows.filter((s) => s.archivedAt != null).map((s) => s.id),
+    );
+
     set({
       _chapter: chapter,
       _accountRows: accountRows,
       _categoryRows: categoryRows,
       _incomeSources: incomeSources,
+      _archivedSourceIds: archivedSourceIds,
       _txnRows: txnRows,
       _carryover: carryover,
       _merchantCorrections: merchantCorrections,
@@ -814,7 +872,14 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       return C(transfersIn);
     },
     async getMonthFixedBillStatus(month) {
-      const fixedCats = get()._categoryRows.filter((c) => c.fixed);
+      // An archived fixed category is no longer expected for months starting
+      // after its archival date (else a deleted rent would fail Goal 1 forever);
+      // months on/before the archival date keep counting it (history).
+      const fixedCats = get()._categoryRows.filter(
+        (c) =>
+          c.fixed &&
+          (c.archivedAt == null || firstOfMonth(month) <= dateOnly(c.archivedAt)),
+      );
       const expected = fixedCats.length;
       const paid = fixedCats.filter(
         (c) => monthCategorySpend(c.id, month) > 0,
@@ -939,11 +1004,34 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     async renameDuck(duckId, name) {
+      // Store-side enforcement of the client's maxLength (F4-5): trim, reject an
+      // empty name, and clamp to DUCK_NAME_MAX so a raw API call can't overflow.
+      const trimmed = name.trim();
+      if (trimmed.length === 0) throw new Error('renameDuck: name must be non-empty');
+      const clamped = trimmed.slice(0, DUCK_NAME_MAX);
       await withTransaction(async () => {
-        getDb().update(schema.ducks).set({ name }).where(eq(schema.ducks.id, duckId)).run();
+        getDb().update(schema.ducks).set({ name: clamped }).where(eq(schema.ducks.id, duckId)).run();
       });
       await refresh();
     },
+  };
+
+  // Wrap a committed carryover action in a single-fire, time-boxed undo handle
+  // (shared by rollForward + sweepToSavings). `reverse` performs the atomic
+  // reversal and returns whether it actually reversed anything (false if the
+  // rows are already gone). undo() resolves false after the window, on a repeat
+  // call, or when reverse reports nothing to do — it never double-fires.
+  const makeReversible = (amount: Cents, reverse: () => Promise<boolean>): CarryoverActionResult => {
+    const expiresAt = Date.now() + UNDO_WINDOW_MS;
+    let used = false;
+    const undo = async (): Promise<boolean> => {
+      if (used) return false;
+      if (Date.now() > expiresAt) return false;
+      const ok = await reverse();
+      if (ok) used = true;
+      return ok;
+    };
+    return { amount, undo, expiresAt };
   };
 
   return {
@@ -952,6 +1040,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     _accountRows: [],
     _categoryRows: [],
     _incomeSources: [],
+    _archivedSourceIds: new Set<string>(),
     _txnRows: [],
     _carryover: [],
     _merchantCorrections: [],
@@ -1124,6 +1213,80 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       await refresh();
     },
 
+    // ------------------------------------------------- config removal (archival)
+    // Archival is the wizard's "real delete": stamp archived_at once and scrub
+    // the dependent rows that would otherwise misroute money or dangle. The
+    // entity row itself is retained so historical transactions/id-joins resolve.
+    removeAccount: async (accountId) => {
+      assertAccountExists(accountId, 'removeAccount');
+      if (isAccountArchived(accountId)) {
+        throw new Error(`removeAccount: account "${accountId}" is already archived`);
+      }
+      const activeCount = get()._accountRows.filter((a) => a.archivedAt == null).length;
+      if (activeCount <= 1) {
+        throw new Error('removeAccount: cannot archive the last active account');
+      }
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        const db = getDb();
+        db.update(schema.accounts)
+          .set({ archivedAt: now })
+          .where(eq(schema.accounts.id, accountId))
+          .run();
+        // Scrub income splits pointing at this account (an orphaned split would
+        // silently misroute income). Historical income transactions are kept.
+        db.delete(schema.incomeSplits)
+          .where(eq(schema.incomeSplits.accountId, accountId))
+          .run();
+      });
+      await refresh();
+    },
+
+    removeCategory: async (categoryId) => {
+      assertCategoryExists(categoryId);
+      if (isCategoryArchived(categoryId)) {
+        throw new Error(`removeCategory: category "${categoryId}" is already archived`);
+      }
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        const db = getDb();
+        db.update(schema.categories)
+          .set({ archivedAt: now })
+          .where(eq(schema.categories.id, categoryId))
+          .run();
+        // Deactivate its recurring bills (non-destructive) and drop its learned
+        // merchant corrections (a mapping to a deleted category is meaningless).
+        db.update(schema.recurringBills)
+          .set({ active: false })
+          .where(eq(schema.recurringBills.categoryId, categoryId))
+          .run();
+        db.delete(schema.merchantCorrections)
+          .where(eq(schema.merchantCorrections.categoryId, categoryId))
+          .run();
+      });
+      await refresh();
+    },
+
+    removeIncomeSource: async (sourceId) => {
+      if (!get()._incomeSources.some((s) => s.id === sourceId)) {
+        throw new Error(`removeIncomeSource: unknown income source "${sourceId}"`);
+      }
+      if (isSourceArchived(sourceId)) {
+        throw new Error(`removeIncomeSource: income source "${sourceId}" is already archived`);
+      }
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        // Splits are retained inert: past income rows keep their split; the
+        // source simply stops projecting paydays and rejects new income.
+        getDb()
+          .update(schema.incomeSources)
+          .set({ archivedAt: now })
+          .where(eq(schema.incomeSources.id, sourceId))
+          .run();
+      });
+      await refresh();
+    },
+
     // ---------------------------------------------------------- import data layer
     // Learn or re-point a merchant → category mapping (unique per chapter on the
     // normalized merchant). Validates the category before writing so a phantom
@@ -1169,6 +1332,9 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       };
     },
 
+    // UPSERT by case-insensitive trimmed name within the chapter (F5-4): a
+    // re-mark of an existing bill (active OR inactive) reactivates and updates
+    // it in place instead of accumulating duplicate rows per merchant.
     addRecurringBill: async (input) => {
       assertCategoryExists(input.categoryId);
       if (!Number.isInteger(input.dueDay) || input.dueDay < 1 || input.dueDay > 31) {
@@ -1177,33 +1343,49 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
         throw new Error('addRecurringBill: amountCents must be a positive whole number of cents');
       }
-      const id = generateId();
+      const name = input.name.trim();
+      const nameKey = name.toLowerCase();
+      const existing = get()._recurringBills.find((b) => b.name.trim().toLowerCase() === nameKey);
+      const id = existing?.id ?? generateId();
       const chapterId = activeChapterId();
       const now = new Date().toISOString();
       await withTransaction(async () => {
-        getDb()
-          .insert(schema.recurringBills)
-          .values({
-            id,
-            chapterId,
-            name: input.name,
-            categoryId: input.categoryId,
-            amountCents: input.amountCents,
-            dueDay: input.dueDay,
-            active: true,
-            createdAt: now,
-          })
-          .run();
+        const db = getDb();
+        if (existing) {
+          db.update(schema.recurringBills)
+            .set({
+              name,
+              categoryId: input.categoryId,
+              amountCents: input.amountCents,
+              dueDay: input.dueDay,
+              active: true, // reactivate on re-mark
+            })
+            .where(eq(schema.recurringBills.id, existing.id))
+            .run();
+        } else {
+          db.insert(schema.recurringBills)
+            .values({
+              id,
+              chapterId,
+              name,
+              categoryId: input.categoryId,
+              amountCents: input.amountCents,
+              dueDay: input.dueDay,
+              active: true,
+              createdAt: now,
+            })
+            .run();
+        }
       });
       await refresh();
       return {
         id,
-        name: input.name,
+        name,
         categoryId: input.categoryId,
         amountCents: input.amountCents,
         dueDay: input.dueDay,
         active: true,
-        createdAt: now,
+        createdAt: existing?.createdAt ?? now,
       };
     },
 
@@ -1254,6 +1436,9 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       if (!Number.isInteger(input.targetCents) || input.targetCents <= 0) {
         throw new Error('addGoal: targetCents must be a positive whole number of cents');
       }
+      if (input.targetCents > GOAL_TARGET_CAP_CENTS) {
+        throw new Error(`addGoal: targetCents must not exceed ${GOAL_TARGET_CAP_CENTS}`);
+      }
       const savingsAccountId = input.savingsAccountId ?? null;
       if (savingsAccountId !== null) assertSavingsAccount(savingsAccountId, 'addGoal');
       const id = generateId();
@@ -1299,6 +1484,9 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       ) {
         throw new Error('updateGoal: targetCents must be a positive whole number of cents');
       }
+      if (patch.targetCents !== undefined && patch.targetCents > GOAL_TARGET_CAP_CENTS) {
+        throw new Error(`updateGoal: targetCents must not exceed ${GOAL_TARGET_CAP_CENTS}`);
+      }
       // A null savingsAccountId is a legal patch (re-link to all-savings); only a
       // non-null id is validated for existence + savings kind.
       if (patch.savingsAccountId != null) {
@@ -1319,8 +1507,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
 
     // ----------------------------------------------------------------- mutations
     addExpense: async (input) => {
-      assertAccountExists(input.accountId, 'addExpense');
-      assertCategoryExists(input.categoryId);
+      assertAccountActive(input.accountId, 'addExpense');
+      assertCategoryActive(input.categoryId);
       const id = generateId();
       const chapterId = activeChapterId();
       await withTransaction(async () => {
@@ -1347,13 +1535,16 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const chapterId = activeChapterId();
       const source = get()._incomeSources.find((s) => s.id === input.sourceId);
       if (!source) throw new Error(`Unknown income source: ${input.sourceId}`);
+      if (isSourceArchived(source.id)) {
+        throw new Error(`addIncome: income source "${source.id}" is archived`);
+      }
       const total = input.amount ?? source.amount;
       const groupId = generateId();
       const now = new Date().toISOString();
 
       const splits = source.splits.length > 0 ? source.splits : null;
       if (splits) {
-        splits.forEach((sp) => assertAccountExists(sp.accountId, 'addIncome split'));
+        splits.forEach((sp) => assertAccountActive(sp.accountId, 'addIncome split'));
       } else {
         const fallback = get()._accountRows[0];
         if (!fallback) throw new Error('addIncome: no accounts exist to receive income');
@@ -1452,8 +1643,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       if (input.fromAccountId === input.toAccountId) {
         throw new Error('transfer: source and destination accounts must differ');
       }
-      assertAccountExists(input.fromAccountId, 'transfer (from)');
-      assertAccountExists(input.toAccountId, 'transfer (to)');
+      assertAccountActive(input.fromAccountId, 'transfer (from)');
+      assertAccountActive(input.toAccountId, 'transfer (to)');
       const chapterId = activeChapterId();
       const groupId = generateId();
       const now = new Date().toISOString();
@@ -1493,9 +1684,16 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     // ----------------------------------------------------------------- carryover
+    // rollForward / sweepToSavings return a reversible CarryoverActionResult, or
+    // null when there's nothing to do (leftover<=0 or a phantom week that ends
+    // before the chapter began — F1-4). The phantom gate is belt-and-braces on
+    // top of getSettleableLeftovers so a stale UI prompt can never write a
+    // fabricated leftover.
     rollForward: async (categoryId, fromWeek) => {
+      const chapter = get()._chapter;
+      if (chapter && addDays(fromWeek, 6) < chapter.startedAt) return null; // phantom week
       const leftover = envelopeWeekState(categoryId, fromWeek).remaining;
-      if (leftover <= 0) return; // nothing to roll
+      if (leftover <= 0) return null; // nothing to roll
       const toWeek = addDays(fromWeek, 7);
       const chapterId = activeChapterId();
       const pairId = generateId();
@@ -1531,11 +1729,26 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         }).run();
       });
       await refresh();
+      // Undo hard-deletes BOTH legs of the pair (conservation preserved: the
+      // roll never happened). false if already gone / expired / re-fired.
+      return makeReversible(amount, async () => {
+        if (!get()._carryover.some((e) => e.pairId === pairId)) return false;
+        await withTransaction(async () => {
+          getDb()
+            .delete(schema.carryoverEntries)
+            .where(eq(schema.carryoverEntries.pairId, pairId))
+            .run();
+        });
+        await refresh();
+        return true;
+      });
     },
 
     sweepToSavings: async (categoryId, fromWeek, savingsAccountId) => {
+      const chapter = get()._chapter;
+      if (chapter && addDays(fromWeek, 6) < chapter.startedAt) return null; // phantom week
       const leftover = envelopeWeekState(categoryId, fromWeek).remaining;
-      if (leftover <= 0) return;
+      if (leftover <= 0) return null;
       assertAccountExists(savingsAccountId, 'sweepToSavings');
       const chapterId = activeChapterId();
       const now = new Date().toISOString();
@@ -1546,10 +1759,12 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const source =
         get()._accountRows.find((a) => a.kind === 'spending' && a.id !== savingsAccountId) ??
         get()._accountRows.find((a) => a.id !== savingsAccountId);
+      const carryId = generateId();
+      const transferGroupId = source ? generateId() : null;
       await withTransaction(async () => {
         const db = getDb();
         db.insert(schema.carryoverEntries).values({
-          id: generateId(),
+          id: carryId,
           chapterId,
           categoryId,
           weekStart: fromWeek,
@@ -1560,8 +1775,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           attributionMonth: monthOfWeek(fromWeek),
           createdAt: now,
         }).run();
-        if (source) {
-          const groupId = generateId();
+        if (source && transferGroupId) {
           const legs = [
             { accountId: source.id, kind: 'transfer_out' as const },
             { accountId: savingsAccountId, kind: 'transfer_in' as const },
@@ -1576,7 +1790,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
               kind: leg.kind,
               date: fromWeek,
               note: 'Envelope sweep',
-              groupId,
+              groupId: transferGroupId,
               incomeSourceId: null,
               createdAt: now,
               deletedAt: null,
@@ -1585,6 +1799,27 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         }
       });
       await refresh();
+      // Undo hard-deletes the sweep carryover row and tombstones both transfer
+      // legs (soft-delete, so the cash returns to the source account). One
+      // transaction; false if already gone / expired / re-fired.
+      return makeReversible(leftover, async () => {
+        if (!get()._carryover.some((e) => e.id === carryId)) return false;
+        const tombstone = new Date().toISOString();
+        await withTransaction(async () => {
+          const db = getDb();
+          db.delete(schema.carryoverEntries)
+            .where(eq(schema.carryoverEntries.id, carryId))
+            .run();
+          if (transferGroupId) {
+            db.update(schema.transactions)
+              .set({ deletedAt: tombstone })
+              .where(eq(schema.transactions.groupId, transferGroupId))
+              .run();
+          }
+        });
+        await refresh();
+        return true;
+      });
     },
 
     // Borrow from an envelope's OWN next cycle (v0.3: cadence-aware, uncapped).
@@ -1675,13 +1910,49 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     // ----------------------------------------------------------------- reads
-    listAccounts: () => get()._accountRows.map(toAccountConfig),
-    listCategories: () => get()._categoryRows.map(toCategoryConfig),
-    listIncomeSources: () => get()._incomeSources,
+    // Default active-only (F1-2): pickers/wizard never resurrect a deleted row.
+    // includeArchived:true for id→name joins on history screens.
+    listAccounts: (opts) =>
+      get()
+        ._accountRows.filter((a) => opts?.includeArchived || a.archivedAt == null)
+        .map(toAccountConfig),
+    listCategories: (opts) =>
+      get()
+        ._categoryRows.filter((c) => opts?.includeArchived || c.archivedAt == null)
+        .map(toCategoryConfig),
+    listIncomeSources: (opts) =>
+      get()._incomeSources.filter(
+        (s) => opts?.includeArchived || !get()._archivedSourceIds.has(s.id),
+      ),
     getActiveChapter: () => {
       const ch = get()._chapter;
       if (!ch) throw new Error('No active chapter. Run the setup wizard first.');
       return ch;
+    },
+
+    // The Monday "settle last week?" prompt basis (F1-4). Only active weekly
+    // envelopes with a genuine, unsettled leftover for `prevWeek` — and only
+    // when `prevWeek` is not a phantom week that predates the chapter or the
+    // category. The createdAt gate lives ONLY here.
+    getSettleableLeftovers: (prevWeek) => {
+      const chapter = get()._chapter;
+      if (!chapter) return [];
+      const weekEnd = addDays(prevWeek, 6);
+      // A phantom week ends before the chapter began → nothing to settle.
+      if (weekEnd < chapter.startedAt) return [];
+      const out: Array<{ categoryId: string; remaining: Cents }> = [];
+      for (const c of get()._categoryRows) {
+        if (c.archivedAt != null) continue; // archived: no prompt
+        const env = toEnvelope(c);
+        if (!env || env.period !== 'weekly') continue; // weekly envelopes only
+        // Category created this week or later never has a real prior-week leftover.
+        if (weekEnd < dateOnly(c.createdAt)) continue;
+        const st = envelopeWeekState(c.id, prevWeek);
+        if (st.remaining > 0 && st.rolledOut === 0 && st.sweptOut === 0) {
+          out.push({ categoryId: c.id, remaining: st.remaining });
+        }
+      }
+      return out;
     },
 
     getMerchantCorrections: () => get()._merchantCorrections.map(toMerchantCorrection),
@@ -1730,6 +2001,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     getPaydays: (range) => {
       const set_ = new Set<ISODate>();
       for (const src of get()._incomeSources) {
+        if (isSourceArchived(src.id)) continue; // archived sources project no paydays
         for (const d of paydaysBetween(src.schedule, range)) set_.add(d);
       }
       return [...set_].sort();
@@ -1768,7 +2040,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     getSafeToSpend: (week) => {
       const envelopeRemaining = sumCents(
         get()
-          ._categoryRows.filter((c) => toEnvelope(c) != null)
+          ._categoryRows.filter((c) => c.archivedAt == null && toEnvelope(c) != null)
           .map((c) => envelopeWeekState(c.id, week).remaining),
       );
       return subCents(envelopeRemaining, billsReservation(week));

@@ -6,6 +6,7 @@ import { migration001 } from './migration_001';
 import { migration002 } from './migration_002';
 import { migration003 } from './migration_003';
 import { migration004 } from './migration_004';
+import { migration005 } from './migration_005';
 
 export { SqliteMigrationRunner } from './runner';
 export type { RawSqlDb } from './runner';
@@ -16,4 +17,5 @@ export const MIGRATIONS: readonly Migration[] = [
   migration002,
   migration003,
   migration004,
+  migration005,
 ];
