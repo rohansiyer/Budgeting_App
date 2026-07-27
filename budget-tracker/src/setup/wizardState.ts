@@ -6,7 +6,7 @@
  */
 import type { Cents } from '../lib/money';
 import { toEpochDay } from '../lib/schedule';
-import type { CategoryColorKey, EnvelopeConfig, IncomeSchedule, IncomeSplitConfig } from '../types/contracts';
+import type { CadenceType, CategoryColorKey, EnvelopeConfig, IncomeSchedule, IncomeSplitConfig } from '../types/contracts';
 import type { AccountConfig } from '../types/contracts';
 
 export type WizardStep = 'accounts' | 'income' | 'envelopes' | 'review';
@@ -39,6 +39,8 @@ export interface CategoryDraft {
   name: string;
   colorKey: CategoryColorKey;
   fixed: boolean;
+  /** Optional; omitted at save defaults to 'weekly' (create) or preserves the stored value (edit). */
+  cadence?: CadenceType;
   envelope: EnvelopeConfig | null;
 }
 
@@ -48,6 +50,14 @@ export interface WizardState {
   accounts: AccountDraft[];
   incomeSources: IncomeSourceDraft[];
   categories: CategoryDraft[];
+  /**
+   * F1-5: names of accounts whose in-session removal dropped a split from an
+   * income source, keyed by that source's draft key. Surfaced as an inline
+   * warning on the Income step until the source is touched (its splits/amount
+   * edited) or the notice is dismissed. Optional so legacy state literals
+   * (tests, prefill) stay valid; the reducer treats it as `{}` when absent.
+   */
+  splitDropNotices?: Record<string, string[]>;
 }
 
 export function initialWizardState(chapterName = 'Chapter 1'): WizardState {
@@ -57,6 +67,7 @@ export function initialWizardState(chapterName = 'Chapter 1'): WizardState {
     accounts: [],
     incomeSources: [],
     categories: [],
+    splitDropNotices: {},
   };
 }
 
@@ -81,7 +92,52 @@ export type WizardAction =
   | { type: 'SET_INCOME_SPLITS'; key: string; splits: IncomeSplitConfig[] }
   | { type: 'ADD_CATEGORY'; draft: CategoryDraft }
   | { type: 'UPDATE_CATEGORY'; key: string; patch: Partial<Omit<CategoryDraft, 'key'>> }
-  | { type: 'REMOVE_CATEGORY'; key: string };
+  | { type: 'REMOVE_CATEGORY'; key: string }
+  /** F1-5: dismiss the split-drop warning shown on an income source. */
+  | { type: 'ACK_SPLIT_DROP'; key: string };
+
+/** Drop one source's split-drop notice, returning a fresh map (F1-5). */
+function withoutNotice(
+  notices: Record<string, string[]> | undefined,
+  key: string,
+): Record<string, string[]> {
+  if (!notices || !(key in notices)) return notices ?? {};
+  const next = { ...notices };
+  delete next[key];
+  return next;
+}
+
+/**
+ * F1-5: the inline warning shown on an income source whose splits shrank
+ * because an account was removed this session. Returns null when there is
+ * nothing to warn about.
+ */
+export function splitDropWarningText(removedNames: string[] | undefined): string | null {
+  if (!removedNames || removedNames.length === 0) return null;
+  const unique = Array.from(new Set(removedNames));
+  const list =
+    unique.length === 1
+      ? unique[0]
+      : `${unique.slice(0, -1).join(', ')} and ${unique[unique.length - 1]}`;
+  return `This source no longer splits to ${list} — check its split.`;
+}
+
+/**
+ * F1-6: case-insensitive, trimmed uniqueness check used at Add / Save-changes
+ * time (before the coarser Continue-time validator). `existingNames` should be
+ * every OTHER row's name (exclude the row being edited). Returns an inline
+ * error string, or null when the name is free.
+ */
+export function duplicateNameError(
+  candidate: string,
+  existingNames: string[],
+  noun: 'account' | 'category' = 'account',
+): string | null {
+  const norm = candidate.trim().toLowerCase();
+  if (norm.length === 0) return null; // empty-name is a separate check
+  const clash = existingNames.some((n) => n.trim().toLowerCase() === norm);
+  return clash ? `That ${noun} name is already taken.` : null;
+}
 
 export function wizardReducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
@@ -114,8 +170,18 @@ export function wizardReducer(state: WizardState, action: WizardAction): WizardS
 
     case 'REMOVE_ACCOUNT': {
       const removedNoLongerValid = new Set([action.key]);
+      const removedName = state.accounts.find((a) => a.key === action.key)?.name ?? 'an account';
+      // F1-5: record which sources just lost a split so the Income step can
+      // warn about silently-rerouted money until the user acts on it.
+      const notices: Record<string, string[]> = { ...(state.splitDropNotices ?? {}) };
+      for (const s of state.incomeSources) {
+        if (s.splits.some((sp) => removedNoLongerValid.has(sp.accountId))) {
+          notices[s.key] = [...(notices[s.key] ?? []), removedName];
+        }
+      }
       return {
         ...state,
+        splitDropNotices: notices,
         accounts: state.accounts.filter((a) => a.key !== action.key),
         // Any income split pointing at the removed (draft-local) account
         // key is dropped too — an orphaned split would silently misroute
@@ -133,21 +199,32 @@ export function wizardReducer(state: WizardState, action: WizardAction): WizardS
     case 'UPDATE_INCOME_SOURCE':
       return {
         ...state,
+        // Touching the source (e.g. re-doing its splits) resolves any
+        // pending split-drop warning for it (F1-5).
+        splitDropNotices: withoutNotice(state.splitDropNotices, action.key),
         incomeSources: state.incomeSources.map((s) =>
           s.key === action.key ? { ...s, ...action.patch } : s,
         ),
       };
 
     case 'REMOVE_INCOME_SOURCE':
-      return { ...state, incomeSources: state.incomeSources.filter((s) => s.key !== action.key) };
+      return {
+        ...state,
+        splitDropNotices: withoutNotice(state.splitDropNotices, action.key),
+        incomeSources: state.incomeSources.filter((s) => s.key !== action.key),
+      };
 
     case 'SET_INCOME_SPLITS':
       return {
         ...state,
+        splitDropNotices: withoutNotice(state.splitDropNotices, action.key),
         incomeSources: state.incomeSources.map((s) =>
           s.key === action.key ? { ...s, splits: action.splits } : s,
         ),
       };
+
+    case 'ACK_SPLIT_DROP':
+      return { ...state, splitDropNotices: withoutNotice(state.splitDropNotices, action.key) };
 
     case 'ADD_CATEGORY':
       return { ...state, categories: [...state.categories, action.draft] };
@@ -342,7 +419,8 @@ export function prefilledWizardState(
     name: c.name,
     colorKey: c.colorKey,
     fixed: c.fixed,
+    cadence: c.cadence,
     envelope: c.envelope,
   }));
-  return { step: 'accounts', chapterName, accounts, incomeSources, categories };
+  return { step: 'accounts', chapterName, accounts, incomeSources, categories, splitDropNotices: {} };
 }

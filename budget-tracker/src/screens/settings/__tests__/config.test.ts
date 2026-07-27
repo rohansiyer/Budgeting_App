@@ -9,12 +9,15 @@ import { LOCK_TIMEOUT_PRESETS } from '../../../security/lockSettings';
 import { NOTIFICATION_KINDS } from '../../../notifications/types';
 
 describe('ROOT_SETTINGS_ITEMS', () => {
-  it('has exactly the six spec entries, in order', () => {
+  it('has exactly the spec entries, in order', () => {
     expect(ROOT_SETTINGS_ITEMS.map((i) => i.id)).toEqual([
       'setup',
       'backup',
       'security',
       'notifications',
+      'bills',
+      'searchLedger',
+      'goals',
       'newChapter',
       'about',
     ]);

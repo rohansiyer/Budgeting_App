@@ -8,8 +8,10 @@
  * src/lib/money.ts, never raw float math.
  *
  * Carryover mutations enforce the conservation law (paired roll/borrow entries
- * share a pairId and equal amounts) and borrow caps (next week only, ≤50% of
- * next week's configured budget) — violations throw.
+ * share a pairId and equal amounts). Borrowing is cadence-aware and UNCAPPED
+ * (v0.3): an envelope borrows from its own next cycle — weekly from next week,
+ * monthly from next calendar month — with honest math (nextCycleStartState) as
+ * the only guardrail. Money is never invented or lost; violations throw.
  *
  * A handful of DEPRECATED shim members (marked `TODO(team3)`) keep the legacy
  * screens compiling until Team 3 replaces them wholesale.
@@ -19,6 +21,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, getRawDb } from '../db/client';
 import * as schema from '../db/schema';
 import { generateId } from '../lib/ids';
+import { color } from '../theme/tokens';
 import {
   addCents,
   cents,
@@ -31,6 +34,8 @@ import {
 import { paydaysBetween as schedulePaydaysBetween } from '../lib/schedule';
 import type {
   AccountConfig,
+  CadenceType,
+  CarryoverActionResult,
   CarryoverEntry,
   CategoryColorKey,
   CategoryConfig,
@@ -42,10 +47,15 @@ import type {
   EnvelopeConfig,
   EnvelopeWeekState,
   EvaluationReadPort,
+  Goal,
+  GoalProgress,
   IncomeSchedule,
   IncomeSourceConfig,
   ISODate,
+  MerchantCorrection,
   MonthKey,
+  NextCycleState,
+  RecurringBill,
   StoreContract,
   TransactionRecord,
   WeekStart,
@@ -54,6 +64,11 @@ import { UNDO_WINDOW_MS } from '../types/contracts';
 import type { Account, Category, Settings, Transaction } from '../types';
 
 const C = (n: number): Cents => cents(n);
+
+/** Upper bound on a goal target: $1,000,000 in cents (F4-3 store side). */
+const GOAL_TARGET_CAP_CENTS = 100_000_000;
+/** Max length of a user-given duck name; longer names are clamped (F4-5). */
+const DUCK_NAME_MAX = 24;
 
 // ---------------------------------------------------------------------------
 // Date / week helpers (local-time, 'YYYY-MM-DD'). A budget week runs Mon..Sun
@@ -85,6 +100,21 @@ function mondayOf(iso: ISODate): WeekStart {
 function monthOfWeek(week: WeekStart): MonthKey {
   return week.slice(0, 7);
 }
+/** 'YYYY-MM' of an ISODate (calendar month). */
+function monthKeyOf(iso: ISODate): MonthKey {
+  return iso.slice(0, 7);
+}
+/** First calendar day of a month key ('2026-03' -> '2026-03-01'). */
+function firstOfMonth(month: MonthKey): ISODate {
+  return `${month}-01`;
+}
+/** The month key one calendar month after `month`. Pure integer math (no Date). */
+function nextMonthKey(month: MonthKey): MonthKey {
+  const [y, m] = month.split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}`;
+}
 /** All week-starts (Mondays) that belong to `month`, in order. */
 function weeksInMonth(month: MonthKey): WeekStart[] {
   let wk = mondayOf(`${month}-01`);
@@ -100,13 +130,9 @@ function inRange(date: ISODate, from: ISODate, to: ISODate): boolean {
   return date >= from && date <= to;
 }
 
-const CATEGORY_HEX: Record<CategoryColorKey, string> = {
-  violet: '#9D6FE0',
-  amber: '#BA8329',
-  mint: '#2FA383',
-  blue: '#5B82D9',
-  pink: '#C75E86',
-};
+// Single source of truth for category hues is the theme (only tokens.ts and
+// sprites.ts may hold literal hex). Legacy consumers get the same values.
+const CATEGORY_HEX: Record<CategoryColorKey, string> = color.category;
 
 // ---------------------------------------------------------------------------
 // Internal row shapes (drizzle select results, money as plain integers).
@@ -120,6 +146,7 @@ interface AccountRow {
   startingBalance: number;
   openedOn: string;
   createdAt: string;
+  archivedAt: string | null;
 }
 interface CategoryRow {
   id: string;
@@ -127,10 +154,12 @@ interface CategoryRow {
   name: string;
   colorKey: string;
   fixed: boolean;
+  cadence: string;
   envelopePeriod: string | null;
   envelopeBudget: number | null;
   envelopeCarryoverDefault: string | null;
   createdAt: string;
+  archivedAt: string | null;
 }
 interface TxnRow {
   id: string;
@@ -157,6 +186,33 @@ interface CarryoverRow {
   pairId: string | null;
   attributionMonth: string;
   createdAt: string;
+}
+interface MerchantCorrectionRow {
+  id: string;
+  chapterId: string;
+  normalizedMerchant: string;
+  categoryId: string;
+  createdAt: string;
+}
+interface RecurringBillRow {
+  id: string;
+  chapterId: string;
+  name: string;
+  categoryId: string;
+  amountCents: number;
+  dueDay: number;
+  active: boolean;
+  createdAt: string;
+}
+interface GoalRow {
+  id: string;
+  chapterId: string;
+  name: string;
+  targetCents: number;
+  savingsAccountId: string | null;
+  active: boolean;
+  createdAt: string;
+  achievedAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,8 +268,18 @@ function toCategoryConfig(row: CategoryRow): CategoryConfig {
     name: row.name,
     colorKey: row.colorKey as CategoryColorKey,
     fixed: row.fixed,
+    cadence: (row.cadence as CadenceType) ?? 'weekly',
     envelope: toEnvelope(row),
   };
+}
+
+/** Validate a cadence at the mutation boundary; reject anything but the two
+ * legal values so a bad write can never enter the store. */
+function assertCadence(value: unknown): CadenceType {
+  if (value !== 'weekly' && value !== 'monthly') {
+    throw new Error(`Invalid cadence "${String(value)}" (expected 'weekly' | 'monthly')`);
+  }
+  return value;
 }
 function toAccountConfig(row: AccountRow): AccountConfig {
   return {
@@ -225,6 +291,36 @@ function toAccountConfig(row: AccountRow): AccountConfig {
     openedOn: row.openedOn,
   };
 }
+function toMerchantCorrection(row: MerchantCorrectionRow): MerchantCorrection {
+  return {
+    id: row.id,
+    normalizedMerchant: row.normalizedMerchant,
+    categoryId: row.categoryId,
+    createdAt: row.createdAt,
+  };
+}
+function toRecurringBill(row: RecurringBillRow): RecurringBill {
+  return {
+    id: row.id,
+    name: row.name,
+    categoryId: row.categoryId,
+    amountCents: C(row.amountCents),
+    dueDay: row.dueDay,
+    active: Boolean(row.active),
+    createdAt: row.createdAt,
+  };
+}
+function toGoal(row: GoalRow): Goal {
+  return {
+    id: row.id,
+    name: row.name,
+    targetCents: C(row.targetCents),
+    savingsAccountId: row.savingsAccountId,
+    active: Boolean(row.active),
+    createdAt: row.createdAt,
+    achievedAt: row.achievedAt,
+  };
+}
 
 interface StoreState extends StoreContract {
   // Internal caches (money as Cents).
@@ -232,8 +328,13 @@ interface StoreState extends StoreContract {
   _accountRows: AccountRow[];
   _categoryRows: CategoryRow[];
   _incomeSources: IncomeSourceConfig[];
+  /** Ids of archived income sources (config has no archivedAt field; tracked here). */
+  _archivedSourceIds: Set<string>;
   _txnRows: TxnRow[];
   _carryover: CarryoverRow[];
+  _merchantCorrections: MerchantCorrectionRow[];
+  _recurringBills: RecurringBillRow[];
+  _goalRows: GoalRow[];
   _ducks: Duck[];
   _evaluations: DuckEvaluation[];
   _settingsRow: (Settings & { notificationsEnabled: boolean }) | null;
@@ -263,7 +364,7 @@ interface StoreState extends StoreContract {
   ) => Promise<void>;
   updateCategory: (
     id: string,
-    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed'>>,
+    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed' | 'cadence'>>,
   ) => Promise<void>;
   updateIncomeSource: (
     id: string,
@@ -281,8 +382,18 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     return ch.id;
   };
 
-  const carryoverFor = (categoryId: string, week: WeekStart): CarryoverRow[] =>
-    get()._carryover.filter((e) => e.categoryId === categoryId && e.weekStart === week);
+  // Entries are matched by CONTAINING week, not exact key: weekly legs sit on
+  // Mondays (exact hit), but monthly-cadence borrow legs sit on month-first
+  // dates that are usually mid-week. Windowed matching counts every leg exactly
+  // once in the week that contains it — the review-proven alternative (exact
+  // match) silently dropped monthly legs from safe-to-spend, inventing or
+  // destroying money depending on which month-firsts happened to be Mondays.
+  const carryoverFor = (categoryId: string, week: WeekStart): CarryoverRow[] => {
+    const weekEnd = addDays(week, 6);
+    return get()._carryover.filter(
+      (e) => e.categoryId === categoryId && e.weekStart >= week && e.weekStart <= weekEnd,
+    );
+  };
 
   const sumKind = (rows: CarryoverRow[], kind: string): Cents =>
     sumCents(rows.filter((r) => r.kind === kind).map((r) => C(r.amount)));
@@ -305,12 +416,56 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       throw new Error(`Unknown category "${categoryId}"`);
     }
   };
+  /** A goal may only link a savings-kind account that exists. */
+  const assertSavingsAccount = (accountId: string, role: string): void => {
+    const acct = get()._accountRows.find((a) => a.id === accountId);
+    if (!acct) throw new Error(`${role}: unknown account "${accountId}"`);
+    if (acct.kind !== 'savings') {
+      throw new Error(`${role}: account "${accountId}" is not a savings account`);
+    }
+  };
 
-  /** Configured envelope budget attributable to a single week (cent-conserving). */
+  // -- soft-archival predicates ---------------------------------------------
+  // Internal caches keep ALL rows (active + archived); filtering happens at the
+  // read surface. `_accountRows`/`_categoryRows` carry archivedAt directly;
+  // income sources track archival in a separate id set.
+  const dateOnly = (iso: string): ISODate => iso.slice(0, 10);
+  const accountArchivedAt = (id: string): string | null =>
+    get()._accountRows.find((a) => a.id === id)?.archivedAt ?? null;
+  const categoryArchivedAt = (id: string): string | null => categoryRow(id)?.archivedAt ?? null;
+  const isAccountArchived = (id: string): boolean => accountArchivedAt(id) != null;
+  const isCategoryArchived = (id: string): boolean => categoryArchivedAt(id) != null;
+  const isSourceArchived = (id: string): boolean => get()._archivedSourceIds.has(id);
+
+  /** A live user write may not target an archived account (money-plan surface). */
+  const assertAccountActive = (accountId: string, role: string): void => {
+    assertAccountExists(accountId, role);
+    if (isAccountArchived(accountId)) {
+      throw new Error(`${role}: account "${accountId}" is archived`);
+    }
+  };
+  /** A live user write may not target an archived category. */
+  const assertCategoryActive = (categoryId: string): void => {
+    assertCategoryExists(categoryId);
+    if (isCategoryArchived(categoryId)) {
+      throw new Error(`Category "${categoryId}" is archived`);
+    }
+  };
+
+  /**
+   * Configured envelope budget attributable to a single week (cent-conserving).
+   * Archival lifetime rule: a category's budget is 0 for any weekly period
+   * STARTING after its archival date — history (weeks on/before that date) is
+   * preserved, future periods auto-zero. The createdAt gate is NOT applied here
+   * (that lives only in getSettleableLeftovers) so historical-week tests keep
+   * their configured budget.
+   */
   const configuredWeeklyBudget = (categoryId: string, week: WeekStart): Cents => {
     const row = categoryRow(categoryId);
     const env = row ? toEnvelope(row) : null;
     if (!env) return ZERO;
+    const archived = row?.archivedAt ?? null;
+    if (archived != null && week > dateOnly(archived)) return ZERO;
     if (env.period === 'weekly') return env.budget;
     // monthly: split the month's budget across its weeks, conserving cents.
     const weeks = weeksInMonth(monthOfWeek(week));
@@ -319,11 +474,17 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     return allocate(env.budget, weeks.map(() => 1))[idx];
   };
 
-  /** Configured envelope budget for a whole month (weekly => ×weeks; monthly => once). */
+  /**
+   * Configured envelope budget for a whole month (weekly => ×weeks; monthly =>
+   * once). Archival lifetime rule: 0 for any month STARTING after the archival
+   * date (returns ZERO, not null — the envelope existed, it is just retired).
+   */
   const configuredMonthlyBudget = (categoryId: string, month: MonthKey): Cents | null => {
     const row = categoryRow(categoryId);
     const env = row ? toEnvelope(row) : null;
     if (!env) return null;
+    const archived = row?.archivedAt ?? null;
+    if (archived != null && firstOfMonth(month) > dateOnly(archived)) return ZERO;
     if (env.period === 'monthly') return env.budget;
     return sumCents(weeksInMonth(month).map(() => env.budget));
   };
@@ -405,6 +566,84 @@ export const useBudgetStore = create<StoreState>((set, get) => {
   // calendar validation, DST-immune epoch-day arithmetic).
   const paydaysBetween = schedulePaydaysBetween;
 
+  // -- bills forecast reservation (handoff §3.8) ----------------------------
+  // The next date on/after `from` with day-of-month = min(dueDay, monthLength),
+  // implementing the clamp-to-month-end semantics of RecurringBill.dueDay. Pure
+  // calendar math (Date), never money.
+  const nextBillDueOnOrAfter = (dueDay: number, from: ISODate): ISODate => {
+    const start = toDate(from);
+    let y = start.getFullYear();
+    let m = start.getMonth(); // 0-based
+    for (let i = 0; i < 14; i++) {
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      const day = Math.min(dueDay, daysInMonth);
+      const candidate = fmt(new Date(y, m, day));
+      if (candidate >= from) return candidate;
+      m += 1;
+      if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+    }
+    return from; // unreachable (a due date always resolves within 14 months)
+  };
+
+  // The earliest payday STRICTLY AFTER `from` across all income sources within a
+  // ~2-month horizon (enough to catch a monthly cadence). Null when no income
+  // schedule projects a payday — the caller then reserves nothing (see below).
+  const nextPaydayAfter = (from: ISODate): ISODate | null => {
+    const sources = get()._incomeSources.filter((s) => !isSourceArchived(s.id));
+    if (sources.length === 0) return null;
+    const range: DateRange = { from: addDays(from, 1), to: addDays(from, 62) };
+    let best: ISODate | null = null;
+    for (const src of sources) {
+      for (const d of paydaysBetween(src.schedule, range)) {
+        if (best == null || d < best) best = d;
+      }
+    }
+    return best;
+  };
+
+  /**
+   * Cents to hold out of `week`s safe-to-spend for upcoming bills (handoff
+   * §3.8, "Feeds the safe-to-spend math"). An ACTIVE recurring bill reserves iff
+   * its next occurrence (on/after the week start, clamp-to-month-end) falls on
+   * or before the NEXT payday after the week start — a bill due AFTER that
+   * payday belongs to the following pay period and does not reserve now. A bill
+   * already covered this window by a matching fixed-category expense (SAME
+   * categoryId AND SAME amount, dated within [weekStart, nextPayday]) is treated
+   * as paid and not reserved; matches are consumed 1:1 so two identical bills
+   * are not both cleared by a single payment. Zero active bills, or no upcoming
+   * payday to bound the window, reserves nothing: without a payday horizon the
+   * window is unbounded, so guessing a reservation would invent an outflow the
+   * displayed math cannot justify (honesty rule). A bill due ON the payday
+   * reserves (boundary is inclusive).
+   */
+  const billsReservation = (week: WeekStart): Cents => {
+    const bills = get()._recurringBills.filter((b) => b.active);
+    if (bills.length === 0) return ZERO;
+    const nextPayday = nextPaydayAfter(week);
+    if (nextPayday == null) return ZERO;
+    const windowTxns = liveTxns().filter(
+      (t) => t.kind === 'expense' && inRange(t.date, week, nextPayday),
+    );
+    const consumed = new Set<string>();
+    let reserved: Cents = ZERO;
+    for (const b of bills) {
+      const due = nextBillDueOnOrAfter(b.dueDay, week);
+      if (due > nextPayday) continue; // due after the next payday: not this window
+      const match = windowTxns.find(
+        (t) => !consumed.has(t.id) && t.categoryId === b.categoryId && t.amount === b.amountCents,
+      );
+      if (match) {
+        consumed.add(match.id);
+        continue; // already paid this window — do not double-reserve
+      }
+      reserved = addCents(reserved, C(b.amountCents));
+    }
+    return reserved;
+  };
+
   // -- refresh: reload every cache from committed DB, rebuild shim views ----
   const refresh = async (): Promise<void> => {
     const db = getDb();
@@ -433,10 +672,20 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     const carryover = (db.select().from(schema.carryoverEntries).all() as CarryoverRow[]).filter(
       (e) => !chId || e.chapterId === chId,
     );
+    const merchantCorrections = (
+      db.select().from(schema.merchantCorrections).all() as MerchantCorrectionRow[]
+    ).filter((r) => !chId || r.chapterId === chId);
+    const recurringBills = (
+      db.select().from(schema.recurringBills).all() as RecurringBillRow[]
+    ).filter((r) => !chId || r.chapterId === chId);
+    const goalRows = (db.select().from(schema.goals).all() as GoalRow[]).filter(
+      (g) => !chId || g.chapterId === chId,
+    );
     const sourceRows = (db.select().from(schema.incomeSources).all() as Array<{
       id: string; chapterId: string; name: string; amount: number;
       scheduleKind: string; scheduleAnchorDate: string;
       scheduleSemimonthlyDay1: number | null; scheduleSemimonthlyDay2: number | null;
+      archivedAt: string | null;
     }>).filter((s) => !chId || s.chapterId === chId);
     const splitRows = db.select().from(schema.incomeSplits).all() as Array<{
       id: string; sourceId: string; accountId: string; ratio: number;
@@ -539,13 +788,21 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         updatedAt: t.createdAt,
       }));
 
+    const archivedSourceIds = new Set(
+      sourceRows.filter((s) => s.archivedAt != null).map((s) => s.id),
+    );
+
     set({
       _chapter: chapter,
       _accountRows: accountRows,
       _categoryRows: categoryRows,
       _incomeSources: incomeSources,
+      _archivedSourceIds: archivedSourceIds,
       _txnRows: txnRows,
       _carryover: carryover,
+      _merchantCorrections: merchantCorrections,
+      _recurringBills: recurringBills,
+      _goalRows: goalRows,
       _ducks: ducks,
       _evaluations: evaluations,
       _settingsRow: settingsRows[0] ?? null,
@@ -583,24 +840,46 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const savingsIds = new Set(
         get()._accountRows.filter((a) => a.kind === 'savings').map((a) => a.id),
       );
+      const txns = liveTxns();
+      // Source of a transfer leg = its transfer_out partner (shared groupId).
+      const outByGroup = new Map<string, TxnRow>();
+      for (const t of txns) {
+        if (t.kind === 'transfer_out' && t.groupId != null) outByGroup.set(t.groupId, t);
+      }
       const transfersIn = sumCents(
-        liveTxns()
-          .filter(
-            (t) =>
-              t.kind === 'transfer_in' &&
-              savingsIds.has(t.accountId) &&
-              t.date.slice(0, 7) === month,
-          )
+        txns
+          .filter((t) => {
+            if (t.kind !== 'transfer_in') return false;
+            if (!savingsIds.has(t.accountId)) return false;
+            if (t.date.slice(0, 7) !== month) return false;
+            // v0.3 correction (adversarial finding): a transfer whose SOURCE is
+            // itself a savings account is a savings->savings SHUFFLE — it moves
+            // no new money into savings, so it must not inflate the Goal-3
+            // metric. Count only transfers funded from a NON-savings source.
+            // Single-savings setups are unaffected (no savings->savings transfer
+            // can exist), and sweeps (spending-funded) still count as before.
+            const partner = t.groupId != null ? outByGroup.get(t.groupId) : undefined;
+            if (partner && savingsIds.has(partner.accountId)) return false;
+            return true;
+          })
           .map((t) => C(t.amount)),
       );
-      // Sweeps create real transfer_in rows (see sweepToSavings), so the
-      // transfersIn term already includes them — no separate sweep term,
-      // which would double-count (Goal 3 basis: calendar-month transfers
-      // into savings-kind accounts).
+      // Sweeps create real transfer_in rows (see sweepToSavings) funded from a
+      // spending account, so the transfersIn term already includes them — no
+      // separate sweep term, which would double-count (Goal 3 basis:
+      // calendar-month transfers into savings-kind accounts, net of internal
+      // savings->savings shuffles).
       return C(transfersIn);
     },
     async getMonthFixedBillStatus(month) {
-      const fixedCats = get()._categoryRows.filter((c) => c.fixed);
+      // An archived fixed category is no longer expected for months starting
+      // after its archival date (else a deleted rent would fail Goal 1 forever);
+      // months on/before the archival date keep counting it (history).
+      const fixedCats = get()._categoryRows.filter(
+        (c) =>
+          c.fixed &&
+          (c.archivedAt == null || firstOfMonth(month) <= dateOnly(c.archivedAt)),
+      );
       const expected = fixedCats.length;
       const paid = fixedCats.filter(
         (c) => monthCategorySpend(c.id, month) > 0,
@@ -725,11 +1004,34 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     async renameDuck(duckId, name) {
+      // Store-side enforcement of the client's maxLength (F4-5): trim, reject an
+      // empty name, and clamp to DUCK_NAME_MAX so a raw API call can't overflow.
+      const trimmed = name.trim();
+      if (trimmed.length === 0) throw new Error('renameDuck: name must be non-empty');
+      const clamped = trimmed.slice(0, DUCK_NAME_MAX);
       await withTransaction(async () => {
-        getDb().update(schema.ducks).set({ name }).where(eq(schema.ducks.id, duckId)).run();
+        getDb().update(schema.ducks).set({ name: clamped }).where(eq(schema.ducks.id, duckId)).run();
       });
       await refresh();
     },
+  };
+
+  // Wrap a committed carryover action in a single-fire, time-boxed undo handle
+  // (shared by rollForward + sweepToSavings). `reverse` performs the atomic
+  // reversal and returns whether it actually reversed anything (false if the
+  // rows are already gone). undo() resolves false after the window, on a repeat
+  // call, or when reverse reports nothing to do — it never double-fires.
+  const makeReversible = (amount: Cents, reverse: () => Promise<boolean>): CarryoverActionResult => {
+    const expiresAt = Date.now() + UNDO_WINDOW_MS;
+    let used = false;
+    const undo = async (): Promise<boolean> => {
+      if (used) return false;
+      if (Date.now() > expiresAt) return false;
+      const ok = await reverse();
+      if (ok) used = true;
+      return ok;
+    };
+    return { amount, undo, expiresAt };
   };
 
   return {
@@ -738,8 +1040,12 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     _accountRows: [],
     _categoryRows: [],
     _incomeSources: [],
+    _archivedSourceIds: new Set<string>(),
     _txnRows: [],
     _carryover: [],
+    _merchantCorrections: [],
+    _recurringBills: [],
+    _goalRows: [],
     _ducks: [],
     _evaluations: [],
     _settingsRow: null,
@@ -873,6 +1179,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const id = generateId();
       const chapterId = activeChapterId();
       const now = new Date().toISOString();
+      const cadence = input.cadence === undefined ? 'weekly' : assertCadence(input.cadence);
       await withTransaction(async () => {
         getDb().insert(schema.categories).values({
           id,
@@ -880,6 +1187,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           name: input.name,
           colorKey: input.colorKey,
           fixed: input.fixed,
+          cadence,
           envelopePeriod: input.envelope?.period ?? null,
           envelopeBudget: input.envelope?.budget ?? null,
           envelopeCarryoverDefault: input.envelope?.carryoverDefault ?? null,
@@ -887,7 +1195,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         }).run();
       });
       await refresh();
-      return { id, ...input };
+      return { id, ...input, cadence };
     },
 
     updateEnvelope: async (categoryId, envelope) => {
@@ -905,10 +1213,302 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       await refresh();
     },
 
+    // ------------------------------------------------- config removal (archival)
+    // Archival is the wizard's "real delete": stamp archived_at once and scrub
+    // the dependent rows that would otherwise misroute money or dangle. The
+    // entity row itself is retained so historical transactions/id-joins resolve.
+    removeAccount: async (accountId) => {
+      assertAccountExists(accountId, 'removeAccount');
+      if (isAccountArchived(accountId)) {
+        throw new Error(`removeAccount: account "${accountId}" is already archived`);
+      }
+      const activeCount = get()._accountRows.filter((a) => a.archivedAt == null).length;
+      if (activeCount <= 1) {
+        throw new Error('removeAccount: cannot archive the last active account');
+      }
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        const db = getDb();
+        db.update(schema.accounts)
+          .set({ archivedAt: now })
+          .where(eq(schema.accounts.id, accountId))
+          .run();
+        // Scrub income splits pointing at this account (an orphaned split would
+        // silently misroute income). Historical income transactions are kept.
+        db.delete(schema.incomeSplits)
+          .where(eq(schema.incomeSplits.accountId, accountId))
+          .run();
+      });
+      await refresh();
+    },
+
+    removeCategory: async (categoryId) => {
+      assertCategoryExists(categoryId);
+      if (isCategoryArchived(categoryId)) {
+        throw new Error(`removeCategory: category "${categoryId}" is already archived`);
+      }
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        const db = getDb();
+        db.update(schema.categories)
+          .set({ archivedAt: now })
+          .where(eq(schema.categories.id, categoryId))
+          .run();
+        // Deactivate its recurring bills (non-destructive) and drop its learned
+        // merchant corrections (a mapping to a deleted category is meaningless).
+        db.update(schema.recurringBills)
+          .set({ active: false })
+          .where(eq(schema.recurringBills.categoryId, categoryId))
+          .run();
+        db.delete(schema.merchantCorrections)
+          .where(eq(schema.merchantCorrections.categoryId, categoryId))
+          .run();
+      });
+      await refresh();
+    },
+
+    removeIncomeSource: async (sourceId) => {
+      if (!get()._incomeSources.some((s) => s.id === sourceId)) {
+        throw new Error(`removeIncomeSource: unknown income source "${sourceId}"`);
+      }
+      if (isSourceArchived(sourceId)) {
+        throw new Error(`removeIncomeSource: income source "${sourceId}" is already archived`);
+      }
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        // Splits are retained inert: past income rows keep their split; the
+        // source simply stops projecting paydays and rejects new income.
+        getDb()
+          .update(schema.incomeSources)
+          .set({ archivedAt: now })
+          .where(eq(schema.incomeSources.id, sourceId))
+          .run();
+      });
+      await refresh();
+    },
+
+    // ---------------------------------------------------------- import data layer
+    // Learn or re-point a merchant → category mapping (unique per chapter on the
+    // normalized merchant). Validates the category before writing so a phantom
+    // category can never be learned. Upsert: an existing mapping for the same
+    // normalized merchant is UPDATED in place, never duplicated.
+    upsertMerchantCorrection: async (input) => {
+      const normalized = input.normalizedMerchant.trim();
+      if (normalized.length === 0) {
+        throw new Error('upsertMerchantCorrection: normalizedMerchant must be non-empty');
+      }
+      assertCategoryExists(input.categoryId);
+      const chapterId = activeChapterId();
+      const now = new Date().toISOString();
+      const existing = get()._merchantCorrections.find(
+        (r) => r.normalizedMerchant === normalized,
+      );
+      const id = existing?.id ?? generateId();
+      await withTransaction(async () => {
+        const db = getDb();
+        if (existing) {
+          db.update(schema.merchantCorrections)
+            .set({ categoryId: input.categoryId })
+            .where(eq(schema.merchantCorrections.id, existing.id))
+            .run();
+        } else {
+          db.insert(schema.merchantCorrections)
+            .values({
+              id,
+              chapterId,
+              normalizedMerchant: normalized,
+              categoryId: input.categoryId,
+              createdAt: now,
+            })
+            .run();
+        }
+      });
+      await refresh();
+      return {
+        id,
+        normalizedMerchant: normalized,
+        categoryId: input.categoryId,
+        createdAt: existing?.createdAt ?? now,
+      };
+    },
+
+    // UPSERT by case-insensitive trimmed name within the chapter (F5-4): a
+    // re-mark of an existing bill (active OR inactive) reactivates and updates
+    // it in place instead of accumulating duplicate rows per merchant.
+    addRecurringBill: async (input) => {
+      assertCategoryExists(input.categoryId);
+      if (!Number.isInteger(input.dueDay) || input.dueDay < 1 || input.dueDay > 31) {
+        throw new Error('addRecurringBill: dueDay must be a whole number 1..31');
+      }
+      if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+        throw new Error('addRecurringBill: amountCents must be a positive whole number of cents');
+      }
+      const name = input.name.trim();
+      const nameKey = name.toLowerCase();
+      const existing = get()._recurringBills.find((b) => b.name.trim().toLowerCase() === nameKey);
+      const id = existing?.id ?? generateId();
+      const chapterId = activeChapterId();
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        const db = getDb();
+        if (existing) {
+          db.update(schema.recurringBills)
+            .set({
+              name,
+              categoryId: input.categoryId,
+              amountCents: input.amountCents,
+              dueDay: input.dueDay,
+              active: true, // reactivate on re-mark
+            })
+            .where(eq(schema.recurringBills.id, existing.id))
+            .run();
+        } else {
+          db.insert(schema.recurringBills)
+            .values({
+              id,
+              chapterId,
+              name,
+              categoryId: input.categoryId,
+              amountCents: input.amountCents,
+              dueDay: input.dueDay,
+              active: true,
+              createdAt: now,
+            })
+            .run();
+        }
+      });
+      await refresh();
+      return {
+        id,
+        name,
+        categoryId: input.categoryId,
+        amountCents: input.amountCents,
+        dueDay: input.dueDay,
+        active: true,
+        createdAt: existing?.createdAt ?? now,
+      };
+    },
+
+    updateRecurringBill: async (id, patch) => {
+      if (!get()._recurringBills.some((b) => b.id === id)) {
+        throw new Error(`updateRecurringBill: unknown bill "${id}"`);
+      }
+      if (patch.categoryId !== undefined) assertCategoryExists(patch.categoryId);
+      if (
+        patch.dueDay !== undefined &&
+        (!Number.isInteger(patch.dueDay) || patch.dueDay < 1 || patch.dueDay > 31)
+      ) {
+        throw new Error('updateRecurringBill: dueDay must be a whole number 1..31');
+      }
+      if (
+        patch.amountCents !== undefined &&
+        (!Number.isInteger(patch.amountCents) || patch.amountCents <= 0)
+      ) {
+        throw new Error(
+          'updateRecurringBill: amountCents must be a positive whole number of cents',
+        );
+      }
+      await withTransaction(async () => {
+        const set_: Record<string, unknown> = {};
+        if (patch.name !== undefined) set_.name = patch.name;
+        if (patch.categoryId !== undefined) set_.categoryId = patch.categoryId;
+        if (patch.amountCents !== undefined) set_.amountCents = patch.amountCents;
+        if (patch.dueDay !== undefined) set_.dueDay = patch.dueDay;
+        if (patch.active !== undefined) set_.active = patch.active;
+        if (Object.keys(set_).length === 0) return;
+        getDb()
+          .update(schema.recurringBills)
+          .set(set_)
+          .where(eq(schema.recurringBills.id, id))
+          .run();
+      });
+      await refresh();
+    },
+
+    // ---------------------------------------------------------------- named goals
+    // A goal targets a positive dollar amount and reads progress from a linked
+    // savings account (or the sum of all savings accounts when unlinked).
+    // Validation mirrors the recurring-bill boundary: a phantom or non-savings
+    // account, an empty name, or a non-positive target all throw BEFORE any write.
+    addGoal: async (input) => {
+      const name = input.name.trim();
+      if (name.length === 0) throw new Error('addGoal: name must be non-empty');
+      if (!Number.isInteger(input.targetCents) || input.targetCents <= 0) {
+        throw new Error('addGoal: targetCents must be a positive whole number of cents');
+      }
+      if (input.targetCents > GOAL_TARGET_CAP_CENTS) {
+        throw new Error(`addGoal: targetCents must not exceed ${GOAL_TARGET_CAP_CENTS}`);
+      }
+      const savingsAccountId = input.savingsAccountId ?? null;
+      if (savingsAccountId !== null) assertSavingsAccount(savingsAccountId, 'addGoal');
+      const id = generateId();
+      const chapterId = activeChapterId();
+      const now = new Date().toISOString();
+      await withTransaction(async () => {
+        getDb()
+          .insert(schema.goals)
+          .values({
+            id,
+            chapterId,
+            name,
+            targetCents: input.targetCents,
+            savingsAccountId,
+            active: true,
+            createdAt: now,
+            achievedAt: null,
+          })
+          .run();
+      });
+      await refresh();
+      return {
+        id,
+        name,
+        targetCents: input.targetCents,
+        savingsAccountId,
+        active: true,
+        createdAt: now,
+        achievedAt: null,
+      };
+    },
+
+    updateGoal: async (id, patch) => {
+      if (!get()._goalRows.some((g) => g.id === id)) {
+        throw new Error(`updateGoal: unknown goal "${id}"`);
+      }
+      if (patch.name !== undefined && patch.name.trim().length === 0) {
+        throw new Error('updateGoal: name must be non-empty');
+      }
+      if (
+        patch.targetCents !== undefined &&
+        (!Number.isInteger(patch.targetCents) || patch.targetCents <= 0)
+      ) {
+        throw new Error('updateGoal: targetCents must be a positive whole number of cents');
+      }
+      if (patch.targetCents !== undefined && patch.targetCents > GOAL_TARGET_CAP_CENTS) {
+        throw new Error(`updateGoal: targetCents must not exceed ${GOAL_TARGET_CAP_CENTS}`);
+      }
+      // A null savingsAccountId is a legal patch (re-link to all-savings); only a
+      // non-null id is validated for existence + savings kind.
+      if (patch.savingsAccountId != null) {
+        assertSavingsAccount(patch.savingsAccountId, 'updateGoal');
+      }
+      await withTransaction(async () => {
+        const set_: Record<string, unknown> = {};
+        if (patch.name !== undefined) set_.name = patch.name.trim();
+        if (patch.targetCents !== undefined) set_.targetCents = patch.targetCents;
+        if (patch.savingsAccountId !== undefined) set_.savingsAccountId = patch.savingsAccountId;
+        if (patch.active !== undefined) set_.active = patch.active;
+        if (patch.achievedAt !== undefined) set_.achievedAt = patch.achievedAt;
+        if (Object.keys(set_).length === 0) return;
+        getDb().update(schema.goals).set(set_).where(eq(schema.goals.id, id)).run();
+      });
+      await refresh();
+    },
+
     // ----------------------------------------------------------------- mutations
     addExpense: async (input) => {
-      assertAccountExists(input.accountId, 'addExpense');
-      assertCategoryExists(input.categoryId);
+      assertAccountActive(input.accountId, 'addExpense');
+      assertCategoryActive(input.categoryId);
       const id = generateId();
       const chapterId = activeChapterId();
       await withTransaction(async () => {
@@ -935,13 +1535,16 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const chapterId = activeChapterId();
       const source = get()._incomeSources.find((s) => s.id === input.sourceId);
       if (!source) throw new Error(`Unknown income source: ${input.sourceId}`);
+      if (isSourceArchived(source.id)) {
+        throw new Error(`addIncome: income source "${source.id}" is archived`);
+      }
       const total = input.amount ?? source.amount;
       const groupId = generateId();
       const now = new Date().toISOString();
 
       const splits = source.splits.length > 0 ? source.splits : null;
       if (splits) {
-        splits.forEach((sp) => assertAccountExists(sp.accountId, 'addIncome split'));
+        splits.forEach((sp) => assertAccountActive(sp.accountId, 'addIncome split'));
       } else {
         const fallback = get()._accountRows[0];
         if (!fallback) throw new Error('addIncome: no accounts exist to receive income');
@@ -989,7 +1592,13 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     editTransaction: async (id, patch) => {
+      if (!get()._txnRows.some((t) => t.id === id && t.deletedAt == null)) {
+        throw new Error(`editTransaction: unknown or deleted transaction "${id}"`);
+      }
       if (patch.categoryId != null) assertCategoryExists(patch.categoryId);
+      if (patch.amount !== undefined && (!Number.isInteger(patch.amount) || patch.amount <= 0)) {
+        throw new Error('editTransaction: amount must be a positive whole number of cents');
+      }
       await withTransaction(async () => {
         const set_: Record<string, unknown> = {};
         if (patch.amount !== undefined) set_.amount = patch.amount;
@@ -1034,8 +1643,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       if (input.fromAccountId === input.toAccountId) {
         throw new Error('transfer: source and destination accounts must differ');
       }
-      assertAccountExists(input.fromAccountId, 'transfer (from)');
-      assertAccountExists(input.toAccountId, 'transfer (to)');
+      assertAccountActive(input.fromAccountId, 'transfer (from)');
+      assertAccountActive(input.toAccountId, 'transfer (to)');
       const chapterId = activeChapterId();
       const groupId = generateId();
       const now = new Date().toISOString();
@@ -1075,9 +1684,16 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     },
 
     // ----------------------------------------------------------------- carryover
+    // rollForward / sweepToSavings return a reversible CarryoverActionResult, or
+    // null when there's nothing to do (leftover<=0 or a phantom week that ends
+    // before the chapter began — F1-4). The phantom gate is belt-and-braces on
+    // top of getSettleableLeftovers so a stale UI prompt can never write a
+    // fabricated leftover.
     rollForward: async (categoryId, fromWeek) => {
+      const chapter = get()._chapter;
+      if (chapter && addDays(fromWeek, 6) < chapter.startedAt) return null; // phantom week
       const leftover = envelopeWeekState(categoryId, fromWeek).remaining;
-      if (leftover <= 0) return; // nothing to roll
+      if (leftover <= 0) return null; // nothing to roll
       const toWeek = addDays(fromWeek, 7);
       const chapterId = activeChapterId();
       const pairId = generateId();
@@ -1113,11 +1729,26 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         }).run();
       });
       await refresh();
+      // Undo hard-deletes BOTH legs of the pair (conservation preserved: the
+      // roll never happened). false if already gone / expired / re-fired.
+      return makeReversible(amount, async () => {
+        if (!get()._carryover.some((e) => e.pairId === pairId)) return false;
+        await withTransaction(async () => {
+          getDb()
+            .delete(schema.carryoverEntries)
+            .where(eq(schema.carryoverEntries.pairId, pairId))
+            .run();
+        });
+        await refresh();
+        return true;
+      });
     },
 
     sweepToSavings: async (categoryId, fromWeek, savingsAccountId) => {
+      const chapter = get()._chapter;
+      if (chapter && addDays(fromWeek, 6) < chapter.startedAt) return null; // phantom week
       const leftover = envelopeWeekState(categoryId, fromWeek).remaining;
-      if (leftover <= 0) return;
+      if (leftover <= 0) return null;
       assertAccountExists(savingsAccountId, 'sweepToSavings');
       const chapterId = activeChapterId();
       const now = new Date().toISOString();
@@ -1128,10 +1759,12 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       const source =
         get()._accountRows.find((a) => a.kind === 'spending' && a.id !== savingsAccountId) ??
         get()._accountRows.find((a) => a.id !== savingsAccountId);
+      const carryId = generateId();
+      const transferGroupId = source ? generateId() : null;
       await withTransaction(async () => {
         const db = getDb();
         db.insert(schema.carryoverEntries).values({
-          id: generateId(),
+          id: carryId,
           chapterId,
           categoryId,
           weekStart: fromWeek,
@@ -1142,8 +1775,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           attributionMonth: monthOfWeek(fromWeek),
           createdAt: now,
         }).run();
-        if (source) {
-          const groupId = generateId();
+        if (source && transferGroupId) {
           const legs = [
             { accountId: source.id, kind: 'transfer_out' as const },
             { accountId: savingsAccountId, kind: 'transfer_in' as const },
@@ -1158,7 +1790,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
               kind: leg.kind,
               date: fromWeek,
               note: 'Envelope sweep',
-              groupId,
+              groupId: transferGroupId,
               incomeSourceId: null,
               createdAt: now,
               deletedAt: null,
@@ -1167,35 +1799,82 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         }
       });
       await refresh();
+      // Undo hard-deletes the sweep carryover row and tombstones both transfer
+      // legs (soft-delete, so the cash returns to the source account). One
+      // transaction; false if already gone / expired / re-fired.
+      return makeReversible(leftover, async () => {
+        if (!get()._carryover.some((e) => e.id === carryId)) return false;
+        const tombstone = new Date().toISOString();
+        await withTransaction(async () => {
+          const db = getDb();
+          db.delete(schema.carryoverEntries)
+            .where(eq(schema.carryoverEntries.id, carryId))
+            .run();
+          if (transferGroupId) {
+            db.update(schema.transactions)
+              .set({ deletedAt: tombstone })
+              .where(eq(schema.transactions.groupId, transferGroupId))
+              .run();
+          }
+        });
+        await refresh();
+        return true;
+      });
     },
 
-    borrowFromNextWeek: async (categoryId, week, amount) => {
-      if (amount <= 0) throw new Error('borrow: amount must be positive');
-      const nextWeek = addDays(week, 7);
-      // Cap: ≤50% of next week's configured budget, next week only.
-      const nextBudget = configuredWeeklyBudget(categoryId, nextWeek);
-      const cap = C(Math.floor(nextBudget / 2));
-      const already = sumKind(carryoverFor(categoryId, week), 'borrow_in');
-      if (already + amount > cap) {
-        throw new Error(
-          `borrow: exceeds cap. Requested ${already + amount}¢, cap ${cap}¢ (50% of next week's ${nextBudget}¢).`,
-        );
+    // Borrow from an envelope's OWN next cycle (v0.3: cadence-aware, uncapped).
+    // Weekly-cadence envelopes borrow from next week; monthly-cadence envelopes
+    // from next calendar month. The only guardrails are honest math and the
+    // conservation law: the two legs share a pairId, carry EQUAL amounts, both
+    // attribute to the ORIGIN period's month (so a cross-period borrow can never
+    // dodge that month's duck verdict), and land in ONE transaction. A phantom
+    // category id throws BEFORE any write.
+    borrowFromNextCycle: async (categoryId, currentPeriodStart, amount) => {
+      // Positive whole cents only — no cap. (cents() already brands integers;
+      // this re-check keeps the guarantee at the mutation boundary.)
+      if (!Number.isInteger(amount) || amount <= 0) {
+        throw new Error('borrow: amount must be a positive whole number of cents');
       }
+      assertCategoryExists(categoryId);
+      const row = categoryRow(categoryId)!;
+      if (!toEnvelope(row)) {
+        throw new Error(`borrow: category "${categoryId}" has no configured envelope budget`);
+      }
+      const cadence = (row.cadence as CadenceType) ?? 'weekly';
+
+      // Resolve origin + next-cycle period starts and the (shared) attribution
+      // month. NOTE (cadence change after debt exists): entries already written
+      // keep their own period math; this call reads the CURRENT cadence to place
+      // new legs. A monthly borrow's repay leg sits at next month's first day but
+      // is attributed to the origin month, exactly as the weekly repay leg sits
+      // at next week but attributes to the origin week's month.
+      let originStart: WeekStart;
+      let nextStart: WeekStart;
+      let attributionMonth: MonthKey;
+      if (cadence === 'monthly') {
+        const month = monthKeyOf(currentPeriodStart);
+        originStart = firstOfMonth(month);
+        nextStart = firstOfMonth(nextMonthKey(month));
+        attributionMonth = month; // origin (current) month owns the spend
+      } else {
+        originStart = mondayOf(currentPeriodStart);
+        nextStart = addDays(originStart, 7);
+        attributionMonth = monthOfWeek(originStart);
+      }
+
       const chapterId = activeChapterId();
       const pairId = generateId();
       const now = new Date().toISOString();
-      // Both legs attribute to the ORIGIN week's month (duck guard §5.4).
-      const attributionMonth = monthOfWeek(week);
       await withTransaction(async () => {
         const db = getDb();
         db.insert(schema.carryoverEntries).values({
           id: generateId(),
           chapterId,
           categoryId,
-          weekStart: week,
+          weekStart: originStart,
           kind: 'borrow_in',
           amount,
-          counterpartWeekStart: nextWeek,
+          counterpartWeekStart: nextStart,
           pairId,
           attributionMonth,
           createdAt: now,
@@ -1204,10 +1883,10 @@ export const useBudgetStore = create<StoreState>((set, get) => {
           id: generateId(),
           chapterId,
           categoryId,
-          weekStart: nextWeek,
+          weekStart: nextStart,
           kind: 'borrow_repay',
           amount, // EQUAL amount — conservation
-          counterpartWeekStart: week,
+          counterpartWeekStart: originStart,
           pairId,
           attributionMonth,
           createdAt: now,
@@ -1216,14 +1895,91 @@ export const useBudgetStore = create<StoreState>((set, get) => {
       await refresh();
     },
 
+    // @deprecated Delegate for existing weekly-envelope UI. Rejects a
+    // monthly-cadence category (which must use borrowFromNextCycle) with a
+    // clear error rather than silently borrowing from "next week".
+    borrowFromNextWeek: async (categoryId, week, amount) => {
+      assertCategoryExists(categoryId);
+      const cadence = (categoryRow(categoryId)!.cadence as CadenceType) ?? 'weekly';
+      if (cadence !== 'weekly') {
+        throw new Error(
+          `borrowFromNextWeek: "${categoryId}" is a monthly-cadence envelope; use borrowFromNextCycle`,
+        );
+      }
+      await get().borrowFromNextCycle(categoryId, week, amount);
+    },
+
     // ----------------------------------------------------------------- reads
-    listAccounts: () => get()._accountRows.map(toAccountConfig),
-    listCategories: () => get()._categoryRows.map(toCategoryConfig),
-    listIncomeSources: () => get()._incomeSources,
+    // Default active-only (F1-2): pickers/wizard never resurrect a deleted row.
+    // includeArchived:true for id→name joins on history screens.
+    listAccounts: (opts) =>
+      get()
+        ._accountRows.filter((a) => opts?.includeArchived || a.archivedAt == null)
+        .map(toAccountConfig),
+    listCategories: (opts) =>
+      get()
+        ._categoryRows.filter((c) => opts?.includeArchived || c.archivedAt == null)
+        .map(toCategoryConfig),
+    listIncomeSources: (opts) =>
+      get()._incomeSources.filter(
+        (s) => opts?.includeArchived || !get()._archivedSourceIds.has(s.id),
+      ),
     getActiveChapter: () => {
       const ch = get()._chapter;
       if (!ch) throw new Error('No active chapter. Run the setup wizard first.');
       return ch;
+    },
+
+    // The Monday "settle last week?" prompt basis (F1-4). Only active weekly
+    // envelopes with a genuine, unsettled leftover for `prevWeek` — and only
+    // when `prevWeek` is not a phantom week that predates the chapter or the
+    // category. The createdAt gate lives ONLY here.
+    getSettleableLeftovers: (prevWeek) => {
+      const chapter = get()._chapter;
+      if (!chapter) return [];
+      const weekEnd = addDays(prevWeek, 6);
+      // A phantom week ends before the chapter began → nothing to settle.
+      if (weekEnd < chapter.startedAt) return [];
+      const out: Array<{ categoryId: string; remaining: Cents }> = [];
+      for (const c of get()._categoryRows) {
+        if (c.archivedAt != null) continue; // archived: no prompt
+        const env = toEnvelope(c);
+        if (!env || env.period !== 'weekly') continue; // weekly envelopes only
+        // Category created this week or later never has a real prior-week leftover.
+        if (weekEnd < dateOnly(c.createdAt)) continue;
+        const st = envelopeWeekState(c.id, prevWeek);
+        if (st.remaining > 0 && st.rolledOut === 0 && st.sweptOut === 0) {
+          out.push({ categoryId: c.id, remaining: st.remaining });
+        }
+      }
+      return out;
+    },
+
+    getMerchantCorrections: () => get()._merchantCorrections.map(toMerchantCorrection),
+    getRecurringBills: () => get()._recurringBills.map(toRecurringBill),
+
+    // active=0 is the non-destructive remove: the row survives (goalProgress /
+    // updateGoal still resolve it) but it leaves the goal list.
+    getGoals: () => get()._goalRows.filter((g) => Boolean(g.active)).map(toGoal),
+
+    // Current progress toward a goal: the linked savings account balance as of
+    // `asOf` (defaults to today), or the sum of ALL savings-kind balances when
+    // the goal has no linked account. Sync composition over the committed caches.
+    goalProgress: (goalId, asOf): GoalProgress => {
+      const row = get()._goalRows.find((g) => g.id === goalId);
+      if (!row) throw new Error(`goalProgress: unknown goal "${goalId}"`);
+      const at = asOf ?? fmt(new Date());
+      let currentCents: Cents;
+      if (row.savingsAccountId !== null) {
+        currentCents = accountBalance(row.savingsAccountId, at);
+      } else {
+        currentCents = sumCents(
+          get()
+            ._accountRows.filter((a) => a.kind === 'savings')
+            .map((a) => accountBalance(a.id, at)),
+        );
+      }
+      return { currentCents, targetCents: C(row.targetCents) };
     },
 
     getTransactions: (range) =>
@@ -1245,6 +2001,7 @@ export const useBudgetStore = create<StoreState>((set, get) => {
     getPaydays: (range) => {
       const set_ = new Set<ISODate>();
       for (const src of get()._incomeSources) {
+        if (isSourceArchived(src.id)) continue; // archived sources project no paydays
         for (const d of paydaysBetween(src.schedule, range)) set_.add(d);
       }
       return [...set_].sort();
@@ -1252,12 +2009,42 @@ export const useBudgetStore = create<StoreState>((set, get) => {
 
     getEnvelopeWeekState: (categoryId, week) => envelopeWeekState(categoryId, week),
 
-    getSafeToSpend: (week) =>
-      sumCents(
+    // What the envelope's next cycle will start with (borrow prompt, F3).
+    // Sync composition over committed caches; dispatches on the category's
+    // cadence. `alreadyOwed` = borrow repayments already charged to that next
+    // cycle by prior borrows (stacked borrows accumulate here); startsWith =
+    // budget − alreadyOwed (the plan money the next cycle currently begins
+    // with, before the contemplated borrow).
+    nextCycleStartState: (categoryId, currentPeriodStart): NextCycleState => {
+      const row = categoryRow(categoryId);
+      if (!row) throw new Error(`nextCycleStartState: unknown category "${categoryId}"`);
+      const cadence = (row.cadence as CadenceType) ?? 'weekly';
+      let cycleStart: WeekStart;
+      let budget: Cents;
+      if (cadence === 'monthly') {
+        const nextMonth = nextMonthKey(monthKeyOf(currentPeriodStart));
+        cycleStart = firstOfMonth(nextMonth);
+        budget = configuredMonthlyBudget(categoryId, nextMonth) ?? ZERO;
+      } else {
+        cycleStart = addDays(mondayOf(currentPeriodStart), 7);
+        budget = configuredWeeklyBudget(categoryId, cycleStart);
+      }
+      const alreadyOwed = sumKind(carryoverFor(categoryId, cycleStart), 'borrow_repay');
+      const startsWith = C(budget - alreadyOwed);
+      return { cycleStart, budget, alreadyOwed, startsWith };
+    },
+
+    // Home hero number: enveloped remaining, LESS bills due before the next
+    // payday (handoff §3.8 — the forecast feeds safe-to-spend). With no active
+    // bills the reservation is zero, so behavior is identical to v0.2.
+    getSafeToSpend: (week) => {
+      const envelopeRemaining = sumCents(
         get()
-          ._categoryRows.filter((c) => toEnvelope(c) != null)
+          ._categoryRows.filter((c) => c.archivedAt == null && toEnvelope(c) != null)
           .map((c) => envelopeWeekState(c.id, week).remaining),
-      ),
+      );
+      return subCents(envelopeRemaining, billsReservation(week));
+    },
 
     getAccountBalance: (accountId: string, asOf?: ISODate) =>
       accountBalance(accountId, asOf ?? fmt(new Date())),
@@ -1301,6 +2088,8 @@ export const useBudgetStore = create<StoreState>((set, get) => {
         if (patch.name !== undefined) set_.name = patch.name;
         if (patch.colorKey !== undefined) set_.colorKey = patch.colorKey;
         if (patch.fixed !== undefined) set_.fixed = patch.fixed ? 1 : 0;
+        // Undefined cadence preserves the stored value (edit-reconcile).
+        if (patch.cadence !== undefined) set_.cadence = assertCadence(patch.cadence);
         if (Object.keys(set_).length === 0) return;
         getDb().update(schema.categories).set(set_).where(eq(schema.categories.id, id)).run();
       });

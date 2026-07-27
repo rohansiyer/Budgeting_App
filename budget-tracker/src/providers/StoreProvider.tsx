@@ -39,3 +39,17 @@ export function useStore(): StoreContract {
   useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
   return store;
 }
+
+/**
+ * Subscribe to the store's monotonic version counter (bumps on every committed
+ * mutation). Screens that memoize derived data over the (referentially stable)
+ * store object key those memos on this value so they recompute after a mutation
+ * — the F4-4 fix for stale GoalsScreen figures.
+ */
+export function useStoreVersion(): number {
+  const store = useContext(StoreCtx);
+  if (!store) {
+    throw new Error('useStoreVersion must be used within a <StoreProvider>');
+  }
+  return useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
+}

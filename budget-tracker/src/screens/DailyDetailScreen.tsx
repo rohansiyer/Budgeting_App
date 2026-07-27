@@ -2,11 +2,15 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { Cents, formatCents, sumCents, toDecimalString, ZERO } from '../lib/money';
-import { PixelBox, HardButton, RuledList, CategoryChip } from '../components/kit';
+import { PixelBox, HardButton, RuledList, CategoryChip, EmptyState, Snackbar } from '../components/kit';
+import { DuckSprite } from '../ducks/DuckSprite';
 import { Screen, SectionLabel, MoneyText, Row } from '../components/Primitives';
 import { Sheet } from '../components/Sheet';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
+import { isDayEmpty } from './DailyDetailScreen.logic';
+import { AddExpenseSheet, type AddExpenseCommitInfo } from './expense/AddExpenseSheet';
+import { commitSnackbarMessage } from './expense/AddExpenseSheet.logic';
 import { tryParseCents } from '../format/moneyInput';
 import { longDate, weekStartOf } from '../format/dates';
 import type {
@@ -24,11 +28,18 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
   const store = useStore();
   const { showUndo } = useAppShell();
 
+  // Active-only lists back pickers (you can't log a new expense/income
+  // against an archived category/account/source). History rows (the
+  // transaction list below) join ids to names via the includeArchived
+  // lists instead, so an archived entity's name still resolves correctly
+  // on old transactions rather than falling back to a placeholder.
   const categories = store.listCategories();
   const accounts = store.listAccounts();
   const incomeSources = store.listIncomeSources();
-  const catById = (id: string) => categories.find((c) => c.id === id);
-  const acctById = (id: string) => accounts.find((a) => a.id === id);
+  const allCategories = store.listCategories({ includeArchived: true });
+  const allAccounts = store.listAccounts({ includeArchived: true });
+  const catById = (id: string) => allCategories.find((c) => c.id === id);
+  const acctById = (id: string) => allAccounts.find((a) => a.id === id);
   const spendingAccount = accounts.find((a) => a.kind === 'spending') ?? accounts[0];
 
   const dayTxns = store.getTransactions({ from: date, to: date });
@@ -43,17 +54,21 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
   const [menuTxn, setMenuTxn] = useState<TransactionRecord | null>(null);
   const [editTxn, setEditTxn] = useState<TransactionRecord | null>(null);
   const [addKind, setAddKind] = useState<'expense' | 'income' | null>(null);
+  const [expenseSnack, setExpenseSnack] = useState<{ message: string; transactionId: string } | null>(
+    null,
+  );
 
   const handleDelete = async (t: TransactionRecord) => {
     const { undo } = await store.deleteTransaction(t.id);
     const catName = catById(t.categoryId)?.name ?? 'transaction';
     showUndo(`Deleted ${t.kind === 'income' ? (t.note ?? 'income') : catName}`, async () => {
       const ok = await undo();
-      if (!ok) showUndo('Too late — the undo window closed.');
+      if (!ok) showUndo('Too late, the undo window closed.');
     });
   };
 
   return (
+    <>
     <Screen
       title={longDate(date)}
       right={
@@ -72,24 +87,37 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
         <Kpi label="Envelope left" amount={envelopeLeft} kind="income" />
       </View>
 
-      {/* Ruled transaction list: press/long-press → context menu. */}
+      {/* Ruled transaction list: press/long-press → context menu. Zero state
+          swaps in the kit EmptyState (§3.3) instead of an empty list. */}
       <SectionLabel>Transactions</SectionLabel>
-      <RuledList<TransactionRecord>
-        data={dayTxns}
-        keyExtractor={(t) => t.id}
-        renderRow={(t) => (
-          <Pressable
-            onPress={() => setMenuTxn(t)}
-            onLongPress={() => setMenuTxn(t)}
-            delayLongPress={350}
-            accessibilityRole="button"
-            accessibilityLabel={txnA11yLabel(t, catById, acctById)}
-            accessibilityHint="Opens edit, recategorize and delete actions"
-          >
-            <TxnRow txn={t} cat={catById(t.categoryId)} acctById={acctById} />
-          </Pressable>
-        )}
-      />
+      {isDayEmpty(dayTxns.length) ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            message="Nothing logged for this day yet. Add an expense to get started."
+            actionLabel="Add expense"
+            onAction={() => setAddKind('expense')}
+            renderDuck={(props) => <DuckSprite {...props} />}
+            accessibilityLabel="No transactions logged for this day"
+          />
+        </View>
+      ) : (
+        <RuledList<TransactionRecord>
+          data={dayTxns}
+          keyExtractor={(t) => t.id}
+          renderRow={(t) => (
+            <Pressable
+              onPress={() => setMenuTxn(t)}
+              onLongPress={() => setMenuTxn(t)}
+              delayLongPress={350}
+              accessibilityRole="button"
+              accessibilityLabel={txnA11yLabel(t, catById, acctById)}
+              accessibilityHint="Opens edit, recategorize and delete actions"
+            >
+              <TxnRow txn={t} cat={catById(t.categoryId)} acctById={acctById} />
+            </Pressable>
+          )}
+        />
+      )}
 
       <Row style={styles.addRow}>
         <HardButton
@@ -148,17 +176,14 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
       {addKind === 'expense' ? (
         <AddExpenseSheet
           categories={categories}
+          accountId={spendingAccount?.id}
+          date={date}
           onClose={() => setAddKind(null)}
-          onSave={async (amount, categoryId, note) => {
-            if (!spendingAccount) return; // no accounts configured yet
-            await store.addExpense({
-              accountId: spendingAccount.id,
-              categoryId,
-              amount,
-              date,
-              note,
+          onCommitted={(info: AddExpenseCommitInfo) => {
+            setExpenseSnack({
+              message: commitSnackbarMessage(info.categoryName, info.amount, info.borrowed),
+              transactionId: info.transactionId,
             });
-            setAddKind(null);
           }}
         />
       ) : null}
@@ -174,6 +199,20 @@ export function DailyDetailScreen({ date, onClose }: { date: ISODate; onClose: (
         />
       ) : null}
     </Screen>
+
+    <View style={styles.snackbarWrap} pointerEvents="box-none">
+      <Snackbar
+        visible={expenseSnack !== null}
+        message={expenseSnack?.message ?? ''}
+        onAction={() => {
+          const pending = expenseSnack;
+          setExpenseSnack(null);
+          if (pending) void store.deleteTransaction(pending.transactionId);
+        }}
+        onTimeout={() => setExpenseSnack(null)}
+      />
+    </View>
+    </>
   );
 }
 
@@ -266,6 +305,7 @@ function MoneyField({
   autoFocus?: boolean;
   label?: string;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <TextInput
       value={value}
@@ -274,8 +314,10 @@ function MoneyField({
       placeholder="0.00"
       placeholderTextColor={color.textMuted}
       autoFocus={autoFocus}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       accessibilityLabel={label}
-      style={styles.input}
+      style={[styles.input, focused && styles.inputFocused]}
     />
   );
 }
@@ -321,6 +363,7 @@ function EditSheet({
 }) {
   const [amountText, setAmountText] = useState(toDecimalString(txn.amount));
   const [note, setNote] = useState(txn.note ?? '');
+  const [noteFocused, setNoteFocused] = useState(false);
   const [catId, setCatId] = useState(txn.categoryId);
   const parsed = tryParseCents(amountText);
   const isExpense = txn.kind === 'expense';
@@ -340,8 +383,10 @@ function EditSheet({
         onChangeText={setNote}
         placeholder="Note (optional)"
         placeholderTextColor={color.textMuted}
+        onFocus={() => setNoteFocused(true)}
+        onBlur={() => setNoteFocused(false)}
         accessibilityLabel="Note"
-        style={styles.input}
+        style={[styles.input, noteFocused && styles.inputFocused]}
       />
       <Row style={styles.formActions}>
         <HardButton
@@ -351,50 +396,6 @@ function EditSheet({
             if (parsed !== null && parsed > 0) onSave({ amount: parsed, categoryId: catId, note });
           }}
           accessibilityLabel="Save changes"
-        />
-      </Row>
-    </Sheet>
-  );
-}
-
-function AddExpenseSheet({
-  categories,
-  onClose,
-  onSave,
-}: {
-  categories: CategoryConfig[];
-  onClose: () => void;
-  onSave: (amount: Cents, categoryId: string, note?: string) => void;
-}) {
-  const spendable = categories.filter((c) => c.envelope !== null || c.fixed);
-  const [amountText, setAmountText] = useState('');
-  const [note, setNote] = useState('');
-  const [catId, setCatId] = useState(spendable[0]?.id ?? '');
-  const parsed = tryParseCents(amountText);
-  const valid = parsed !== null && parsed > 0 && catId !== '';
-  return (
-    <Sheet visible onClose={onClose} title="Add expense">
-      <SectionLabel>Amount</SectionLabel>
-      <MoneyField value={amountText} onChangeText={setAmountText} autoFocus />
-      <SectionLabel>Category</SectionLabel>
-      <CategoryPicker categories={spendable} selected={catId} onSelect={setCatId} />
-      <SectionLabel>Note</SectionLabel>
-      <TextInput
-        value={note}
-        onChangeText={setNote}
-        placeholder="Note (optional)"
-        placeholderTextColor={color.textMuted}
-        accessibilityLabel="Note"
-        style={styles.input}
-      />
-      <Row style={styles.formActions}>
-        <HardButton
-          label="Add expense"
-          disabled={!valid}
-          onPress={() => {
-            if (valid && parsed !== null) onSave(parsed, catId, note || undefined);
-          }}
-          accessibilityLabel="Save the new expense"
         />
       </Row>
     </Sheet>
@@ -455,6 +456,15 @@ function AddIncomeSheet({
 }
 
 const styles = StyleSheet.create({
+  snackbarWrap: {
+    position: 'absolute',
+    left: space.md,
+    right: space.md,
+    bottom: space.lg,
+  },
+  emptyWrap: {
+    marginTop: space.sm,
+  },
   kpiRow: {
     flexDirection: 'row',
     gap: space.sm,
@@ -521,6 +531,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
     paddingVertical: space.sm + space.xs,
   },
+  // Focus ring (handoff v3 "Type and accessibility patches"): swap to the
+  // accent border on focus, matching kit Field's treatment (§3.1).
+  inputFocused: {
+    borderColor: color.accent,
+  },
   pickerWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -530,6 +545,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.xs,
+    minHeight: 48, // minimum tap target
     paddingVertical: space.xs,
     paddingHorizontal: space.sm,
     borderWidth: pixel.hairlineWidth,

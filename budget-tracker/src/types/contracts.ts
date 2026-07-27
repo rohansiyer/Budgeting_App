@@ -67,6 +67,10 @@ export interface AccountConfig {
   openedOn: ISODate;
 }
 
+/** Budget cadence: the whole envelope UI (meters, borrow prompts, warnings)
+ * respects an envelope's own cadence. Defaults to 'weekly'. */
+export type CadenceType = 'weekly' | 'monthly';
+
 /**
  * Categories cover ALL spend. Variable-spend categories additionally have
  * an envelope (budget + carryover). Fixed categories (rent, utilities…)
@@ -77,6 +81,8 @@ export interface CategoryConfig {
   name: string;
   colorKey: CategoryColorKey;
   fixed: boolean;
+  /** 'weekly' | 'monthly'. Always present on reads (stored notNull, default 'weekly'). */
+  cadence: CadenceType;
   envelope: EnvelopeConfig | null;
 }
 
@@ -127,8 +133,19 @@ export interface CarryoverEntry {
  * CONSERVATION LAW (adversary-tested): paired entries (roll_out/roll_in,
  * borrow_in/borrow_repay) share a pairId and have EQUAL amounts, so summed
  * budget across all weeks equals configured budget × weeks − sweeps.
- * Borrow caps: counterpart is always the immediately following week, and
- * total borrow_in for a week ≤ 50% of that following week's configured budget.
+ *
+ * BORROWING (v0.3, cadence-aware & uncapped): every envelope can borrow from
+ * ITS OWN next cycle — a weekly-cadence envelope from next week, a
+ * monthly-cadence envelope from next calendar month. There is NO cap; the
+ * only limits are that the amount is a positive whole number of cents and the
+ * category exists with a configured budget. The honest math is the guardrail
+ * (see `nextCycleStartState` — the UI shows exactly what the next cycle starts
+ * with). For a MONTHLY borrow the two legs live at the first-of-month
+ * (`YYYY-MM-01`) of the current and next month; for a WEEKLY borrow they live
+ * at the current and next Monday (as before). Both legs of any borrow attribute
+ * to the ORIGIN period's month (the month the spend belongs to) so a
+ * cross-period borrow can never dodge that month's duck verdict (duck guard
+ * §5.4).
  */
 
 export interface EnvelopeWeekState {
@@ -143,6 +160,86 @@ export interface EnvelopeWeekState {
   spent: Cents;
   /** configured + rolledIn + borrowedIn − rolledOut − sweptOut − repaying − spent */
   remaining: Cents;
+}
+
+/**
+ * What an envelope's NEXT cycle will start with, for the borrow prompt (F3).
+ * Composed from committed caches (sync). `budget` is the next cycle's
+ * configured budget; `alreadyOwed` is the sum of borrow repayments already
+ * charged to that next cycle by prior borrows; `startsWith = budget −
+ * alreadyOwed` — the plan money the next cycle currently begins with, before
+ * the contemplated borrow. The prompt shows `startsWith`, then subtracts the
+ * amount the user is about to borrow to preview the result.
+ */
+export interface NextCycleState {
+  /** ISODate the next cycle begins: next Monday (weekly) or first-of-next-month (monthly). */
+  cycleStart: ISODate;
+  budget: Cents;
+  alreadyOwed: Cents;
+  startsWith: Cents;
+}
+
+// ---------------------------------------------------------------------------
+// Import data layer (Team 1 owns tables + store; src/import owns the engine)
+// ---------------------------------------------------------------------------
+
+/**
+ * A learned merchant → category mapping. `normalizedMerchant` is the output of
+ * `matching.normalizeMerchant` (uppercased, store-number/punctuation stripped),
+ * UNIQUE per chapter. Assigning a merchant once makes every future import of
+ * that merchant land in the same category ("Food forever").
+ */
+export interface MerchantCorrection {
+  id: string;
+  normalizedMerchant: string;
+  categoryId: string;
+  createdAt: string;
+}
+
+/**
+ * An explicit recurring bill the forecast and "Mark as bill" write to.
+ * `dueDay` is 1..31 with CLAMP-TO-MONTH-END semantics: a bill due on 31 falls on
+ * the last day of a shorter month (resolve per month via min(dueDay, daysInMonth)).
+ * `active:false` is the non-destructive remove (row retained, excluded from the
+ * forecast).
+ */
+export interface RecurringBill {
+  id: string;
+  name: string;
+  categoryId: string;
+  amountCents: Cents;
+  dueDay: number;
+  active: boolean;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Named savings goals (handoff §3.10 — Team 1 owns the table + store; the goal
+// card UI and the step-line projection render against these reads)
+// ---------------------------------------------------------------------------
+
+/**
+ * A named savings goal. Progress is read from `savingsAccountId`'s balance, or
+ * — when it is null — from the SUM of all savings-kind account balances.
+ * `targetCents` is a positive whole number of cents. `active:false` is the
+ * non-destructive remove (row retained, hidden from the goal list). `achievedAt`
+ * is stamped when the goal is first met and is independent of `active`.
+ */
+export interface Goal {
+  id: string;
+  name: string;
+  targetCents: Cents;
+  /** Linked savings account; null => track the sum of all savings accounts. */
+  savingsAccountId: string | null;
+  active: boolean;
+  createdAt: string;
+  achievedAt: string | null;
+}
+
+/** Current progress toward a goal: the linked (or all-savings) balance vs target. */
+export interface GoalProgress {
+  currentCents: Cents;
+  targetCents: Cents;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +348,19 @@ export interface AtomicDb {
 /** Undo window for destructive actions. undo() after expiry resolves false. */
 export const UNDO_WINDOW_MS = 6000;
 
+/**
+ * A reversible carryover action (roll-forward / sweep-to-savings). `amount` is
+ * the settled leftover; `undo()` reverses the whole action atomically and
+ * resolves true on success, false after `expiresAt`, if the rows are already
+ * gone, or on a repeat call (single-fire). `expiresAt` is a Date.now()-epoch
+ * millisecond deadline (UNDO_WINDOW_MS after the action committed).
+ */
+export interface CarryoverActionResult {
+  amount: Cents;
+  undo(): Promise<boolean>;
+  expiresAt: number;
+}
+
 export interface TransactionRecord {
   id: string;
   accountId: string;
@@ -296,7 +406,10 @@ export interface StoreContract {
   }): Promise<AccountConfig>;
   renameAccount(accountId: string, name: string): Promise<void>;
   createIncomeSource(input: Omit<IncomeSourceConfig, 'id'>): Promise<IncomeSourceConfig>;
-  createCategory(input: Omit<CategoryConfig, 'id'>): Promise<CategoryConfig>;
+  /** `cadence` is optional at the write boundary; omitted defaults to 'weekly'. */
+  createCategory(
+    input: Omit<CategoryConfig, 'id' | 'cadence'> & { cadence?: CadenceType },
+  ): Promise<CategoryConfig>;
   updateEnvelope(categoryId: string, envelope: EnvelopeConfig | null): Promise<void>;
   createChapter(input: { name: string; startedAt: ISODate }): Promise<Chapter>;
   archiveChapter(chapterId: string, archivedAt: ISODate): Promise<void>;
@@ -307,21 +420,161 @@ export interface StoreContract {
   ): Promise<void>;
   updateCategory(
     categoryId: string,
-    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed'>>,
+    patch: Partial<Pick<CategoryConfig, 'name' | 'colorKey' | 'fixed' | 'cadence'>>,
   ): Promise<void>;
   updateIncomeSource(sourceId: string, patch: Partial<Omit<IncomeSourceConfig, 'id'>>): Promise<void>;
 
+  // --- config removal (soft-archival; the wizard's "real delete") -----------
+  /**
+   * Archive an account (the wizard's real delete). Throws on an unknown or
+   * already-archived id, or when it is the LAST active account (a chapter must
+   * retain at least one account to receive income). Same transaction: DELETEs
+   * the account's income_splits rows (an orphaned split would misroute money).
+   * The row is retained so historical transactions/id-joins still resolve it.
+   */
+  removeAccount(accountId: string): Promise<void>;
+  /**
+   * Archive a category. Throws on an unknown or already-archived id. Same
+   * transaction: its recurring_bills are deactivated (active=0) and its
+   * merchant_corrections are DELETEd. The configured budget lifetime-zeroes for
+   * periods starting after the archival date; history is untouched.
+   */
+  removeCategory(categoryId: string): Promise<void>;
+  /**
+   * Archive an income source. Throws on an unknown or already-archived id. Its
+   * income_splits are retained inert (historical income rows keep their split);
+   * the source is excluded from getPaydays and addIncome rejects it.
+   */
+  removeIncomeSource(sourceId: string): Promise<void>;
+
+  // --- import data layer ---------------------------------------------------
+  /**
+   * Learn (or re-point) a merchant → category mapping. Keyed by
+   * `normalizedMerchant` within the active chapter: an existing mapping for the
+   * same normalized merchant is UPDATED in place (never duplicated). Validates
+   * the category exists before writing.
+   */
+  upsertMerchantCorrection(input: {
+    normalizedMerchant: string;
+    categoryId: string;
+  }): Promise<MerchantCorrection>;
+  /** Add a recurring bill (active). Validates category, a 1..31 dueDay, and a positive integer amount. */
+  addRecurringBill(input: {
+    name: string;
+    categoryId: string;
+    amountCents: Cents;
+    dueDay: number;
+  }): Promise<RecurringBill>;
+  /** Patch a recurring bill in place. `active:false` is the non-destructive remove. */
+  updateRecurringBill(
+    id: string,
+    patch: Partial<Pick<RecurringBill, 'name' | 'categoryId' | 'amountCents' | 'dueDay' | 'active'>>,
+  ): Promise<void>;
+
+  // --- named goals (handoff §3.10) -----------------------------------------
+  /**
+   * Add a named savings goal (active). Validates: `name` non-empty (trimmed),
+   * `targetCents` a positive whole number of cents, and — when
+   * `savingsAccountId` is given — that the account exists AND is savings-kind.
+   * Omitting `savingsAccountId` (or passing null) tracks the sum of all savings
+   * accounts.
+   */
+  addGoal(input: {
+    name: string;
+    targetCents: Cents;
+    savingsAccountId?: string | null;
+  }): Promise<Goal>;
+  /**
+   * Patch a goal in place. `active:false` is the non-destructive remove.
+   * Validates the same invariants as addGoal for any provided field.
+   */
+  updateGoal(
+    id: string,
+    patch: Partial<
+      Pick<Goal, 'name' | 'targetCents' | 'savingsAccountId' | 'active' | 'achievedAt'>
+    >,
+  ): Promise<void>;
+
   // --- carryover -----------------------------------------------------------
-  rollForward(categoryId: string, fromWeek: WeekStart): Promise<void>;
-  sweepToSavings(categoryId: string, fromWeek: WeekStart, savingsAccountId: string): Promise<void>;
-  /** Throws if cap exceeded (one week ahead, ≤50% of next week's budget). */
+  /**
+   * Settle a week's leftover forward into the next week. Returns a reversible
+   * action handle, or `null` when there is nothing to settle: leftover <= 0, or
+   * the week is a PHANTOM week that ends before the active chapter began
+   * (fresh-chapter F1-4 guard — writes nothing). `undo()` hard-deletes the
+   * roll_out/roll_in pair in one transaction (conservation preserved); it
+   * resolves false after `expiresAt`, if the rows are already gone, or on a
+   * second call (never double-fires).
+   */
+  rollForward(categoryId: string, fromWeek: WeekStart): Promise<CarryoverActionResult | null>;
+  /**
+   * Sweep a week's leftover out to savings (records a real transfer pair).
+   * Returns a reversible action handle, or `null` when there is nothing to
+   * sweep (leftover <= 0) or the week is a phantom week ending before the
+   * chapter began. `undo()` hard-deletes the sweep_to_savings carryover row and
+   * tombstones both transfer legs in one transaction; same expiry/idempotency
+   * rules as rollForward's undo.
+   */
+  sweepToSavings(
+    categoryId: string,
+    fromWeek: WeekStart,
+    savingsAccountId: string,
+  ): Promise<CarryoverActionResult | null>;
+  /**
+   * Borrow from an envelope's OWN next cycle, dispatching on the category's
+   * cadence: a weekly-cadence envelope borrows from next week, a
+   * monthly-cadence envelope from next calendar month. Uncapped — throws only
+   * if the amount is not a positive whole number of cents, the category does
+   * not exist, or it has no configured envelope budget. `currentPeriodStart`
+   * is any date inside the current cycle (normalized internally: to the
+   * Monday for weekly, to the month for monthly).
+   */
+  borrowFromNextCycle(categoryId: string, currentPeriodStart: ISODate, amount: Cents): Promise<void>;
+  /**
+   * @deprecated Use `borrowFromNextCycle`. Thin delegate kept for existing
+   * weekly-envelope callers; throws if invoked on a monthly-cadence category.
+   */
   borrowFromNextWeek(categoryId: string, week: WeekStart, amount: Cents): Promise<void>;
+  /**
+   * What the envelope's next cycle will start with (for the borrow prompt).
+   * Sync read over committed caches. Throws on an unknown category id.
+   */
+  nextCycleStartState(categoryId: string, currentPeriodStart: ISODate): NextCycleState;
 
   // --- read surface (screens + engine) --------------------------------------
-  listAccounts(): AccountConfig[];
-  listCategories(): CategoryConfig[];
-  listIncomeSources(): IncomeSourceConfig[];
+  // The default (no opts / includeArchived:false) returns ACTIVE entities only
+  // — the F1-2 fix so pickers and the wizard never resurrect a deleted row.
+  // Pass { includeArchived: true } for id→name joins on history screens.
+  listAccounts(opts?: { includeArchived?: boolean }): AccountConfig[];
+  listCategories(opts?: { includeArchived?: boolean }): CategoryConfig[];
+  listIncomeSources(opts?: { includeArchived?: boolean }): IncomeSourceConfig[];
   getActiveChapter(): Chapter;
+
+  /**
+   * The weekly envelopes whose PREVIOUS week (`prevWeek`) has a genuine,
+   * unsettled leftover — the Monday "settle last week?" prompt basis (F1-4). A
+   * category qualifies iff it is an active weekly envelope with
+   * remaining > 0, rolledOut === 0 and sweptOut === 0 for `prevWeek`, AND
+   * `prevWeek`'s last day is on/after BOTH the active chapter's start and the
+   * category's creation date — so a category (or chapter) created this week
+   * never produces a phantom full-budget leftover for a week that predates it.
+   * The createdAt gate lives ONLY here (never in configuredWeeklyBudget).
+   */
+  getSettleableLeftovers(prevWeek: WeekStart): Array<{ categoryId: string; remaining: Cents }>;
+
+  /** Learned merchant → category corrections for the active chapter. */
+  getMerchantCorrections(): MerchantCorrection[];
+  /** Recurring bills for the active chapter (active AND inactive; consumers filter on `active`). */
+  getRecurringBills(): RecurringBill[];
+
+  /** Named goals for the active chapter (active AND inactive; consumers filter on `active`). */
+  getGoals(): Goal[];
+  /**
+   * Current progress toward a goal (sync): `currentCents` is the linked savings
+   * account balance as of `asOf` (defaults to today), or the sum of all
+   * savings-kind balances when the goal has no linked account. Throws on an
+   * unknown goal id.
+   */
+  goalProgress(goalId: string, asOf?: ISODate): GoalProgress;
 
   getTransactions(range: DateRange): TransactionRecord[];
   /** date → net outflow, for week bars + calendar heatmap (income excluded). */

@@ -38,6 +38,7 @@ async function weeklyEnv(name: string, budget: number) {
 async function monthlyEnv(name: string, budget: number) {
   const c = await store().createCategory({
     name, colorKey: 'blue', fixed: false,
+    cadence: 'monthly', // borrow dispatch keys off category cadence, not envelope.period
     envelope: { period: 'monthly', budget: cents(budget), carryoverDefault: 'ask' },
   });
   return c.id;
@@ -149,57 +150,132 @@ describe('conservation across long chains', () => {
 });
 
 // ===========================================================================
-// 2. BORROW CAPS — next week only, ≤ 50% of next week's configured budget.
+// 2. BORROW — v0.3: uncapped, cadence-aware. The guardrail is honest math, not
+//    a cap. Attacks try to invent/destroy money via large or repeated borrows,
+//    confuse the two cadences, or borrow-then-switch-cadence.
 // ===========================================================================
-describe('borrow caps', () => {
-  it('exactly 50% is allowed (boundary); 50%+1¢ throws', async () => {
-    await freshChapter();
-    const cat = await weeklyEnv('Gas', 10000); // cap = 5000
-    await store().borrowFromNextWeek(cat, W(0), cents(5000)); // at cap, allowed
-    expect(store().getEnvelopeWeekState(cat, W(0)).borrowedIn).toBe(5000);
-  });
-
-  it('50%+1¢ in a single borrow throws', async () => {
-    await freshChapter();
-    const cat = await weeklyEnv('Gas', 10000);
-    await expect(store().borrowFromNextWeek(cat, W(0), cents(5001))).rejects.toThrow(/cap/);
-  });
-
-  it('two sequential borrows summing past 50% throw on the second', async () => {
-    await freshChapter();
-    const cat = await weeklyEnv('Gas', 10000); // cap 5000
-    await store().borrowFromNextWeek(cat, W(0), cents(3000));
-    await expect(store().borrowFromNextWeek(cat, W(0), cents(2001))).rejects.toThrow(/cap/);
-    // Exactly reaching cap on the second is allowed.
-    await store().borrowFromNextWeek(cat, W(0), cents(2000));
-    expect(store().getEnvelopeWeekState(cat, W(0)).borrowedIn).toBe(5000);
-  });
-
-  it('odd budget: cap = floor(50%)', async () => {
-    await freshChapter();
-    const cat = await weeklyEnv('Gas', 9999); // 50% = 4999.5 -> cap 4999
-    await store().borrowFromNextWeek(cat, W(0), cents(4999));
-    await expect(store().borrowFromNextWeek(cat, W(0), cents(1))).rejects.toThrow(/cap/);
-  });
-
-  it('borrowing against a week that already repays a prior borrow uses next-week configured cap, not reduced budget', async () => {
-    await freshChapter();
-    const cat = await weeklyEnv('Gas', 10000);
-    await store().borrowFromNextWeek(cat, W(0), cents(5000)); // W1 repays 5000 (net budget 5000)
-    // Borrow from W2 into W1: cap is 50% of W2's *configured* 10000 = 5000, even though
-    // W1's net available is only 5000. Allowed up to 5000.
-    await store().borrowFromNextWeek(cat, W(1), cents(5000));
-    await expect(store().borrowFromNextWeek(cat, W(1), cents(1))).rejects.toThrow(/cap/);
-    // W1 now net-negative: 10000 + 5000 − 5000(repay to W0) ... borrowed 5000 in, repay 5000 out = 10000. correct.
-    expect(store().getEnvelopeWeekState(cat, W(1)).remaining).toBe(10000);
-  });
-
-  it('a failed (over-cap) borrow writes NOTHING (atomic reject)', async () => {
-    await freshChapter();
-    const cat = await weeklyEnv('Gas', 10000);
-    await expect(store().borrowFromNextWeek(cat, W(0), cents(9999))).rejects.toThrow();
+describe('borrow (uncapped, cadence-aware)', () => {
+  /** Sum of the two legs of every borrow pair for a category (pair-equality proof). */
+  async function borrowPairs(cat: string): Promise<Map<string, number[]>> {
     const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
-    expect(entries).toHaveLength(0);
+    const pairs = new Map<string, number[]>();
+    for (const e of entries) {
+      if (e.kind !== 'borrow_in' && e.kind !== 'borrow_repay') continue;
+      if (!e.pairId) continue;
+      pairs.set(e.pairId, [...(pairs.get(e.pairId) ?? []), e.amount]);
+    }
+    return pairs;
+  }
+
+  it('no cap: borrowing 150% of next week is allowed and conserves budget', async () => {
+    await freshChapter();
+    const cat = await weeklyEnv('Gas', 10000);
+    await store().borrowFromNextWeek(cat, W(0), cents(15000)); // 150% — was impossible under the old cap
+    expect(store().getEnvelopeWeekState(cat, W(0)).borrowedIn).toBe(15000);
+    // Next week goes honestly negative; nothing is blocked.
+    expect(store().getEnvelopeWeekState(cat, W(1)).remaining).toBe(-5000);
+    // Budget only moved: W0 + W1 still sum to configured × 2.
+    expect(systemBudget(cat, [W(0), W(1)])).toBe(20000);
+  });
+
+  it('repeated max borrows never create or destroy a cent (conservation invariant)', async () => {
+    await freshChapter();
+    const cat = await weeklyEnv('Gas', 10000);
+    const weeks = [W(0), W(1), W(2), W(3), W(4)];
+    // Hammer arbitrary, sometimes-huge borrows across several weeks.
+    await store().borrowFromNextWeek(cat, W(0), cents(9999));
+    await store().borrowFromNextWeek(cat, W(0), cents(40000));
+    await store().borrowFromNextWeek(cat, W(1), cents(1));
+    await store().borrowFromNextWeek(cat, W(2), cents(25000));
+    await store().borrowFromNextWeek(cat, W(3), cents(3));
+    // Total in-envelope budget across all touched weeks is exactly configured × weeks.
+    expect(systemBudget(cat, weeks)).toBe(10000 * 5);
+    // Every pair has two equal legs (no cents invented on either side).
+    for (const legs of (await borrowPairs(cat)).values()) {
+      expect(legs).toHaveLength(2);
+      expect(legs[0]).toBe(legs[1]);
+    }
+  });
+
+  it('monthly-cadence envelope borrows from next CALENDAR month, both legs attribute to the origin month', async () => {
+    await freshChapter();
+    const cat = await monthlyEnv('Fun', 20000);
+    // Borrow from July into July's own overspend: repay leg sits in August.
+    await store().borrowFromNextCycle(cat, '2026-07-15', cents(30000)); // 150% of monthly budget, allowed
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    const bin = entries.find((e) => e.kind === 'borrow_in')!;
+    const rep = entries.find((e) => e.kind === 'borrow_repay')!;
+    expect(bin.weekStart).toBe('2026-07-01');
+    expect(rep.weekStart).toBe('2026-08-01');
+    expect(bin.amount).toBe(30000);
+    expect(rep.amount).toBe(30000);
+    expect(bin.pairId).toBe(rep.pairId);
+    // Origin (July) owns BOTH legs — you cannot borrow from August to dodge July's duck.
+    const jul = await store().evaluation.getCarryoverEntries({ month: '2026-07' });
+    const aug = await store().evaluation.getCarryoverEntries({ month: '2026-08' });
+    expect(jul.map((e) => e.kind).sort()).toEqual(['borrow_in', 'borrow_repay']);
+    expect(aug).toHaveLength(0);
+  });
+
+  it('cross-cadence confusion: the weekly delegate refuses a monthly envelope, and a monthly borrow leaves weekly reads untouched', async () => {
+    await freshChapter();
+    const monthly = await monthlyEnv('Fun', 20000);
+    // The legacy delegate must not silently borrow "next week" from a monthly envelope.
+    await expect(store().borrowFromNextWeek(monthly, '2026-01-05', cents(1000))).rejects.toThrow(
+      /monthly-cadence/,
+    );
+    // A proper monthly borrow writes month-boundary legs; week-keyed reads
+    // count each leg exactly once, in the week CONTAINING it (2026-01-01 sits
+    // in the week of 2025-12-29, 2026-02-01 in the week of 2026-01-26). The
+    // Mondays asserted first contain neither leg and must see nothing.
+    await store().borrowFromNextCycle(monthly, '2026-01-15', cents(4000));
+    expect(store().getEnvelopeWeekState(monthly, W(0)).borrowedIn).toBe(0);
+    expect(store().getEnvelopeWeekState(monthly, W(1)).repaying).toBe(0);
+    expect(store().getEnvelopeWeekState(monthly, '2025-12-29').borrowedIn).toBe(4000);
+    expect(store().getEnvelopeWeekState(monthly, '2026-01-26').repaying).toBe(4000);
+  });
+
+  it('borrow-then-switch-cadence: frozen legs plus a fresh monthly pair, all conserved', async () => {
+    await freshChapter();
+    const cat = await weeklyEnv('Gas', 10000);
+    await store().borrowFromNextWeek(cat, W(0), cents(6000)); // weekly repay at W(1)
+    await store().updateCategory(cat, { cadence: 'monthly' });
+    await store().borrowFromNextCycle(cat, W(0), cents(2500)); // monthly legs now
+
+    const pairs = await borrowPairs(cat);
+    expect(pairs.size).toBe(2); // one frozen weekly pair + one new monthly pair
+    for (const legs of pairs.values()) {
+      expect(legs).toHaveLength(2);
+      expect(legs[0]).toBe(legs[1]); // each pair still internally equal
+    }
+    // The original weekly repay leg kept its Monday period math.
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    expect(entries.some((e) => e.kind === 'borrow_repay' && e.weekStart === W(1))).toBe(true);
+    // The new monthly repay landed at the next month boundary (W(0) is in Jan 2026).
+    expect(entries.some((e) => e.kind === 'borrow_repay' && e.weekStart === '2026-02-01')).toBe(true);
+  });
+
+  it('a phantom category throws before any write (atomic reject)', async () => {
+    await freshChapter();
+    await expect(store().borrowFromNextCycle('ghost', W(0), cents(1000))).rejects.toThrow(
+      /unknown category/i,
+    );
+    const rows = getRawDb().getAllSync(`SELECT id FROM carryover_entries`);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('a throw mid-borrow rolls back both legs (no orphan carryover row)', async () => {
+    await freshChapter();
+    const cat = await weeklyEnv('Gas', 10000);
+    // Force a PK collision: every generated id (pairId + both leg ids) is 'dup',
+    // so the second insert collides and the whole borrow must roll back.
+    const spy = jest.spyOn(ids, 'generateId').mockReturnValue('dup');
+    await expect(store().borrowFromNextCycle(cat, W(0), cents(3000))).rejects.toThrow();
+    spy.mockRestore();
+    // DB carries no partial write; the week is exactly its configured budget.
+    const rows = getRawDb().getAllSync(`SELECT id FROM carryover_entries`);
+    expect(rows).toHaveLength(0);
+    expect((await store().evaluation.getCarryoverEntries({ categoryId: cat }))).toHaveLength(0);
     expect(store().getEnvelopeWeekState(cat, W(0)).remaining).toBe(10000);
   });
 });

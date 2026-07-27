@@ -11,6 +11,14 @@ import { writeBackupFile, shareBackupFile, pickBackupFile, readBackupFile } from
 export interface ExportResult {
   uri: string;
   file: BackupFile;
+  /**
+   * True iff the OS share sheet actually opened (F5-2). False means either
+   * `opts.share` was explicitly false, or sharing isn't available on this
+   * platform/device — either way the file still exists on disk at `uri`, so
+   * the caller can report the fallback honestly instead of always claiming
+   * "ready to share" (mirrors csvExport's `CsvExportResult.shared`).
+   */
+  shared: boolean;
 }
 
 /**
@@ -24,10 +32,8 @@ export async function exportBackup(port: BackupPort, opts: { share?: boolean } =
   const file = buildBackupFile(tables);
   const json = serializeBackupFile(file);
   const uri = await writeBackupFile(json);
-  if (opts.share ?? true) {
-    await shareBackupFile(uri);
-  }
-  return { uri, file };
+  const shared = (opts.share ?? true) ? await shareBackupFile(uri) : false;
+  return { uri, file, shared };
 }
 
 export interface ImportOutcome {

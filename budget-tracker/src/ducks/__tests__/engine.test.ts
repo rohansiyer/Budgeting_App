@@ -256,6 +256,64 @@ describe('Lifecycle', () => {
   });
 });
 
+describe('Starter duck invariant (v0.3 §1.1)', () => {
+  test('fresh chapter: getFlock seeds and persists exactly one starter duck', async () => {
+    const { engine, store } = build({ startedAt: '2025-01-01' });
+    const flock = await engine.getFlock();
+    expect(flock.ducks).toHaveLength(1);
+    expect(flock.ducks[0].name).toBeNull();
+    expect(flock.ducks[0].earnedMonth).toBe('2025-01');
+    // Persisted so its id is stable across reads.
+    expect(store.peekDucks()).toHaveLength(1);
+    expect(store.peekEvaluations()).toHaveLength(0); // seeding issues no verdict
+  });
+
+  test('getFlock is idempotent: the starter is seeded once, not on every read', async () => {
+    const { engine, store } = build({ startedAt: '2025-01-01' });
+    await engine.getFlock();
+    const commitsAfterFirst = store.commits;
+    const second = await engine.getFlock();
+    expect(second.ducks).toHaveLength(1);
+    expect(store.commits).toBe(commitsAfterFirst); // no re-seed, no extra commit
+  });
+
+  test('getFlock seed does not double up when evaluate later runs', async () => {
+    const { read, engine } = build({ startedAt: '2025-01-01' });
+    await engine.getFlock(); // seeds 1
+    perfectMonth(read, '2025-01');
+    const [ev] = await engine.evaluatePendingMonths('2025-02-01');
+    expect(ev.duckCountAfter).toBe(2); // seed 1 + gain 1, never 3
+  });
+
+  test('losing the last duck through 0/3 with history does NOT respawn a starter', async () => {
+    const { read, engine, store } = build({ startedAt: '2025-01-01' });
+    // seed 1 → 0/3 → lose to 0. Evaluation history now exists.
+    read.addCategory('food');
+    read.setBudget('food', '2025-01', C(10000));
+    read.addSpend('food', '2025-01', C(20000)); // goal 2 fail
+    read.setIncome('2025-01', C(100000));
+    read.setSavings('2025-01', C(0)); // goal 3 fail
+    read.setBills('2025-01', 3, 0); // goal 1 fail
+    const [ev] = await engine.evaluatePendingMonths('2025-02-01');
+    expect(ev.outcome).toBe('lose');
+    expect(ev.duckCountAfter).toBe(0);
+    // getFlock must NOT gift a fresh duck: history is present.
+    const flock = await engine.getFlock();
+    expect(flock.ducks).toHaveLength(0);
+    // A further evaluate on an empty, dormant backlog also stays empty.
+    expect(store.peekDucks()).toHaveLength(0);
+  });
+
+  test('a brand-new chapter (empty history) gets its own starter back', async () => {
+    // A new chapter is modelled by a fresh store/chapter: empty evaluations +
+    // empty flock, so the invariant re-seeds one duck for the new chapter alone.
+    const fresh = build({ startedAt: '2025-06-01' });
+    const flock = await fresh.engine.getFlock();
+    expect(flock.ducks).toHaveLength(1);
+    expect(flock.ducks[0].earnedMonth).toBe('2025-06');
+  });
+});
+
 describe('First-month rule', () => {
   test('mid-month chapter start: start month is partial and skipped', async () => {
     const { read, engine, store } = build({ startedAt: '2025-01-15' });

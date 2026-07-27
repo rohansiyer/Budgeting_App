@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/tokens/pixel.css">
+  <link rel="stylesheet" href="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/styles.css">
+  <script src="_ds/ducks-in-a-row-design-system-65df860a-f8a6-441c-b3fd-37b6fbaa4708/_ds_bundle.js"></script>
+  <style>
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--border); }
+    a:hover { color: var(--text); border-bottom-color: var(--accent); }
+    ::selection { background: var(--accent); color: var(--bg); }
+  </style>
+</helmet>
+
+<div style="padding: 48px 48px 96px 48px; display: flex; flex-direction: column; gap: 48px;">
+
+  <!-- HEADER -->
+  <header data-screen-label="Header" style="border-bottom: 1px solid var(--border); padding-bottom: 32px; max-width: 760px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Companion to the design system review &middot; July 2026</div>
+    <h1 style="font-family: var(--font-ui); font-size: 40px; font-weight: 800; letter-spacing: -1px; margin: 16px 0 8px 0;">Every proposed pattern, mocked</h1>
+    <p style="font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--text-secondary); margin: 0;">Every proposed pattern from findings F1&ndash;F12, built from existing tokens and kit components. Zero radii, block meters, stepped everything.</p>
+  </header>
+
+  <!-- ============ 01 ONBOARDING ============ -->
+  <section data-screen-label="Onboarding" style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">01 &middot; Onboarding &amp; first run &middot; F1 F2</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+      <!-- Wizard step -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Wizard step &middot; Field + ChoiceRow + StepTrack</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Setup &middot; step 2 of 4</div>
+            {{ mallardSmall }}
+          </div>
+          <div style="display: flex; gap: 3px; height: 8px;">
+            <div style="flex: 1; background: var(--accent);"></div>
+            <div style="flex: 1; background: var(--accent);"></div>
+            <div style="flex: 1; background: var(--surface-deep); border: 1px solid var(--border);"></div>
+            <div style="flex: 1; background: var(--surface-deep); border: 1px solid var(--border);"></div>
+          </div>
+          <div style="font-size: 20px; font-weight: 800; letter-spacing: -0.3px; margin-top: 8px;">Where does your money come from?</div>
+          <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.5; margin-top: -8px;">Your paydays set the rhythm for everything else. You can change this anytime.</div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Income source</div>
+            <div style="height: 48px; background: var(--surface-deep); border: 1px solid var(--accent); display: flex; align-items: center; padding: 0 16px; font-size: 14px; font-weight: 600;">Part-time job<span style="display: inline-block; width: 2px; height: 18px; background: var(--accent); margin-left: 2px;"></span></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Amount per paycheck</div>
+            <div style="height: 48px; background: var(--surface-deep); border: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.MoneyText" amount="{{ payAmount }}" hint-size="70px,20px"></x-import>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">How often</div>
+            <div style="display: flex; gap: 8px;">
+              <div style="flex: 1; height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface); font-size: 13px; font-weight: 700; color: var(--text-secondary);">Weekly</div>
+              <div style="flex: 1; height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--accent); background: var(--surface); font-size: 13px; font-weight: 700; color: var(--accent);">Every 2 weeks</div>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Continue" hint-size="120px,51px"></x-import>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F1 &middot; Field: surface-deep well, mint focus border, no glow. StepTrack: blocks, not a bar.</div>
+      </div>
+
+      <!-- Day one pond -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Day one &middot; Pond with the starter duck</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="font-size: 24px; font-weight: 800;">The Pond</div>
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,240px">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px 8px; text-align: center;">
+              {{ mallardLarge }}
+              <div style="font-size: 14px; font-weight: 600; line-height: 1.6; max-width: 250px;">Meet your first duck, it's yours from day one. Hit all three goals this month and a second one waddles in.</div>
+              <div style="display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left;">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--border); flex-shrink: 0;"></div>Fixed bills paid on time</div>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--border); flex-shrink: 0;"></div>Every envelope under budget</div>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--border); flex-shrink: 0;"></div>Savings on target</div>
+              </div>
+            </div>
+          </x-import>
+          </sc-if>
+          <div style="display: flex; justify-content: center;">
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="How ducks work" variant="ghost" hint-size="150px,51px"></x-import>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F2 &middot; The pond is never empty. Rules: 3/3 = +1 duck &middot; 1&ndash;2/3 = flock holds &middot; 0/3 = &minus;1.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ 02 DAILY LOOP ============ -->
+  <section data-screen-label="Daily loop" style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">02 &middot; The daily loop &middot; F3 F4</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+      <!-- Home after -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Home &middot; pacing + goal strip + daily insight</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary);">Good evening</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              {{ mallardSmall }}
+              <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted);">8/12</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Safe to spend this week</div>
+            <div class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 44px; font-weight: 700; letter-spacing: -1.5px; color: var(--accent); line-height: 1;">$128.40</div>
+            <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); margin-top: 8px;">4 days to payday &middot; about <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--text-secondary);">$32.10</span> a day keeps you green &middot; tap for the math</div>
+          </div>
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,120px">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">July's duck</div>
+                <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">On track</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--text-secondary);"><div style="width: 10px; height: 10px; background: var(--accent); flex-shrink: 0;"></div>Bills paid<div style="width: 10px; height: 10px; background: var(--accent); flex-shrink: 0; margin-left: 16px;"></div>Savings 12%<div style="width: 10px; height: 10px; background: var(--surface-deep); border: 1px solid var(--warn); flex-shrink: 0; margin-left: 16px;"></div>Envelopes</div>
+              <div style="font-size: 13px; font-weight: 500; color: var(--warn); line-height: 1.5;">Fun is at 92% in week 2, ease off to earn July's duck.</div>
+            </div>
+          </x-import>
+          </sc-if>
+          <div style="border-top: 1px solid var(--hairline); padding-top: 12px; display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Today's answer</div>
+            <div style="font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">Food is pacing <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent);">12%</span> under June, the coffee cutback is working.</div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import>
+              <span style="font-size: 14px; font-weight: 600; flex: 1;">Food</span>
+              <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">$39.00 left</span>
+            </div>
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.BlockMeter" budget="{{ foodBudget }}" spent="{{ foodSpent }}" block-value="{{ blockTen }}" hint-size="100%,12px"></x-import>
+          </div>
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Add expense" hint-size="100%,51px"></x-import>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F4 + F5 &middot; One delivered insight per day, computed at open. Every number is a door (F10).</div>
+      </div>
+
+      <!-- Add expense keypad -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Add expense &middot; amount-first, &le;5 seconds</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="text-align: center;">
+            <div class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 44px; font-weight: 700; letter-spacing: -1.5px; line-height: 1;">$12.40</div>
+            <div style="font-size: 13px; font-weight: 500; color: var(--accent); margin-top: 8px;">Food: <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700;">$26.60</span> left after this</div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Recent</div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+              <div style="height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--accent); background: var(--surface);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import><span style="font-size: 11px; font-weight: 700;">Food</span></div>
+              <div style="height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border); background: var(--surface);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="pink" hint-size="11px,11px"></x-import><span style="font-size: 11px; font-weight: 700; color: var(--text-secondary);">Fun</span></div>
+              <div style="height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border); background: var(--surface);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="blue" hint-size="11px,11px"></x-import><span style="font-size: 11px; font-weight: 700; color: var(--text-secondary);">Transit</span></div>
+              <div style="height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border); background: var(--surface);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="violet" hint-size="11px,11px"></x-import><span style="font-size: 11px; font-weight: 700; color: var(--text-secondary);">School</span></div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">1</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">2</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">3</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">4</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">5</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">6</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">7</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">8</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">9</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--text-muted);">.</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700;">0</div>
+            <div style="height: 48px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface-deep); font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--text-muted);">&larr;</div>
+          </div>
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Add $12.40 to Food" hint-size="100%,51px"></x-import>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F3 &middot; Amount first, one-tap category, live envelope math before confirm. No form.</div>
+      </div>
+
+      <!-- Borrow prompt -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Borrow prompt &middot; the flow's one moment of drama</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="height: 64px; background: var(--surface-deep); opacity: 0.5;"></div>
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,220px">
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="pink" hint-size="11px,11px"></x-import>
+                <span style="font-size: 14px; font-weight: 700;">Fun is <span class="dr-font-tabular" style="font-family: var(--font-mono); color: var(--warn);">$13.60</span> over this week</span>
+              </div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);">Pull budget forward from Fun's next cycle? Fun runs weekly for you; monthly envelopes lend from next month the same way. The next cycle starts with less, and the meter shows exactly how much.</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Borrow $13.60 from next week" hint-size="100%,51px"></x-import>
+                <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Not now" variant="ghost" hint-size="100%,51px"></x-import>
+              </div>
+            </div>
+          </x-import>
+          </sc-if>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F3 &middot; Every envelope lends from its own next cycle, weekly or monthly, whichever cadence it runs. No hard cap; the honest math is the guardrail.</div>
+      </div>
+
+      <!-- Snackbar + TabBar -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Snackbar + TabBar &middot; undo, never confirm</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); display: flex; flex-direction: column;">
+          <div style="padding: 24px 16px 16px 16px; display: flex; flex-direction: column;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); padding-bottom: 8px;">Today</div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import>
+              <span style="font-size: 14px; font-weight: 600; flex: 1;">Groceries</span>
+              <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$24.60</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="blue" hint-size="11px,11px"></x-import>
+              <span style="font-size: 14px; font-weight: 600; flex: 1;">Bus pass</span>
+              <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$2.75</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); opacity: 0.4;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="pink" hint-size="11px,11px"></x-import>
+              <span style="font-size: 14px; font-weight: 600; flex: 1; text-decoration: line-through;">Movie ticket</span>
+              <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; text-decoration: line-through;">&minus;$14.00</span>
+            </div>
+          </div>
+          <div style="margin: 32px 16px 16px 16px; background: var(--surface); border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 16px;">
+            <span style="font-size: 13px; font-weight: 600;">Expense deleted.</span>
+            <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Undo" variant="ghost" hint-size="80px,51px"></x-import>
+          </div>
+          <div style="display: flex; border-top: 1px solid var(--border); height: 56px;">
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;"><span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text);">HOME</span><div style="width: 24px; height: 3px; background: var(--accent);"></div></div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;"><span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-muted);">CALENDAR</span><div style="width: 24px; height: 3px; background: transparent;"></div></div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;"><span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-muted);">POND</span><div style="width: 24px; height: 3px; background: transparent;"></div></div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;"><span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-muted);">SETTINGS</span><div style="width: 24px; height: 3px; background: transparent;"></div></div>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">Component gaps &middot; Delete acts immediately; the snackbar offers the way back. Active tab = mint underline block.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ 03 THE POND ============ -->
+  <section data-screen-label="The Pond" style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">03 &middot; The Pond, redrawn</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">The Pond &middot; big flock, one thin ring</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="font-size: 24px; font-weight: 800;">The Pond</div>
+          <div style="position: relative; width: 312px; height: 312px; margin: 0 auto;">
+            <div style="position: absolute; inset: 0;">{{ pondRing }}</div>
+            {{ pondScene }}
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">8 of 12 ducks</span>
+            <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;"><span style="color: var(--accent);">$312.40</span> of $500.00 spent</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="violet" hint-size="11px,11px"></x-import><span style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Fixed</span></div>
+            <div style="display: flex; align-items: center; gap: 8px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import><span style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Food</span></div>
+            <div style="display: flex; align-items: center; gap: 8px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="pink" hint-size="11px,11px"></x-import><span style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Fun</span></div>
+            <div style="display: flex; align-items: center; gap: 8px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="blue" hint-size="11px,11px"></x-import><span style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">Transit</span></div>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">The ring is a pie of envelopes: each segment sized by its budget, translucent in its category color, filling in solid block by block as you spend. Inside, the pond is an actual pond; ducks waddle the shore and lose their legs when they paddle.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 04 INSIGHTS ============ -->
+  <section data-screen-label="Insights" style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">04 &middot; Insights, delivered &middot; F5 F10</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+      <!-- Month in review -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Recap &middot; every pay period, plus month-end</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,100px">
+            <div style="display: flex; align-items: center; gap: 16px;">
+              {{ mallardLarge }}
+              <div>
+                <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">June &middot; month in review</div>
+                <div style="font-size: 14px; font-weight: 700; margin-top: 4px;">3 of 3 goals, a duck waddles in.</div>
+              </div>
+            </div>
+          </x-import>
+          </sc-if>
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline);">
+              <div style="margin-top: 4px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import></div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">Food came in <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent);">$61.20</span> under budget, your best month since March.</div>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline);">
+              <div style="margin-top: 4px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="mint" hint-size="11px,11px"></x-import></div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">You swept <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent);">$48.00</span> of leftovers to savings, that's real money moved.</div>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline);">
+              <div style="margin-top: 4px;"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="violet" hint-size="11px,11px"></x-import></div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--text-secondary);">Rent hit on the 1st, the week after was your tightest. It always is.</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Spend &middot; last 6 months</div>
+            <div style="display: flex; align-items: flex-end; gap: 8px; height: 72px;">
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div><div style="height: 9px; background: var(--spend-fill);"></div></div>
+              <div style="flex: 1; display: flex; flex-direction: column-reverse; gap: 3px;"><div style="height: 9px; background: var(--accent);"></div><div style="height: 9px; background: var(--accent);"></div><div style="height: 9px; background: var(--accent);"></div><div style="height: 9px; background: var(--accent);"></div></div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 4px;">
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">J</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">F</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">M</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">A</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">M</div>
+              <div style="flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">J</div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F5 &middot; Fires at the close of every pay period; month-end adds the duck verdict. Top 3 template rules that fired; blocks keep money countable.</div>
+      </div>
+
+      <!-- Safe to spend ledger -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Tap-down &middot; the math behind safe-to-spend</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span style="font-size: 13px; font-weight: 600; color: var(--text-muted);">&larr;</span>
+            <div style="font-size: 20px; font-weight: 800;">Where $128.40 comes from</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span style="font-size: 14px; font-weight: 600; flex: 1;">Paycheck &middot; Jul 3</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent);">+$640.00</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span style="font-size: 14px; font-weight: 600; flex: 1;">Bills reserved <span style="font-size: 12px; font-weight: 500; color: var(--text-muted);">(3 upcoming)</span></span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$310.00</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span style="font-size: 14px; font-weight: 600; flex: 1;">Envelopes funded <span style="font-size: 12px; font-weight: 500; color: var(--text-muted);">(5)</span></span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$180.00</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span style="font-size: 14px; font-weight: 600; flex: 1;">Savings set aside <span style="font-size: 12px; font-weight: 500; color: var(--text-muted);">(12%)</span></span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$64.00</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span style="font-size: 14px; font-weight: 600; flex: 1;">Carryover from last week</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent);">+$42.40</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 16px 0; border-top: 1px solid var(--border);"><span style="font-size: 14px; font-weight: 800; flex: 1;">Safe to spend</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">$128.40</span></div>
+          </div>
+          <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6;">Every dollar is accounted for; nothing is ever invented or lost. Each row opens further.</div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F10 &middot; Progressive disclosure, not a mode. RuledList, tabular numerals, exact dollars.</div>
+      </div>
+
+      <!-- Ledger search -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Ledger &middot; search + filter</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="height: 48px; background: var(--surface-deep); border: 1px solid var(--accent); display: flex; align-items: center; padding: 0 16px; font-size: 14px; font-weight: 600;">coffee<span style="display: inline-block; width: 2px; height: 18px; background: var(--accent); margin-left: 2px;"></span></div>
+          <div style="display: flex; gap: 8px;">
+            <div style="height: 32px; display: flex; align-items: center; padding: 0 12px; border: 1px solid var(--accent); background: var(--surface); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--accent);">ALL</div>
+            <div style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-secondary);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import>FOOD</div>
+            <div style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-secondary);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="pink" hint-size="11px,11px"></x-import>FUN</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted); width: 48px;">Jul 8</span><span style="font-size: 14px; font-weight: 600; flex: 1;">Pilot Coffee</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$4.60</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted); width: 48px;">Jul 5</span><span style="font-size: 14px; font-weight: 600; flex: 1;">Campus cafe</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$6.25</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);"><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted); width: 48px;">Jul 1</span><span style="font-size: 14px; font-weight: 600; flex: 1;">Pilot Coffee</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$4.60</span></div>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">14 matches this year</span>
+            <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">$87.20 total</span>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F11 &middot; A Field on a RuledList. The savvy user's view; invisible to everyone else.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ 04 DATA LAYER ============ -->
+  <section data-screen-label="Data layer" style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">05 &middot; The data layer &middot; F11</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+      <!-- Import review -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">CSV import &middot; review screen</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Import &middot; chase_jan&ndash;jun.csv</div>
+            <div style="font-size: 20px; font-weight: 800; margin-top: 8px;">We sorted 142 of 151.</div>
+            <div style="font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-top: 4px;">Check these 9, we'll remember every correction.</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);">
+              <div style="display: flex; align-items: center; gap: 8px;"><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; flex: 1;">TST* GOLDEN DRAGON</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$18.40</span></div>
+              <div style="display: flex; gap: 8px;">
+                <div style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--accent); background: var(--surface); font-size: 12px; font-weight: 700; color: var(--accent);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="amber" hint-size="11px,11px"></x-import>Food?</div>
+                <div style="height: 32px; display: flex; align-items: center; padding: 0 12px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; font-weight: 700; color: var(--text-secondary);">Change</div>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);">
+              <div style="display: flex; align-items: center; gap: 8px;"><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; flex: 1;">SQ* THE PAPER STORE</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">&minus;$32.10</span></div>
+              <div style="display: flex; gap: 8px;">
+                <div style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--accent); background: var(--surface); font-size: 12px; font-weight: 700; color: var(--accent);"><x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="violet" hint-size="11px,11px"></x-import>School?</div>
+                <div style="height: 32px; display: flex; align-items: center; padding: 0 12px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; font-weight: 700; color: var(--text-secondary);">Change</div>
+              </div>
+            </div>
+          </div>
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Finish import (151)" hint-size="100%,51px"></x-import>
+          <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6;">Matching happens on your phone. Nothing is uploaded, ever.</div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F11 &middot; Never silent: sorted count named, ambiguous rows surfaced, corrections learned.</div>
+      </div>
+
+      <!-- Bills forecast -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Bills forecast &middot; next 14 days</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Due before payday</div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted); width: 48px;">Jul 12</span><span style="font-size: 14px; font-weight: 600; flex: 1;">Rent</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">$850.00</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline);"><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted); width: 48px;">Jul 15</span><span style="font-size: 14px; font-weight: 600; flex: 1;">Phone</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">$45.00</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);"><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted); width: 48px;">Jul 18</span><span style="font-size: 14px; font-weight: 600; flex: 1;">Spotify</span><span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">$11.99</span></div>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 14px; font-weight: 800;">Total</span>
+            <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 20px; font-weight: 700;">$906.99</span>
+          </div>
+          <div style="font-size: 13px; font-weight: 500; color: var(--accent); line-height: 1.5;">All covered, already reserved out of safe-to-spend.</div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F11 &middot; The forward look every competitor has. Feeds the safe-to-spend math it already implies.</div>
+      </div>
+
+      <!-- Subscription detection -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Subscription detection &middot; an insight rule</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,180px">
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.CategoryChip" color-key="pink" hint-size="11px,11px"></x-import>
+                <span style="font-size: 14px; font-weight: 700;">Looks like a subscription</span>
+              </div>
+              <div style="font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);">Spotify has hit for the 3rd month running, <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--text);">$11.99</span> each time. Want to track it as a bill so it's reserved before you spend?</div>
+              <div style="display: flex; gap: 8px;">
+                <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Mark as bill" hint-size="140px,51px"></x-import>
+                <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.HardButton" label="Ignore" variant="ghost" hint-size="100px,51px"></x-import>
+              </div>
+            </div>
+          </x-import>
+          </sc-if>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F11 &middot; Same trigger machinery as InsightRow: recurring merchant + steady amount = one sentence.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ 05 PROJECTIONS ============ -->
+  <sc-if value="{{ showSpicy }}" hint-placeholder-val="{{ true }}">
+  <section data-screen-label="Projections" style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">06 &middot; Projections, the spicy one &middot; F12</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Savings &middot; stepped trend + 45% projection</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Savings balance</div>
+            <div class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1;">$612.40</div>
+          </div>
+          <svg width="328" height="140" viewBox="0 0 328 140" style="display: block;">
+            <line x1="0" y1="24" x2="328" y2="24" stroke="var(--hairline)" stroke-width="1" stroke-dasharray="4 4"></line>
+            <text x="0" y="16" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="11" font-weight="700">$1,000 GOAL</text>
+            <path d="M0,128 H24 V118 H48 V122 H72 V104 H96 V108 H120 V88 H144 V76 H168 V80 H192 V62" fill="none" stroke="var(--accent)" stroke-width="3"></path>
+            <path d="M192,62 H216 V52 H240 V44 H264 V34 H288 V26 H312 V20 H328" fill="none" stroke="var(--accent)" stroke-width="3" opacity="0.45"></path>
+            <line x1="192" y1="8" x2="192" y2="136" stroke="var(--border)" stroke-width="1"></line>
+            <rect x="189" y="59" width="7" height="7" fill="var(--accent)"></rect>
+          </svg>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-muted);">FEB</span>
+            <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-muted);">TODAY</span>
+            <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--accent); opacity: 0.7;">OCT</span>
+          </div>
+          <div style="font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--text-secondary);">If your last 3 months hold, you pass <span class="dr-font-tabular" style="font-family: var(--font-mono); font-weight: 700; color: var(--text);">$1,000</span> around <span style="font-weight: 700; color: var(--text);">October 14</span>.</div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F12 &middot; House rules: steps, never smooth; projection at 45% opacity, the pond's plan-vs-reality device. Median math, not ML.</div>
+      </div>
+
+    </div>
+  </section>
+  </sc-if>
+
+  <!-- ============ 06 COMPETITIVE PICKS + BRAND ============ -->
+  <section data-screen-label="Competitive picks and brand" style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);">07 &middot; Competitive picks &amp; brand &middot; F9 + mallard flag</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+      <!-- Named goal -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Named goal &middot; the one Monarch feature worth taking</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <sc-if value="{{ boxesReady }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.PixelBox" hint-size="100%,160px">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Goal &middot; my own place</div>
+              <div style="font-size: 20px; font-weight: 800;">First month's rent</div>
+              <div style="display: flex; align-items: baseline; gap: 8px;">
+                <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent);">$340.00</span>
+                <span class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--text-muted);">of $1,200.00</span>
+              </div>
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.BlockMeter" budget="{{ goalBudget }}" spent="{{ goalSpent }}" block-value="{{ blockHundred }}" hint-size="100%,12px"></x-import>
+              <div style="font-size: 12px; font-weight: 500; color: var(--text-muted);">At your pace: fully funded around March.</div>
+            </div>
+          </x-import>
+          </sc-if>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F9 &middot; A goal is a game object &rarr; PixelBox. One block = $100; savings stay countable.</div>
+      </div>
+
+      <!-- Widget -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Home-screen widget &middot; the retention mechanism</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; gap: 16px; align-items: flex-start;">
+          <div style="width: 156px; height: 156px; background: var(--surface); border: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box;">
+            <div>
+              <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted);">Safe to spend</div>
+              <div class="dr-font-tabular" style="font-family: var(--font-mono); font-size: 24px; font-weight: 700; letter-spacing: -0.5px; color: var(--accent); margin-top: 4px;">$128.40</div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              {{ mallardSmall }}
+              <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-muted);">ON TRACK</span>
+            </div>
+          </div>
+          <div style="flex: 1; font-size: 12px; font-weight: 500; color: var(--text-secondary); line-height: 1.6;">2&times;2 widget: the daily question answered without opening the app. The duck's posture <em>is</em> the status, idle when on track, absent bob when the month's at risk.</div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">F9 &middot; For a manual-entry app the widget is the retention mechanism, prioritized above notifications polish.</div>
+      </div>
+
+      <!-- Mallard -->
+      <div style="width: 360px; display: flex; flex-direction: column;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--warn); margin-bottom: 8px;">Mallard recolor &middot; same grid, new palette</div>
+        <div style="background: var(--bg); border: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-around;">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+              <x-import component-from-global-scope="DucksInARowDesignSystem_65df86.DuckSprite" scale="{{ four }}" animation="idle" hint-size="56px,48px"></x-import>
+              <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-muted);">CURRENT</span>
+            </div>
+            <span style="font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--text-muted);">&rarr;</span>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+              <div style="width: 64px; height: 56px; display: flex; align-items: center; justify-content: center;">{{ mallardSprite }}</div>
+              <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--accent);">MALLARD</span>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--hairline);"><div style="width: 12px; height: 12px; background: #efc94c; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; flex: 1; color: var(--text-secondary);">Y body #EFC94C</span><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted);">&rarr;</span><div style="width: 12px; height: 12px; background: #4c9c46; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">head #4C9C46</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--hairline);"><div style="width: 12px; height: 12px; background: #efc94c; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; flex: 1; color: var(--text-secondary);">Y body #EFC94C</span><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted);">&rarr;</span><div style="width: 12px; height: 12px; background: #8a5638; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">breast #8A5638</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--hairline);"><div style="width: 12px; height: 12px; background: #efc94c; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; flex: 1; color: var(--text-secondary);">Y body #EFC94C</span><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted);">&rarr;</span><div style="width: 12px; height: 12px; background: #c9bfae; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">body #C9BFAE</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);"><div style="width: 12px; height: 12px; background: #c9a63b; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; flex: 1; color: var(--text-secondary);">D shade #C9A63B</span><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-muted);">&rarr;</span><div style="width: 12px; height: 12px; background: #8e8577; flex-shrink: 0;"></div><span style="font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-secondary);">wing #8E8577</span></div>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin-top: 8px;">Flag from &sect;10 &middot; Reference-matched palette; the grid grows to 16&times;14 to fit legs and tail. Full animations: <a href="Mallard Sprite Sheet.dc.html">mallard sprite sheet</a>. Frees yellow for semantic use.</div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300},&quot;showSpicy&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;duckAnimation&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;idle&quot;,&quot;options&quot;:[&quot;idle&quot;,&quot;waddle&quot;,&quot;walk-off&quot;,&quot;swim&quot;,&quot;preen&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Ducks&quot;}}">
+class Component extends DCLogic {
+  state = { boxesReady: false, now: 0 };
+  componentDidMount() {
+    const flip = () => { if (!this.state.boxesReady) this.setState({ boxesReady: true }); };
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => setTimeout(flip, 60)).catch(() => flip());
+    }
+    setTimeout(flip, 1500);
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) {
+      this.__t0 = Date.now();
+      this.__timer = setInterval(() => this.setState({ now: Date.now() - this.__t0 }), 90);
+    }
+  }
+  componentWillUnmount() { if (this.__timer) clearInterval(this.__timer); }
+  grids() {
+    const BODY = [
+      '................',
+      '....GGGG........',
+      '...GGGGGG.......',
+      '.OOGGKGGGG......',
+      'OOOGGGGGGG......',
+      '....GGGGG.......',
+      '....CCGGG....D..',
+      '...RCCBBBBBBDD..',
+      '..RRCBBWWWWBBD..',
+      '..RRBBWWWWWWB...',
+      '..RRBBWWWWWB....',
+      '...RBBBBBBB.....',
+    ];
+    const BLANK = '................';
+    const STAND = BODY.concat(['.....L....L.....', '....LL...LL.....']);
+    const BOB = [BLANK].concat(BODY, ['....LL...LL.....']);
+    const STRIDE = [BLANK].concat(BODY, ['...LL......LL...']);
+    const STRIDE2 = [BLANK].concat(BODY, ['.....LL..LL.....']);
+    const PREEN_TURN = [
+      BLANK, BLANK,
+      '....GGGG........',
+      '...GGGGGGK......',
+      '...GGGGGGGO.....',
+      '....GGGGGOO.....',
+      '....CCGGG....D..',
+      '...RCCBBBBBBDD..',
+      '..RRCBBWWWWBBD..',
+      '..RRBBWWWWWWB...',
+      '..RRBBWWWWWB....',
+      '...RBBBBBBB.....',
+      '.....L....L.....',
+      '....LL...LL.....',
+    ];
+    const PREEN_DOWN = [
+      BLANK, BLANK, BLANK,
+      '....GGGG........',
+      '...GGGGGG.......',
+      '...GGGGGGK......',
+      '....CCGGGGO..D..',
+      '...RCCBBBBOODD..',
+      '..RRCBBWWWWBBD..',
+      '..RRBBWWWWWWB...',
+      '..RRBBWWWWWB....',
+      '...RBBBBBBB.....',
+      '.....L....L.....',
+      '....LL...LL.....',
+    ];
+    const swim = (sink, phase) => {
+      const rows = [];
+      for (let i = 0; i < sink; i++) rows.push(BLANK);
+      for (const r of BODY) rows.push(r);
+      while (rows.length < 14) rows.push(BLANK);
+      const water = (c) => ((c + phase) % 4 < 2 ? 'A' : 'a');
+      return rows.slice(0, 14).map((row, r) => {
+        if (r < 12) return row;
+        let s = '';
+        for (let c = 0; c < 16; c++) {
+          const ch = row[c];
+          s += (r === 13 || ch === '.' || ch === undefined) ? water(c) : ch;
+        }
+        return s;
+      });
+    };
+    // Floating variants for in-pond ducks: the pond supplies the water, so no
+    // water rows; the bottom two body rows sit below the surface.
+    const FLOAT1 = [BLANK, BLANK].concat(BODY.slice(0, 10), [BLANK, BLANK]);
+    const FLOAT2 = [BLANK, BLANK, BLANK].concat(BODY.slice(0, 10), [BLANK]);
+    return { STAND, BOB, STRIDE, STRIDE2, PREEN_TURN, PREEN_DOWN, SWIM1: swim(2, 0), SWIM2: swim(3, 2), FLOAT1, FLOAT2 };
+  }
+  sprite(grid, scale, flip) {
+    const PAL = {
+      G: '#4C9C46', K: '#14181A', O: '#E8A93D', C: '#F0E9D6', B: '#C9BFAE',
+      W: '#8E8577', R: '#8A5638', D: '#3F3B33', L: '#D97E32',
+      A: '#1C4F46', a: '#28695B',
+    };
+    const w = 16 * scale, h = 14 * scale;
+    const rects = [];
+    grid.forEach((row, r) => {
+      for (let c = 0; c < row.length; c++) {
+        const fill = PAL[row[c]];
+        if (fill) rects.push(React.createElement('rect', { key: r + ':' + c, x: c * scale, y: r * scale, width: scale, height: scale, fill }));
+      }
+    });
+    const g = React.createElement('g', { transform: flip ? 'translate(' + w + ', 0) scale(-1, 1)' : undefined }, rects);
+    return React.createElement('svg', { width: w, height: h, role: 'img', 'aria-label': 'Pixel mallard' }, g);
+  }
+  animFrame(steps, scale, flip, phase) {
+    const total = steps.reduce((s, x) => s + x[1], 0);
+    let t = (this.state.now + (phase || 0)) % total;
+    let grid = steps[0][0];
+    for (const [g, d] of steps) { if (t < d) { grid = g; break; } t -= d; }
+    return this.sprite(grid, scale, flip);
+  }
+  mallardAnim(scale) {
+    const G = this.__grids || (this.__grids = this.grids());
+    const a = this.props.duckAnimation ?? 'idle';
+    const flip = a === 'walk-off';
+    const steps = (a === 'waddle' || a === 'walk-off')
+      ? [[G.STAND, 180], [G.STRIDE, 180], [G.STAND, 180], [G.STRIDE2, 180]]
+      : a === 'swim' ? [[G.SWIM1, 500], [G.SWIM2, 500]]
+      : a === 'preen' ? [[G.STAND, 900], [G.PREEN_TURN, 350], [G.PREEN_DOWN, 1200], [G.PREEN_TURN, 350]]
+      : [[G.STAND, 575], [G.BOB, 575]];
+    return this.animFrame(steps, scale, flip, 0);
+  }
+  buildPondRing() {
+    // A pie of envelopes: segment length = budget share, translucent category
+    // color as the plan, filling in solid block by block as spending lands.
+    const segs = [
+      { color: 'var(--cat-violet)', blocks: 14, filled: 14 },
+      { color: 'var(--cat-amber)', blocks: 16, filled: 10 },
+      { color: 'var(--cat-pink)', blocks: 10, filled: 9 },
+      { color: 'var(--cat-blue)', blocks: 8, filled: 3 },
+    ];
+    const rects = [];
+    let i = 0;
+    for (const s of segs) {
+      for (let b = 0; b < s.blocks; b++, i++) {
+        const deg = i * 7.5;
+        rects.push(React.createElement('rect', {
+          key: i, x: 150, y: 4, width: 12, height: 8,
+          fill: s.color, fillOpacity: b < s.filled ? 1 : 0.22,
+          transform: 'rotate(' + deg + ' 156 156)',
+        }));
+      }
+    }
+    return React.createElement('svg', { width: 312, height: 312, role: 'img', 'aria-label': 'Envelope ring, segments by budget, filled by spending' }, rects);
+  }
+  pondScene() {
+    const G = this.__grids || (this.__grids = this.grids());
+    const step = Math.floor(this.state.now / 400);
+    const kids = [];
+    kids.push(React.createElement('svg', { key: 'water', width: 312, height: 312, style: { position: 'absolute', left: 0, top: 0 } },
+      React.createElement('circle', { cx: 156, cy: 156, r: 92, fill: 'var(--pond-deep)', stroke: 'var(--pond-edge)', strokeWidth: 6 }),
+      React.createElement('rect', { x: 118, y: 132, width: 16, height: 4, fill: 'var(--pond-edge)', opacity: step % 2 ? 0.9 : 0.45 }),
+      React.createElement('rect', { x: 178, y: 192, width: 20, height: 4, fill: 'var(--pond-edge)', opacity: step % 2 ? 0.45 : 0.9 }),
+      React.createElement('rect', { x: 148, y: 108, width: 12, height: 4, fill: 'var(--pond-edge)', opacity: 0.7 })
+    ));
+    const walker = (phase, dir, key) => {
+      const th = phase + dir * step * 0.13;
+      const x = Math.round(156 + 118 * Math.cos(th)) - 24;
+      const y = Math.round(156 + 118 * Math.sin(th)) - 36;
+      const movingRight = (-Math.sin(th) * dir) > 0;
+      const grid = step % 2 === 0 ? G.STAND : G.STRIDE;
+      return React.createElement('div', { key, style: { position: 'absolute', left: x + 'px', top: y + 'px' } }, this.sprite(grid, 3, movingRight));
+    };
+    const floater = (phase, y, key) => {
+      const t = step * 0.22 + phase;
+      const x = 156 + Math.round(Math.sin(t) * 34) - 24;
+      const grid = (step + Math.round(phase * 2)) % 2 === 0 ? G.FLOAT1 : G.FLOAT2;
+      return React.createElement('div', { key, style: { position: 'absolute', left: x + 'px', top: y + 'px' } }, this.sprite(grid, 3, Math.cos(t) > 0));
+    };
+    kids.push(walker(0, 1, 'w1'));
+    kids.push(walker(Math.PI * 0.9, -1, 'w2'));
+    kids.push(floater(0, 112, 'f1'));
+    kids.push(floater(2.2, 148, 'f2'));
+    return React.createElement('div', { style: { position: 'absolute', left: 0, top: 0, width: '312px', height: '312px' } }, kids);
+  }
+  renderVals() {
+    return {
+      boxesReady: this.state.boxesReady,
+      showSpicy: this.props.showSpicy ?? true,
+      mallardSprite: this.sprite((this.__grids || (this.__grids = this.grids())).STAND, 4),
+      mallardSmall: this.mallardAnim(2),
+      mallardLarge: this.mallardAnim(4),
+      pondRing: this.buildPondRing(),
+      pondScene: this.pondScene(),
+      two: 2,
+      four: 4,
+      payAmount: 64000,
+      foodBudget: 10000,
+      foodSpent: 6100,
+      blockTen: 1000,
+      goalBudget: 120000,
+      goalSpent: 34000,
+      blockHundred: 10000,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -57,12 +57,50 @@ export const motion = {
   reducedMotionRespect: true,
 } as const;
 
+/**
+ * Focus ring (v0.3 § "Type and accessibility patches"). 1px accent outline,
+ * offset 2px, no glow. Kit components apply these as a border/outline on
+ * their focused state; there is no RN `outline` primitive so consumers
+ * translate width/offset into a border + padding adjustment.
+ */
+export const focus = {
+  width: 1,
+  offset: 2,
+  color: color.accent,
+} as const;
+
+/**
+ * Font families (v0.3, design handoff § "Type and accessibility patches").
+ * Space Grotesk for general UI, Space Mono for money/labels/tabular
+ * contexts. Space Grotesk ships no 800 weight, so tokens specced at 800
+ * (hero, title) use the 700 (uiBold) face; RN ignores numeric fontWeight
+ * once a custom fontFamily is set, so fontWeight is kept only for layout
+ * fallback (system-font error path in App.tsx) and is not load-bearing here.
+ */
+export const font = {
+  ui: 'SpaceGrotesk_400Regular',
+  uiMedium: 'SpaceGrotesk_500Medium',
+  uiSemiBold: 'SpaceGrotesk_600SemiBold',
+  uiBold: 'SpaceGrotesk_700Bold',
+  mono: 'SpaceMono_400Regular',
+  monoBold: 'SpaceMono_700Bold',
+} as const;
+
 export const type = {
-  hero: { fontSize: 56, fontWeight: '800' as const, letterSpacing: -1.5 },
-  title: { fontSize: 24, fontWeight: '800' as const },
-  body: { fontSize: 14, fontWeight: '600' as const },
-  caption: { fontSize: 11.5, fontWeight: '500' as const },
-  sectionLabel: { fontSize: 11, fontWeight: '700' as const, letterSpacing: 1.2, textTransform: 'uppercase' as const },
-  /** All money and date columns use tabular numerals. */
-  tabularNums: { fontVariant: ['tabular-nums'] as const },
+  hero: { fontSize: 56, fontWeight: '800' as const, letterSpacing: -1.5, fontFamily: font.uiBold },
+  title: { fontSize: 24, fontWeight: '800' as const, fontFamily: font.uiBold },
+  /** Mid-importance numbers: envelope remainders, day KPIs, sheet titles, goal amounts. */
+  kpi: { fontSize: 20, fontWeight: '700' as const, fontFamily: font.monoBold },
+  body: { fontSize: 14, fontWeight: '600' as const, fontFamily: font.uiSemiBold },
+  // 11px stays reserved for sectionLabel only; caption is content-bearing text.
+  caption: { fontSize: 12, fontWeight: '500' as const, fontFamily: font.uiMedium },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase' as const,
+    fontFamily: font.monoBold,
+  },
+  /** All money and date columns use tabular numerals in the mono face. */
+  tabularNums: { fontVariant: ['tabular-nums'] as const, fontFamily: font.mono },
 } as const;

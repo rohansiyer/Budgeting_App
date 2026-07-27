@@ -1,19 +1,29 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as tokens from '../theme/tokens';
 import { formatCents, ZERO } from '../lib/money';
-import { Screen, SectionLabel } from '../components/Primitives';
+import { Screen, SectionLabel, Row } from '../components/Primitives';
+import { EmptyState, HardButton } from '../components/kit';
+import { DuckSprite } from '../ducks/DuckSprite';
 import { useStore } from '../providers/StoreProvider';
 import { useAppShell } from '../providers/AppShell';
 import {
+  isCalendarMonthEmpty,
+  shiftMonthKey,
+  clampMonthKey,
+  canGoToPrevMonth,
+  canGoToNextMonth,
+} from './CalendarScreen.logic';
+import {
   todayISO,
+  monthKeyOf,
   monthRange,
   monthTitle,
   eachDay,
   dayOfWeek,
   dayNumber,
 } from '../format/dates';
-import type { ISODate } from '../types/contracts';
+import type { ISODate, MonthKey } from '../types/contracts';
 
 const { color, space, pixel } = tokens;
 const typo = tokens.type;
@@ -31,15 +41,40 @@ export function CalendarScreen() {
   const store = useStore();
   const { openDay } = useAppShell();
   const today = todayISO();
-  const range = monthRange(today);
+  const chapter = store.getActiveChapter();
+  const minMonth = monthKeyOf(chapter.startedAt);
+  const maxMonth = monthKeyOf(today);
+
+  // F4-6: a viewed month independent of today, clamped to
+  // [chapter start month, current month] — never a phantom month before the
+  // active chapter began or ahead of the present.
+  const [viewedMonth, setViewedMonth] = useState<MonthKey>(() =>
+    clampMonthKey(maxMonth, minMonth, maxMonth),
+  );
+  const viewedISO = `${viewedMonth}-01`;
+  const range = monthRange(viewedISO);
+
+  const canPrev = canGoToPrevMonth(viewedMonth, minMonth);
+  const canNext = canGoToNextMonth(viewedMonth, maxMonth);
+  const goPrev = () => setViewedMonth((m) => clampMonthKey(shiftMonthKey(m, -1), minMonth, maxMonth));
+  const goNext = () => setViewedMonth((m) => clampMonthKey(shiftMonthKey(m, 1), minMonth, maxMonth));
 
   const days = eachDay(range);
   const totals = store.getDaySpendTotals(range);
+  const monthTxnCount = store.getTransactions(range).length;
+  const isEmpty = isCalendarMonthEmpty(monthTxnCount);
   const paydays = useMemo(() => new Set(store.getPaydays(range)), [store, range.from, range.to]);
   const fixedHitDays = useMemo(() => {
+    // includeArchived: with month navigation (F4-6) this screen renders PAST
+    // months, and an archived fixed category's historical bill dots must not
+    // vanish (consistent with the store's history-aware
+    // getMonthFixedBillStatus — budget basis only zeroes AFTER archival).
+    // Dots derive from real expense rows in the viewed range, and the store
+    // rejects new expenses on archived categories, so this cannot invent
+    // present/future dots for an archived category.
     const fixedIds = new Set(
       store
-        .listCategories()
+        .listCategories({ includeArchived: true })
         .filter((c) => c.fixed)
         .map((c) => c.id),
     );
@@ -55,7 +90,23 @@ export function CalendarScreen() {
   const leadBlanks = mondayIndex(days[0]);
 
   return (
-    <Screen title={monthTitle(today)}>
+    <Screen title={monthTitle(viewedISO)}>
+      <Row style={styles.monthNav}>
+        <HardButton
+          label="< Prev"
+          variant="ghost"
+          disabled={!canPrev}
+          onPress={goPrev}
+          accessibilityLabel="Previous month"
+        />
+        <HardButton
+          label="Next >"
+          variant="ghost"
+          disabled={!canNext}
+          onPress={goNext}
+          accessibilityLabel="Next month"
+        />
+      </Row>
       <View style={styles.weekHeader}>
         {WEEK_HEADER.map((w, i) => (
           <Text key={i} style={styles.weekHeaderCell}>
@@ -114,10 +165,24 @@ export function CalendarScreen() {
         })}
       </View>
 
-      <SectionLabel>Legend</SectionLabel>
-      <LegendRow swatch={<View style={styles.legendHeat} />} label="Fill intensity = spending" />
-      <LegendRow swatch={<View style={styles.legendRing} />} label="Mint ring = payday" />
-      <LegendRow swatch={<View style={styles.legendFixed} />} label="Coral edge = fixed bill spike" />
+      {isEmpty ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            message="No spending recorded yet. Add your first expense and this calendar starts filling in."
+            actionLabel="Add expense"
+            onAction={() => openDay(today)}
+            renderDuck={(props) => <DuckSprite {...props} />}
+            accessibilityLabel="No spending recorded yet"
+          />
+        </View>
+      ) : (
+        <>
+          <SectionLabel>Legend</SectionLabel>
+          <LegendRow swatch={<View style={styles.legendHeat} />} label="Fill intensity = spending" />
+          <LegendRow swatch={<View style={styles.legendRing} />} label="Mint ring = payday" />
+          <LegendRow swatch={<View style={styles.legendFixed} />} label="Coral edge = fixed bill spike" />
+        </>
+      )}
     </Screen>
   );
 }
@@ -132,8 +197,17 @@ function LegendRow({ swatch, label }: { swatch: React.ReactNode; label: string }
 }
 
 const styles = StyleSheet.create({
+  monthNav: {
+    justifyContent: 'space-between',
+    marginBottom: space.sm,
+  },
+  emptyWrap: {
+    marginTop: space.md,
+  },
   weekHeader: {
     flexDirection: 'row',
+    // Full-bleed to stay column-aligned with the full-bleed grid below.
+    marginHorizontal: -space.md,
     marginTop: space.sm,
     marginBottom: space.xs,
   },
@@ -148,10 +222,16 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    // Full-bleed: reclaim the Screen's side padding so each of the 7 columns
+    // gets the whole device width (a11y-v03 fix: 375px / 7 = 53px, 360px / 7 =
+    // 51px; the padded grid landed under the 48px tap-target floor).
+    marginHorizontal: -space.md,
   },
   cell: {
     width: CELL_PCT,
-    aspectRatio: 1,
+    // Hard 48px tap-target floor in the vertical axis regardless of device
+    // width (replaces aspectRatio 1, which shrank with the column).
+    minHeight: 48,
     padding: 2,
   },
   cellInner: {

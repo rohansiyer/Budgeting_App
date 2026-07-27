@@ -157,7 +157,7 @@ export function SecurityScreen({ onBack }: { onBack: () => void }) {
         <View style={styles.toggleMeta}>
           <Text style={styles.rowTitle}>App lock</Text>
           <Text style={styles.rowSub}>
-            {appLockEnabled ? 'On — PIN required to open the app.' : 'Off — anyone can open the app.'}
+            {appLockEnabled ? 'On. PIN required to open the app.' : 'Off. Anyone can open the app.'}
           </Text>
         </View>
         <Switch
@@ -180,8 +180,13 @@ export function SecurityScreen({ onBack }: { onBack: () => void }) {
 
       {pinFlow ? (
         <View style={styles.pinFlow}>
+          {pinFlow.purpose === 'enableLock' ? (
+            <Text style={styles.rowSub}>Set a 4-digit PIN to turn on the app lock.</Text>
+          ) : null}
           <Text style={styles.rowTitle}>
-            {pinFlow.step === 'enter' ? 'Enter a new 4-digit PIN' : 'Confirm your new PIN'}
+            {pinFlow.step === 'enter'
+              ? 'Step 1 of 2 — enter a new 4-digit PIN'
+              : 'Step 2 of 2 — confirm your PIN'}
           </Text>
           {pinError ? (
             <Text style={styles.feedbackError} accessibilityLiveRegion="polite">

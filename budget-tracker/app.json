@@ -49,7 +49,8 @@
         {
           "faceIDPermission": "Allow Ducks in a Row to use Face ID to unlock the app."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

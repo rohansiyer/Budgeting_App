@@ -9,6 +9,7 @@ import { CategoryChip, HardButton, PixelBox, RuledList } from '../../components/
 import { formatCents } from '../../lib/money';
 import { color, space, type } from '../../theme/tokens';
 import type { WizardState } from '../wizardState';
+import { stepSubtextStyle, stepTitleStyle } from './stepTypography';
 
 interface ReviewStepProps {
   state: WizardState;
@@ -20,7 +21,10 @@ interface ReviewStepProps {
 export function ReviewStep({ state, errors, saving, onSave }: ReviewStepProps) {
   return (
     <View style={{ gap: space.md }}>
-      <Text style={[type.title, { color: color.text }]}>Review "{state.chapterName}"</Text>
+      <Text style={stepTitleStyle}>Ready to start?</Text>
+      <Text style={stepSubtextStyle}>
+        Check everything for "{state.chapterName}" below, then save to begin.
+      </Text>
 
       <RuledList
         sectionLabel="Accounts"

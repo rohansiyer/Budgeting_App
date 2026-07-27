@@ -24,6 +24,9 @@ module.exports = {
     '^expo-secure-store$': '<rootDir>/src/__mocks__/expo-secure-store.ts',
     '^expo-local-authentication$': '<rootDir>/src/__mocks__/expo-local-authentication.ts',
     '^expo-notifications$': '<rootDir>/src/__mocks__/expo-notifications.ts',
+    '^expo-font$': '<rootDir>/src/__mocks__/expo-font.ts',
+    '^@expo-google-fonts/space-grotesk$': '<rootDir>/src/__mocks__/expo-google-fonts.ts',
+    '^@expo-google-fonts/space-mono$': '<rootDir>/src/__mocks__/expo-google-fonts.ts',
     '^@react-native-async-storage/async-storage$':
       '<rootDir>/node_modules/@react-native-async-storage/async-storage/jest/async-storage-mock.js',
   },

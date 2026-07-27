@@ -1,9 +1,10 @@
 import { cents } from '../../lib/money';
 import { createInMemorySetupWriter } from '../inMemorySetupWriter';
-import { saveSetup, SetupValidationError } from '../save';
+import { removedExistingIds, saveSetup, SetupValidationError } from '../save';
 import {
   initialWizardState,
   nextDraftKey,
+  prefilledWizardState,
   wizardReducer,
   type WizardState,
 } from '../wizardState';
@@ -95,5 +96,119 @@ describe('saveSetup', () => {
 
     expect(await writer.listAccounts()).toEqual(result.accounts);
     expect(await writer.listCategories()).toEqual(result.categories);
+  });
+
+  it('archives rows the user dropped from the draft on save (F1-1/F1-2)', async () => {
+    const writer = createInMemorySetupWriter();
+    const chapter = await makeActiveChapter(writer);
+
+    // First-run: two accounts, two categories.
+    let state: WizardState = initialWizardState();
+    const keepAcct = nextDraftKey('acct');
+    const dropAcct = nextDraftKey('acct');
+    state = wizardReducer(state, {
+      type: 'ADD_ACCOUNT',
+      draft: { key: keepAcct, name: 'Checking', institution: null, kind: 'spending', startingBalance: cents(0) },
+    });
+    state = wizardReducer(state, {
+      type: 'ADD_ACCOUNT',
+      draft: { key: dropAcct, name: 'Old Savings', institution: null, kind: 'savings', startingBalance: cents(0) },
+    });
+    state = wizardReducer(state, {
+      type: 'ADD_CATEGORY',
+      draft: { key: nextDraftKey('cat'), name: 'Fun', colorKey: 'amber', fixed: false, envelope: { period: 'weekly', budget: cents(4000), carryoverDefault: 'ask' } },
+    });
+    await saveSetup(writer, state, chapter);
+
+    // Edit mode: prefill, drop "Old Savings", re-add "Fun" with a new budget.
+    const prefilled = prefilledWizardState(chapter.name, {
+      accounts: await writer.listAccounts(),
+      incomeSources: await writer.listIncomeSources(),
+      categories: await writer.listCategories(),
+    });
+    const oldSavings = prefilled.accounts.find((a) => a.name === 'Old Savings')!;
+    const funDraft = prefilled.categories.find((c) => c.name === 'Fun')!;
+
+    let edited = wizardReducer(prefilled, { type: 'REMOVE_ACCOUNT', key: oldSavings.key });
+    // Remove the prefilled Fun (carries existingId) and re-add a fresh Fun.
+    edited = wizardReducer(edited, { type: 'REMOVE_CATEGORY', key: funDraft.key });
+    edited = wizardReducer(edited, {
+      type: 'ADD_CATEGORY',
+      draft: { key: nextDraftKey('cat'), name: 'Fun', colorKey: 'mint', fixed: false, envelope: { period: 'weekly', budget: cents(9000), carryoverDefault: 'roll' } },
+    });
+    edited = { ...edited, step: 'review' };
+
+    await saveSetup(writer, edited, chapter);
+
+    const accountsAfter = await writer.listAccounts();
+    const categoriesAfter = await writer.listCategories();
+    // Old Savings is archived (gone from the active list); no duplicate Fun.
+    expect(accountsAfter.map((a) => a.name)).toEqual(['Checking']);
+    expect(categoriesAfter.map((c) => c.name)).toEqual(['Fun']);
+    expect(categoriesAfter[0].envelope).toEqual({ period: 'weekly', budget: 9000, carryoverDefault: 'roll' });
+    expect(categoriesAfter[0].id).not.toBe(funDraft.existingId); // genuinely a new row, old one archived
+  });
+
+  it('replaces EVERY account in one edit session without tripping the last-active guard', async () => {
+    const writer = createInMemorySetupWriter();
+    const chapter = await makeActiveChapter(writer);
+
+    // First-run: two accounts + one category.
+    let state: WizardState = initialWizardState();
+    state = wizardReducer(state, {
+      type: 'ADD_ACCOUNT',
+      draft: { key: nextDraftKey('acct'), name: 'Old Checking', institution: null, kind: 'spending', startingBalance: cents(0) },
+    });
+    state = wizardReducer(state, {
+      type: 'ADD_ACCOUNT',
+      draft: { key: nextDraftKey('acct'), name: 'Old Savings', institution: null, kind: 'savings', startingBalance: cents(0) },
+    });
+    state = wizardReducer(state, {
+      type: 'ADD_CATEGORY',
+      draft: { key: nextDraftKey('cat'), name: 'Fun', colorKey: 'amber', fixed: false, envelope: { period: 'weekly', budget: cents(4000), carryoverDefault: 'ask' } },
+    });
+    await saveSetup(writer, state, chapter);
+    const oldIds = (await writer.listAccounts()).map((a) => a.id);
+
+    // Edit session: drop BOTH existing accounts, add two brand-new ones —
+    // one of which reuses a dropped name (both invariants at once).
+    const prefilled = prefilledWizardState(chapter.name, {
+      accounts: await writer.listAccounts(),
+      incomeSources: await writer.listIncomeSources(),
+      categories: await writer.listCategories(),
+    });
+    let edited = prefilled;
+    for (const a of prefilled.accounts) {
+      edited = wizardReducer(edited, { type: 'REMOVE_ACCOUNT', key: a.key });
+    }
+    edited = wizardReducer(edited, {
+      type: 'ADD_ACCOUNT',
+      draft: { key: nextDraftKey('acct'), name: 'New Checking', institution: null, kind: 'spending', startingBalance: cents(5000) },
+    });
+    edited = wizardReducer(edited, {
+      type: 'ADD_ACCOUNT',
+      // Reuses the dropped "Old Savings" name: create-before-remove must not collide.
+      draft: { key: nextDraftKey('acct'), name: 'Old Savings', institution: null, kind: 'savings', startingBalance: cents(100) },
+    });
+    edited = { ...edited, step: 'review' };
+
+    await saveSetup(writer, edited, chapter); // must NOT throw last-active-account
+
+    const after = await writer.listAccounts();
+    expect(after.map((a) => a.name).sort()).toEqual(['New Checking', 'Old Savings']);
+    // All-new rows; every old id was archived.
+    for (const a of after) expect(oldIds).not.toContain(a.id);
+    // Exactly one active "Old Savings" — the re-added one, not the archived original.
+    expect(after.filter((a) => a.name === 'Old Savings')).toHaveLength(1);
+    expect(after.find((a) => a.name === 'Old Savings')!.startingBalance).toBe(100);
+  });
+});
+
+describe('removedExistingIds', () => {
+  it('returns stored ids the draft no longer keeps', () => {
+    const stored = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    expect(removedExistingIds(stored, new Set(['a', 'c']))).toEqual(['b']);
+    expect(removedExistingIds(stored, new Set(['a', 'b', 'c']))).toEqual([]);
+    expect(removedExistingIds(stored, new Set())).toEqual(['a', 'b', 'c']);
   });
 });

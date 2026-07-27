@@ -22,15 +22,30 @@ import {
   type Frame,
 } from './sprites';
 
-/** Idle loops forever; the one-shot animations fire onAnimationEnd and settle. */
+/**
+ * v0.3 adds swim/float/preen to AnimationName; DuckSpriteProps (kit/types)
+ * still lists only the v0.2 names for source compatibility with existing
+ * callers. Extend optionally here so new callers (e.g. the Pond) can reach
+ * the new animations without widening the shared contract type.
+ */
+type DuckSpriteExtendedProps = Omit<DuckSpriteProps, 'animation'> & {
+  animation?: AnimationName;
+};
+
+/** Idle/swim/float loop forever; the one-shot animations fire onAnimationEnd and settle. */
 const LOOPING: Record<AnimationName, boolean> = {
   idle: true,
   'waddle-in': false,
   'walk-off': false,
   'happy-dance': false,
+  swim: true,
+  float: true,
+  preen: false,
 };
 
 function frameDurationMs(animation: AnimationName, frame: Frame): number {
+  // Explicit override wins (e.g. preen's uneven 900/350/1200/350 holds).
+  if (frame.durationMs != null) return frame.durationMs;
   const hold = frame.hold ?? 1;
   if (animation === 'idle') {
     // 2-frame bob spread across the bob period.
@@ -39,7 +54,7 @@ function frameDurationMs(animation: AnimationName, frame: Frame): number {
   return (1000 / motion.spriteFps) * hold;
 }
 
-export const DuckSprite: React.FC<DuckSpriteProps> = ({
+export const DuckSprite: React.FC<DuckSpriteExtendedProps> = ({
   accessoryTier,
   scale,
   flip = false,

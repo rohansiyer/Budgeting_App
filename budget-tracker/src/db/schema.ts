@@ -6,7 +6,7 @@
  * Migration 1 (migrations/migration_001.ts) creates tables whose columns must
  * stay byte-for-byte aligned with the definitions below.
  */
-import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /** Applied-migration ledger. Managed by the MigrationRunner. */
 export const schemaVersion = sqliteTable('schema_version', {
@@ -33,6 +33,9 @@ export const accounts = sqliteTable('accounts', {
   startingBalance: integer('starting_balance').notNull(), // Cents — basis for getAccountBalance
   openedOn: text('opened_on').notNull(), // ISODate (AccountConfig.openedOn)
   createdAt: text('created_at').notNull(),
+  // Soft-archival (migration 5). Null = active. Stamped once by removeAccount;
+  // read surfaces filter archived out of the active plan, by-id reads resolve it.
+  archivedAt: text('archived_at'), // ISO timestamp | null
 });
 
 export const categories = sqliteTable('categories', {
@@ -41,11 +44,18 @@ export const categories = sqliteTable('categories', {
   name: text('name').notNull(),
   colorKey: text('color_key').notNull(), // CategoryColorKey
   fixed: integer('fixed', { mode: 'boolean' }).notNull(),
+  // Budget cadence the whole envelope UI respects (CadenceType). Migration 2
+  // adds it with DEFAULT 'weekly' so legacy rows backfill; new inserts default
+  // 'weekly' at the mutation boundary.
+  cadence: text('cadence').notNull().default('weekly'), // 'weekly' | 'monthly'
   // Envelope config (null => fixed/no-envelope category). See EnvelopeConfig.
   envelopePeriod: text('envelope_period'), // 'weekly' | 'monthly' | null
   envelopeBudget: integer('envelope_budget'), // Cents | null
   envelopeCarryoverDefault: text('envelope_carryover_default'), // 'ask'|'roll'|'sweep'|'reset' | null
   createdAt: text('created_at').notNull(),
+  // Soft-archival (migration 5). Null = active. Stamped once by removeCategory;
+  // the configured budget lifetime-zeroes for periods starting after this date.
+  archivedAt: text('archived_at'), // ISO timestamp | null
 });
 
 export const incomeSources = sqliteTable('income_sources', {
@@ -59,6 +69,9 @@ export const incomeSources = sqliteTable('income_sources', {
   scheduleSemimonthlyDay1: integer('schedule_semimonthly_day1'), // number | null
   scheduleSemimonthlyDay2: integer('schedule_semimonthly_day2'), // number | null
   createdAt: text('created_at').notNull(),
+  // Soft-archival (migration 5). Null = active. Stamped once by
+  // removeIncomeSource; splits are retained inert, paydays exclude it.
+  archivedAt: text('archived_at'), // ISO timestamp | null
 });
 
 /** Per-account split weights for an income source. `ratio` is a weight, not money. */
@@ -144,6 +157,80 @@ export const duckEvaluations = sqliteTable(
   },
   (t) => ({
     monthIdx: index('idx_duck_eval_month').on(t.chapterId, t.month),
+  }),
+);
+
+/**
+ * Learned merchant → category corrections (Import engine, migration 3).
+ * "Assign TRADER JOE'S to Food once, it's Food forever." `normalizedMerchant`
+ * is the output of matching.normalizeMerchant and is UNIQUE per chapter, so an
+ * upsert re-points an existing merchant instead of duplicating it.
+ */
+export const merchantCorrections = sqliteTable(
+  'merchant_corrections',
+  {
+    id: text('id').primaryKey(),
+    chapterId: text('chapter_id').notNull(),
+    normalizedMerchant: text('normalized_merchant').notNull(),
+    categoryId: text('category_id').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    merchantIdx: uniqueIndex('idx_merchant_corrections_unique').on(
+      t.chapterId,
+      t.normalizedMerchant,
+    ),
+  }),
+);
+
+/**
+ * The explicit recurring-bill schedule the forecast and "Mark as bill" write
+ * to (Import engine, migration 3). `dueDay` is 1..31 with clamp-to-month-end
+ * semantics: a bill due on 31 resolves to the LAST day of a shorter month
+ * (Feb 28/29, Apr 30). Consumers resolve the concrete date per month via
+ * min(dueDay, daysInMonth). `active:false` is the non-destructive remove — the
+ * row is retained (history), just excluded from the forecast.
+ */
+export const recurringBills = sqliteTable(
+  'recurring_bills',
+  {
+    id: text('id').primaryKey(),
+    chapterId: text('chapter_id').notNull(),
+    name: text('name').notNull(),
+    categoryId: text('category_id').notNull(),
+    amountCents: integer('amount_cents').notNull(), // Cents
+    dueDay: integer('due_day').notNull(), // 1..31, clamp-to-month-end
+    active: integer('active', { mode: 'boolean' }).notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    chapterIdx: index('idx_recurring_bills_chapter').on(t.chapterId),
+  }),
+);
+
+/**
+ * Named savings goals (handoff §3.10, migration 4). A goal targets a dollar
+ * amount and reads its current progress from a linked savings account
+ * (`savingsAccountId`) — or, when null, from the sum of ALL savings-kind
+ * account balances. `targetCents` is a positive INTEGER of cents. `active:false`
+ * is the non-destructive remove (row retained for history, hidden from the goal
+ * list UI), consistent with recurring_bills. `achievedAt` is stamped when the
+ * goal is first met (nullable); it is independent of `active`.
+ */
+export const goals = sqliteTable(
+  'goals',
+  {
+    id: text('id').primaryKey(),
+    chapterId: text('chapter_id').notNull(),
+    name: text('name').notNull(),
+    targetCents: integer('target_cents').notNull(), // Cents, > 0
+    savingsAccountId: text('savings_account_id'), // null => all savings accounts
+    active: integer('active', { mode: 'boolean' }).notNull(),
+    createdAt: text('created_at').notNull(),
+    achievedAt: text('achieved_at'), // ISO timestamp | null
+  },
+  (t) => ({
+    chapterIdx: index('idx_goals_chapter').on(t.chapterId),
   }),
 );
 

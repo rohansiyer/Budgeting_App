@@ -9,10 +9,18 @@
  * (first-run bootstrap or the "New chapter" action, see
  * `chapterFlow.ts`) is responsible for having an active `Chapter` ready
  * before mounting this component.
+ *
+ * Chrome (handoff v3 §3.2, "Wizard step" mockup): a tracked-mono step
+ * counter + a small idle mallard up top, a StepTrack underneath, then
+ * whichever step screen renders its own question-style title/subtext
+ * (see `screens/stepTypography.ts`), and a Back (ghost) / Continue
+ * (primary) row pinned to the bottom of each non-final step. Review
+ * keeps its own confirm button and label ("Save and start").
  */
 import React, { useReducer, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import { HardButton } from '../components/kit';
+import { HardButton, StepTrack } from '../components/kit';
+import { DuckSprite } from '../ducks/DuckSprite';
 import { color, space, type } from '../theme/tokens';
 import { saveSetup, type SaveResult } from './save';
 import type { SetupWriter } from './types';
@@ -56,6 +64,7 @@ export function SetupWizard({ writer, chapter, onComplete, initialChapterName, i
 
   const validation = validateStep(state, state.step);
   const isLastStep = state.step === 'review';
+  const stepIndex = WIZARD_STEPS.indexOf(state.step);
 
   const handleSave = async () => {
     setSaving(true);
@@ -77,30 +86,32 @@ export function SetupWizard({ writer, chapter, onComplete, initialChapterName, i
       accessibilityLabel="Setup wizard"
     >
       <View
-        style={{ flexDirection: 'row', gap: space.sm }}
+        style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}
         accessible
-        accessibilityLabel={`Step ${WIZARD_STEPS.indexOf(state.step) + 1} of ${WIZARD_STEPS.length}: ${STEP_TITLES[state.step]}`}
+        accessibilityLabel={`Step ${stepIndex + 1} of ${WIZARD_STEPS.length}: ${STEP_TITLES[state.step]}`}
       >
-        {WIZARD_STEPS.map((step) => (
-          <Text
-            key={step}
-            style={[
-              type.caption,
-              {
-                color: step === state.step ? color.accent : color.textMuted,
-              },
-            ]}
-          >
-            {STEP_TITLES[step]}
-          </Text>
-        ))}
+        <Text style={[type.sectionLabel, { color: color.textMuted }]}>
+          {`Step ${stepIndex + 1} of ${WIZARD_STEPS.length}`}
+        </Text>
+        <DuckSprite accessoryTier={0} scale={2} animation="idle" />
       </View>
+
+      <StepTrack
+        total={WIZARD_STEPS.length}
+        completed={stepIndex + 1}
+        accessibilityLabel={`Setup progress: step ${stepIndex + 1} of ${WIZARD_STEPS.length}`}
+      />
 
       {state.step === 'accounts' ? (
         <AccountsStep accounts={state.accounts} dispatch={dispatch} />
       ) : null}
       {state.step === 'income' ? (
-        <IncomeStep accounts={state.accounts} incomeSources={state.incomeSources} dispatch={dispatch} />
+        <IncomeStep
+          accounts={state.accounts}
+          incomeSources={state.incomeSources}
+          dispatch={dispatch}
+          splitDropNotices={state.splitDropNotices}
+        />
       ) : null}
       {state.step === 'envelopes' ? (
         <EnvelopesStep categories={state.categories} dispatch={dispatch} />
@@ -126,8 +137,8 @@ export function SetupWizard({ writer, chapter, onComplete, initialChapterName, i
             onPress={() => dispatch({ type: 'GO_BACK' })}
           />
           <HardButton
-            label="Next"
-            accessibilityLabel="Go to the next step"
+            label="Continue"
+            accessibilityLabel="Continue to the next step"
             disabled={!validation.valid}
             onPress={() => dispatch({ type: 'GO_NEXT' })}
           />

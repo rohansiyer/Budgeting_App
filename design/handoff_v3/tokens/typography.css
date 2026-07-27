@@ -1,0 +1,39 @@
+/**
+ * Ducks in a Row — type tokens.
+ * Source app declares NO custom typeface — RN falls back to the OS system
+ * font. For a cross-platform design system we substitute the nearest
+ * Google Fonts pairing that keeps the "quiet pixel instrument" feel:
+ * Space Grotesk (UI) + Space Mono (money, tabular figures, section labels).
+ * FLAG: this is a stylistic substitution, not a brand mismatch fix — ask
+ * the team if Ducks in a Row has (or wants) a licensed custom typeface.
+ * [RATIFIED 2026-07-11: the app adopts Space Grotesk + Space Mono.]
+ */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  --font-ui: 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Space Mono', 'SF Mono', ui-monospace, monospace;
+
+  /* type scale — values are the literal RN tokens, not rounded */
+  --text-hero-size: 56px;
+  --text-hero-weight: 800;
+  --text-hero-tracking: -1.5px;
+
+  --text-title-size: 24px;
+  --text-title-weight: 800;
+
+  --text-body-size: 14px;
+  --text-body-weight: 600;
+
+  --text-caption-size: 11.5px;
+  --text-caption-weight: 500;
+
+  --text-label-size: 11px;
+  --text-label-weight: 700;
+  --text-label-tracking: 1.2px;
+}
+
+.dr-font-tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}

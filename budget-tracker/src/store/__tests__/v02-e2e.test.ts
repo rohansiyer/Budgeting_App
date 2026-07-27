@@ -23,7 +23,9 @@ import { seedInitialData } from '../../db/seed';
 import { createStoreSetupWriter } from '../../setup/storeSetupWriter';
 import { cents, sumCents, type Cents } from '../../lib/money';
 import { createDuckEngine } from '../../ducks/engine';
+import { createPayPeriodRecapEngine, InMemoryRecapAckStore } from '../../ducks/recap';
 import { createDrizzleBackupPort } from '../../backup/drizzleBackupPort';
+import type { DateRange } from '../../types/contracts';
 import * as ids from '../../lib/ids';
 
 const store = () => useBudgetStore.getState();
@@ -299,5 +301,281 @@ describe('v0.2 end-to-end: a full chapter life, ducks, and backup/restore', () =
     // post-restore other than whatever existed pre-mutation (none) -> Feb is
     // dormant -> skipped, nothing new issued.
     expect(restoredDetailed).toHaveLength(0);
+  });
+
+  // =====================================================================
+  // v0.3 CHAPTER — a full March life exercising the wave's new surfaces:
+  // a monthly-cadence envelope, an UNCAPPED borrow bigger than the old
+  // 50%-of-next-cycle cap, a mid-month pay-period recap acknowledgement,
+  // the starter-duck invariant at chapter start, and a month-end duck
+  // verdict whose attribution the borrow must not launder. Balances are
+  // asserted to the cent. Self-contained (its own db + chapter).
+  // =====================================================================
+  it('v0.3 chapter: monthly envelope + uncapped borrow + mid-month recap ack + starter duck, balances exact', async () => {
+    resetDatabaseForTests();
+    await initDatabase();
+    await store().init();
+    // Chapter dated to the 1st so March is a full, evaluable month.
+    const mar = await store().createChapter({ name: 'v0.3 chapter', startedAt: '2026-03-01' });
+    expect(store().getActiveChapter().id).toBe(mar.id);
+
+    const checking = (
+      await store().createAccount({
+        name: 'Checking', institution: null, kind: 'spending',
+        startingBalance: cents(200000), openedOn: '2026-03-01',
+      })
+    ).id;
+    const savings = (
+      await store().createAccount({
+        name: 'Savings', institution: null, kind: 'savings',
+        startingBalance: cents(0), openedOn: '2026-03-01',
+      })
+    ).id;
+
+    const rent = (
+      await store().createCategory({ name: 'Rent', colorKey: 'violet', fixed: true, envelope: null })
+    ).id;
+    // Weekly Food envelope + a MONTHLY-cadence Fun envelope (the v0.3 addition).
+    const food = (
+      await store().createCategory({
+        name: 'Food', colorKey: 'amber', fixed: false,
+        envelope: { period: 'weekly', budget: cents(10000), carryoverDefault: 'ask' },
+      })
+    ).id;
+    const fun = (
+      await store().createCategory({
+        name: 'Fun', colorKey: 'pink', fixed: false, cadence: 'monthly',
+        envelope: { period: 'monthly', budget: cents(20000), carryoverDefault: 'ask' },
+      })
+    ).id;
+
+    // Biweekly income, all to checking (goal 3 is met via an explicit savings
+    // transfer below — income splits are 'income' rows, not savings transfers).
+    const pay = await store().createIncomeSource({
+      name: 'Paycheck', amount: cents(150000),
+      schedule: { kind: 'biweekly', anchorDate: '2026-03-06' },
+      splits: [{ accountId: checking, ratio: 1 }],
+    });
+    // March paydays: Mar 6 and Mar 20 -> $3000.00 income in March.
+    await store().addIncome({ sourceId: pay.id, date: '2026-03-06' });
+    await store().addIncome({ sourceId: pay.id, date: '2026-03-20' });
+
+    // Starter-duck invariant: the pond is never empty on a fresh chapter, even
+    // before any month is evaluated.
+    const engine = createDuckEngine({
+      read: store().evaluation,
+      store: store().duckPersistence,
+      getActiveChapter: () => store().getActiveChapter(),
+      generateId: ids.generateId,
+      categoryName: (id) => store().listCategories().find((c) => c.id === id)?.name ?? id,
+    });
+    const starterFlock = await engine.getFlock();
+    expect(starterFlock.ducks).toHaveLength(1);
+    expect(starterFlock.ducks[0].earnedMonth).toBe('2026-03');
+
+    // Spend: pay rent (goal 1), Food within budget, Fun within its monthly budget.
+    await store().addExpense({ accountId: checking, categoryId: rent, amount: cents(100000), date: '2026-03-10' });
+    await store().addExpense({ accountId: checking, categoryId: food, amount: cents(8000), date: '2026-03-12' });
+    await store().addExpense({ accountId: checking, categoryId: fun, amount: cents(15000), date: '2026-03-14' });
+
+    // UNCAPPED borrow: Fun (monthly) borrows 15000 from April — the old cap was
+    // 50% of next cycle = 10000, so this was previously impossible. Both legs
+    // attribute to March; April carries neither (no duck laundering).
+    const owedBefore = store().nextCycleStartState(fun, '2026-03-15');
+    expect(owedBefore.cycleStart).toBe('2026-04-01');
+    expect(owedBefore.budget).toBe(20000);
+    await store().borrowFromNextCycle(fun, '2026-03-15', cents(15000));
+    const owedAfter = store().nextCycleStartState(fun, '2026-03-15');
+    expect(owedAfter.alreadyOwed).toBe(15000);
+    expect(owedAfter.startsWith).toBe(20000 - 15000);
+    const marCarry = await store().evaluation.getCarryoverEntries({ month: '2026-03' });
+    const aprCarry = await store().evaluation.getCarryoverEntries({ month: '2026-04' });
+    expect(marCarry.filter((e) => e.categoryId === fun).map((e) => e.kind).sort()).toEqual(
+      ['borrow_in', 'borrow_repay'],
+    );
+    expect(aprCarry).toHaveLength(0);
+
+    // Explicit savings transfer to satisfy goal 3 (>= 30% of $3000.00 income).
+    await store().transfer({ fromAccountId: checking, toAccountId: savings, amount: cents(90000), date: '2026-03-22' });
+
+    // Balances to the cent.
+    const finalChecking = 200000 + 150000 + 150000 - 100000 - 8000 - 15000 - 90000; // 287000
+    const finalSavings = 0 + 90000;
+    expect(store().getAccountBalance(checking, '2026-03-31')).toBe(finalChecking);
+    expect(store().getAccountBalance(savings, '2026-03-31')).toBe(finalSavings);
+
+    // Pay-period recap: acknowledge the MID-MONTH close (Mar 6 -> Mar 20) while
+    // still inside March. Built over the store's real payday projection.
+    const ack = new InMemoryRecapAckStore();
+    const recap = createPayPeriodRecapEngine({
+      getPaydays: (range: DateRange) => store().getPaydays(range),
+      getActiveChapter: () => store().getActiveChapter(),
+      ack,
+    });
+    const midMonthPending = await recap.getPendingRecaps('2026-03-25');
+    expect(midMonthPending.map((p) => [p.closedOn, p.kind])).toEqual([['2026-03-20', 'pay_period']]);
+    await recap.acknowledgePending('2026-03-25');
+    expect(await recap.getPendingRecaps('2026-03-25')).toHaveLength(0);
+    // Next close (Apr 3) is a MONTH_END recap that carries March's verdict.
+    const monthEndPending = await recap.getPendingRecaps('2026-04-10');
+    expect(monthEndPending.map((p) => [p.closedOn, p.kind, p.verdictMonth])).toEqual([
+      ['2026-04-03', 'month_end', '2026-03'],
+    ]);
+
+    // Sanity: the numbers the duck engine will see. The borrow does NOT inflate
+    // Fun's basis (still 20000), so a genuine within-budget month, not laundered.
+    const cats = await store().evaluation.getMonthCategoryTotals('2026-03');
+    const funTotals = cats.find((c) => c.categoryId === fun)!;
+    expect(funTotals.budget).toBe(20000);
+    expect(funTotals.spent).toBe(15000);
+    expect(await store().evaluation.getMonthIncomeTotal('2026-03')).toBe(300000);
+    expect(await store().evaluation.getMonthSavingsTotal('2026-03')).toBe(90000);
+
+    // Month-end evaluation: March is 3/3 (rent paid, both envelopes within
+    // budget on the un-inflated basis, 30% saved) -> gain. Starter (1) + 1 = 2.
+    const [{ evaluation: verdict }] = await engine.evaluatePendingMonthsDetailed('2026-04-01');
+    expect(verdict.month).toBe('2026-03');
+    expect(verdict.goalFixedBills.met).toBe(true);
+    expect(verdict.goalVariableBudgets.met).toBe(true);
+    expect(verdict.goalSavingsRate.met).toBe(true);
+    expect(verdict.outcome).toBe('gain');
+    expect(verdict.duckCountAfter).toBe(2);
+    const flock = await engine.getFlock();
+    expect(flock.ducks).toHaveLength(2);
+  });
+});
+
+// =====================================================================
+// v0.3-fixes CHAPTER — the F1-4 phantom-week guards and the reversible
+// carryover (F3-1/F3-2). getSettleableLeftovers must never synthesize a
+// leftover for a week predating the chapter or the category; rollForward/
+// sweepToSavings must early-return null on a phantom week and write nothing;
+// and both actions' undo() must fully reverse with conservation intact.
+// =====================================================================
+describe('v0.3-fixes: phantom-week guards + reversible carryover', () => {
+  // Local Monday helper (mirrors the store's week math) so the createdAt-gate
+  // assertions stay correct regardless of the calendar date the suite runs on.
+  const mondayOf = (iso: string): string => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+  const addDays = (iso: string, n: number): string => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + n);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  async function setup(startedAt = '2026-03-01') {
+    resetDatabaseForTests();
+    await initDatabase();
+    await store().init();
+    await store().createChapter({ name: 'v0.3-fixes', startedAt });
+    const checking = (
+      await store().createAccount({
+        name: 'Checking', institution: null, kind: 'spending',
+        startingBalance: cents(200000), openedOn: startedAt,
+      })
+    ).id;
+    const savings = (
+      await store().createAccount({
+        name: 'Savings', institution: null, kind: 'savings',
+        startingBalance: cents(0), openedOn: startedAt,
+      })
+    ).id;
+    const food = (
+      await store().createCategory({
+        name: 'Food', colorKey: 'amber', fixed: false,
+        envelope: { period: 'weekly', budget: cents(10000), carryoverDefault: 'ask' },
+      })
+    ).id;
+    return { checking, savings, food };
+  }
+
+  it('a freshly-created category yields NO settleable leftover for a week that predates it (createdAt gate)', async () => {
+    const { food } = await setup('2026-03-01');
+    // A week fully inside the chapter but well before the category was created
+    // (categories are created at real "now") must not synthesize a full-budget
+    // phantom leftover — the exact F1-4 mechanism.
+    const wayBack = mondayOf('2026-03-16');
+    expect(store().getSettleableLeftovers(wayBack)).toEqual([]);
+
+    // A current week (on/after the category's creation) with a genuine untouched
+    // budget DOES surface, proving the gate is date-aware, not a blanket empty.
+    const thisWeek = mondayOf(new Date().toISOString().slice(0, 10));
+    const settleable = store().getSettleableLeftovers(thisWeek);
+    expect(settleable).toEqual([{ categoryId: food, remaining: 10000 }]);
+  });
+
+  it('rollForward / sweepToSavings return null and write NOTHING on a phantom week before the chapter', async () => {
+    const { savings, food } = await setup('2026-03-01');
+    const phantomWeek = mondayOf('2026-02-16'); // ends 2026-02-22, before the chapter
+    const carryBefore = (await store().evaluation.getCarryoverEntries({})).length;
+    const savingsBefore = store().getAccountBalance(savings, '2026-03-31');
+
+    expect(await store().rollForward(food, phantomWeek)).toBeNull();
+    expect(await store().sweepToSavings(food, phantomWeek, savings)).toBeNull();
+
+    expect((await store().evaluation.getCarryoverEntries({})).length).toBe(carryBefore);
+    expect(store().getAccountBalance(savings, '2026-03-31')).toBe(savingsBefore);
+  });
+
+  it('rollForward → undo fully reverses the pair; conservation and balances intact; single-fire', async () => {
+    const { checking, food } = await setup('2026-03-01');
+    const week1 = mondayOf('2026-03-02');
+    const week2 = addDays(week1, 7);
+    await store().addExpense({ accountId: checking, categoryId: food, amount: cents(3000), date: week1 });
+    const chkBefore = store().getAccountBalance(checking, '2026-03-31');
+    expect(store().getEnvelopeWeekState(food, week1).remaining).toBe(7000);
+
+    const res = await store().rollForward(food, week1);
+    expect(res).not.toBeNull();
+    expect(res!.amount).toBe(7000);
+    expect(store().getEnvelopeWeekState(food, week1).remaining).toBe(0);
+    expect(store().getEnvelopeWeekState(food, week2).remaining).toBe(17000); // 10000 + 7000 rolled in
+    expect((await store().evaluation.getCarryoverEntries({})).map((e) => e.kind).sort())
+      .toEqual(['roll_in', 'roll_out']);
+
+    expect(await res!.undo()).toBe(true);
+    // Pair hard-deleted: the roll never happened, budget back in its origin week.
+    expect(await store().evaluation.getCarryoverEntries({})).toHaveLength(0);
+    expect(store().getEnvelopeWeekState(food, week1).remaining).toBe(7000);
+    expect(store().getEnvelopeWeekState(food, week2).remaining).toBe(10000);
+    // A roll moves no cash — the checking balance never changed.
+    expect(store().getAccountBalance(checking, '2026-03-31')).toBe(chkBefore);
+    // Single-fire: a second undo is a no-op.
+    expect(await res!.undo()).toBe(false);
+  });
+
+  it('sweepToSavings → undo returns the cash, deletes the carryover row, tombstones the transfer; single-fire', async () => {
+    const { checking, savings, food } = await setup('2026-03-01');
+    const week = mondayOf('2026-03-02');
+    const chkBefore = store().getAccountBalance(checking, '2026-03-31');
+    const savBefore = store().getAccountBalance(savings, '2026-03-31');
+    expect(store().getEnvelopeWeekState(food, week).remaining).toBe(10000);
+
+    const res = await store().sweepToSavings(food, week, savings);
+    expect(res).not.toBeNull();
+    expect(res!.amount).toBe(10000);
+    // Cash really moved checking -> savings; the sweep entry exists.
+    expect(store().getAccountBalance(checking, '2026-03-31')).toBe(chkBefore - 10000);
+    expect(store().getAccountBalance(savings, '2026-03-31')).toBe(savBefore + 10000);
+    expect((await store().evaluation.getCarryoverEntries({})).map((e) => e.kind)).toEqual(['sweep_to_savings']);
+
+    expect(await res!.undo()).toBe(true);
+    // Carryover row gone, transfer legs tombstoned => balances fully restored.
+    expect(await store().evaluation.getCarryoverEntries({})).toHaveLength(0);
+    expect(store().getAccountBalance(checking, '2026-03-31')).toBe(chkBefore);
+    expect(store().getAccountBalance(savings, '2026-03-31')).toBe(savBefore);
+    expect(store().getEnvelopeWeekState(food, week).remaining).toBe(10000);
+    expect(await res!.undo()).toBe(false); // single-fire
   });
 });

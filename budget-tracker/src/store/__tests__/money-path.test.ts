@@ -43,6 +43,17 @@ async function makeWeeklyEnvelope(name: string, budget: number) {
   return c.id;
 }
 
+async function makeMonthlyEnvelope(name: string, budget: number) {
+  const c = await store().createCategory({
+    name,
+    colorKey: 'pink',
+    fixed: false,
+    cadence: 'monthly',
+    envelope: { period: 'monthly', budget: cents(budget), carryoverDefault: 'ask' },
+  });
+  return c.id;
+}
+
 const WEEK = '2026-01-05'; // a Monday
 const NEXT = '2026-01-12';
 
@@ -93,14 +104,230 @@ describe('conservation law', () => {
     expect(store().getEnvelopeWeekState(cat, NEXT).remaining).toBe(7000);
   });
 
-  it('borrow cap: rejects > 50% of next week budget', async () => {
+  it('borrow uncapped: 100% and 150% of next week budget are both allowed and conserved', async () => {
     await freshChapter();
-    const cat = await makeWeeklyEnvelope('Gas', 10000); // cap = 5000
+    const cat = await makeWeeklyEnvelope('Gas', 10000); // no cap in v0.3
 
-    await expect(store().borrowFromNextWeek(cat, WEEK, cents(6000))).rejects.toThrow(/cap/);
-    // At-cap allowed, then any further borrow rejected.
+    // 100% of next week's budget: allowed (was rejected under the old 50% cap).
+    await store().borrowFromNextWeek(cat, WEEK, cents(10000));
+    expect(store().getEnvelopeWeekState(cat, WEEK).borrowedIn).toBe(10000);
+    expect(store().getEnvelopeWeekState(cat, WEEK).remaining).toBe(20000);
+    // Next week goes negative — honest math, not an error.
+    expect(store().getEnvelopeWeekState(cat, NEXT).remaining).toBe(0);
+
+    // A further 5000 (now 150% total) also lands.
     await store().borrowFromNextWeek(cat, WEEK, cents(5000));
-    await expect(store().borrowFromNextWeek(cat, WEEK, cents(1))).rejects.toThrow(/cap/);
+    expect(store().getEnvelopeWeekState(cat, WEEK).borrowedIn).toBe(15000);
+    expect(store().getEnvelopeWeekState(cat, NEXT).remaining).toBe(-5000);
+
+    // Budget only moved: this week + next week still sum to configured × 2.
+    const wk = store().getEnvelopeWeekState(cat, WEEK);
+    const nx = store().getEnvelopeWeekState(cat, NEXT);
+    expect(wk.remaining + wk.spent + (nx.remaining + nx.spent)).toBe(20000);
+  });
+
+  it('borrowFromNextCycle (weekly cadence) matches the delegate: paired equal legs, origin-month attribution', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+
+    await store().borrowFromNextCycle(cat, WEEK, cents(3000));
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    const bin = entries.find((e) => e.kind === 'borrow_in')!;
+    const rep = entries.find((e) => e.kind === 'borrow_repay')!;
+    expect(bin.amount).toBe(3000);
+    expect(rep.amount).toBe(3000);
+    expect(bin.pairId).toBe(rep.pairId);
+    expect(bin.weekStart).toBe(WEEK);
+    expect(rep.weekStart).toBe(NEXT);
+    expect(bin.attributionMonth).toBe('2026-01');
+    expect(rep.attributionMonth).toBe('2026-01');
+  });
+
+  it('monthly-envelope borrow round-trip: next month debited, current month credited, pair integrity', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+
+    // Any date inside January is a valid current-period start for a monthly envelope.
+    await store().borrowFromNextCycle(cat, '2026-01-15', cents(5000));
+
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    const bin = entries.find((e) => e.kind === 'borrow_in')!;
+    const rep = entries.find((e) => e.kind === 'borrow_repay')!;
+    // Legs live at the first-of-month of the current and next month.
+    expect(bin.weekStart).toBe('2026-01-01'); // credited into January (current cycle)
+    expect(rep.weekStart).toBe('2026-02-01'); // debited from February (next cycle)
+    expect(bin.counterpartWeekStart).toBe('2026-02-01');
+    expect(rep.counterpartWeekStart).toBe('2026-01-01');
+    // Conservation: equal amounts, shared pair.
+    expect(bin.amount).toBe(5000);
+    expect(rep.amount).toBe(5000);
+    expect(bin.pairId).toBe(rep.pairId);
+    // Both legs attribute to the ORIGIN (January) month — the spend belongs there.
+    expect(bin.attributionMonth).toBe('2026-01');
+    expect(rep.attributionMonth).toBe('2026-01');
+    const jan = await store().evaluation.getCarryoverEntries({ month: '2026-01' });
+    const feb = await store().evaluation.getCarryoverEntries({ month: '2026-02' });
+    expect(jan.map((e) => e.kind).sort()).toEqual(['borrow_in', 'borrow_repay']);
+    expect(feb).toHaveLength(0);
+  });
+
+  it('monthly borrow legs are visible to week-keyed reads exactly once (final-review regression)', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+
+    // June 2026: month-first IS a Monday; July 2026: month-first is a
+    // Wednesday. The review-proven defect: exact weekStart matching counted
+    // the June leg but never the July repay, permanently inventing the
+    // borrowed amount in safe-to-spend. Windowed matching must count each
+    // leg exactly once in its containing week.
+    await store().borrowFromNextCycle(cat, '2026-06-15', cents(5000));
+
+    // borrow_in at 2026-06-01 (Monday): containing week is 2026-06-01.
+    expect(store().getEnvelopeWeekState(cat, '2026-06-01').borrowedIn).toBe(5000);
+    // borrow_repay at 2026-07-01 (Wednesday): containing week is 2026-06-29.
+    expect(store().getEnvelopeWeekState(cat, '2026-06-29').repaying).toBe(5000);
+    // No other week sees either leg (exactly-once accounting).
+    for (const wk of ['2026-06-08', '2026-06-15', '2026-06-22', '2026-07-06']) {
+      const st = store().getEnvelopeWeekState(cat, wk);
+      expect(st.borrowedIn).toBe(0);
+      expect(st.repaying).toBe(0);
+    }
+    // Conservation in the hero figure: +5000 in the credited week, -5000 in
+    // the repaying week, untouched weeks pure allocation.
+    const baseline = store().getSafeToSpend('2026-06-15');
+    expect(store().getSafeToSpend('2026-06-01') - baseline).toBe(5000);
+    expect(baseline - store().getSafeToSpend('2026-06-29')).toBe(5000);
+  });
+
+  it('borrowFromNextWeek delegate rejects a monthly-cadence envelope', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+    await expect(store().borrowFromNextWeek(cat, '2026-01-05', cents(1000))).rejects.toThrow(
+      /monthly-cadence/,
+    );
+    // No partial write from the rejected delegate.
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('borrow rejects a phantom category before any write', async () => {
+    await freshChapter();
+    await expect(
+      store().borrowFromNextCycle('ghost-cat', WEEK, cents(1000)),
+    ).rejects.toThrow(/unknown category/i);
+    await expect(store().borrowFromNextWeek('ghost-cat', WEEK, cents(1000))).rejects.toThrow(
+      /unknown category/i,
+    );
+  });
+
+  it('borrow rejects a non-positive or non-integer amount', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+    await expect(store().borrowFromNextCycle(cat, WEEK, cents(0))).rejects.toThrow(/positive/);
+    await expect(store().borrowFromNextCycle(cat, WEEK, -100 as never)).rejects.toThrow(/positive/);
+    await expect(store().borrowFromNextCycle(cat, WEEK, 12.5 as never)).rejects.toThrow(/whole/);
+  });
+
+  it('borrow rejects a category with no configured envelope budget', async () => {
+    await freshChapter();
+    const fixed = await store().createCategory({
+      name: 'Rent',
+      colorKey: 'violet',
+      fixed: true,
+      envelope: null,
+    });
+    await expect(store().borrowFromNextCycle(fixed.id, WEEK, cents(1000))).rejects.toThrow(
+      /no configured envelope/,
+    );
+  });
+
+  it('nextCycleStartState (weekly): budget minus stacked borrow repayments', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+
+    let s = store().nextCycleStartState(cat, WEEK);
+    expect(s.cycleStart).toBe(NEXT);
+    expect(s.budget).toBe(10000);
+    expect(s.alreadyOwed).toBe(0);
+    expect(s.startsWith).toBe(10000);
+
+    await store().borrowFromNextCycle(cat, WEEK, cents(3000));
+    s = store().nextCycleStartState(cat, WEEK);
+    expect(s.alreadyOwed).toBe(3000);
+    expect(s.startsWith).toBe(7000);
+
+    // Stacked borrow from the same week accumulates the debt against next week.
+    await store().borrowFromNextCycle(cat, WEEK, cents(4000));
+    s = store().nextCycleStartState(cat, WEEK);
+    expect(s.alreadyOwed).toBe(7000);
+    expect(s.startsWith).toBe(3000);
+  });
+
+  it('nextCycleStartState (monthly): next month budget minus stacked repayments', async () => {
+    await freshChapter();
+    const cat = await makeMonthlyEnvelope('Fun', 20000);
+
+    let s = store().nextCycleStartState(cat, '2026-01-20');
+    expect(s.cycleStart).toBe('2026-02-01');
+    expect(s.budget).toBe(20000);
+    expect(s.startsWith).toBe(20000);
+
+    await store().borrowFromNextCycle(cat, '2026-01-20', cents(5000));
+    await store().borrowFromNextCycle(cat, '2026-01-02', cents(3000)); // same Jan cycle
+    s = store().nextCycleStartState(cat, '2026-01-31');
+    expect(s.alreadyOwed).toBe(8000);
+    expect(s.startsWith).toBe(12000);
+  });
+
+  it('nextCycleStartState throws on an unknown category', async () => {
+    await freshChapter();
+    expect(() => store().nextCycleStartState('ghost', WEEK)).toThrow(/unknown category/i);
+  });
+
+  it('cadence change after debt exists: old weekly legs keep their period math; the read follows the new cadence', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Gas', 10000);
+    // Incur weekly debt: repay leg lands at next Monday.
+    await store().borrowFromNextCycle(cat, WEEK, cents(3000));
+    const weeklyRepay = (await store().evaluation.getCarryoverEntries({ categoryId: cat })).find(
+      (e) => e.kind === 'borrow_repay',
+    )!;
+    expect(weeklyRepay.weekStart).toBe(NEXT); // 2026-01-12
+
+    // Switch the envelope to monthly cadence while the weekly debt still exists.
+    await store().updateCategory(cat, { cadence: 'monthly' });
+
+    // The already-written weekly legs are untouched (their period math is frozen).
+    const stillThere = (await store().evaluation.getCarryoverEntries({ categoryId: cat })).find(
+      (e) => e.kind === 'borrow_repay',
+    )!;
+    expect(stillThere.weekStart).toBe(NEXT);
+
+    // nextCycleStartState now reads the CURRENT (monthly) cadence: next cycle is
+    // February, which the weekly repay (at 2026-01-12, not a month boundary) does
+    // not touch — documented edge.
+    const s = store().nextCycleStartState(cat, WEEK);
+    expect(s.cycleStart).toBe('2026-02-01');
+    expect(s.alreadyOwed).toBe(0);
+
+    // A fresh borrow now writes monthly legs; the weekly pair remains alongside it.
+    await store().borrowFromNextCycle(cat, WEEK, cents(2000));
+    const entries = await store().evaluation.getCarryoverEntries({ categoryId: cat });
+    const pairs = new Map<string, number[]>();
+    for (const e of entries) {
+      if (!e.pairId) continue;
+      pairs.set(e.pairId, [...(pairs.get(e.pairId) ?? []), e.amount]);
+    }
+    // Two independent pairs, each internally equal (conservation per pair).
+    expect(pairs.size).toBe(2);
+    for (const legs of pairs.values()) {
+      expect(legs).toHaveLength(2);
+      expect(legs[0]).toBe(legs[1]);
+    }
+    const monthlyRepay = entries.find(
+      (e) => e.kind === 'borrow_repay' && e.weekStart === '2026-02-01',
+    );
+    expect(monthlyRepay).toBeDefined();
   });
 
   it('sweep: leftover leaves envelope system and counts toward savings', async () => {
@@ -118,6 +345,59 @@ describe('conservation law', () => {
     // The cash actually moved (verifier finding #2 fixed):
     expect(store().getAccountBalance(savings, '2026-01-31')).toBe(10000);
     expect(store().getAccountBalance(checking, '2026-01-31')).toBe(90000);
+  });
+});
+
+describe('getMonthSavingsTotal netting (v0.3 anti-inflation)', () => {
+  it('savings -> savings shuffle adds ZERO to the metric', async () => {
+    await freshChapter();
+    await makeAccount('Checking', 100000, 'spending');
+    const savA = await makeAccount('Savings A', 50000, 'savings');
+    const savB = await makeAccount('Savings B', 0, 'savings');
+
+    // Shuffling money between two savings accounts moves no new money into
+    // savings — it must not count toward the Goal-3 savings metric.
+    await store().transfer({ fromAccountId: savA, toAccountId: savB, amount: cents(30000), date: '2026-01-06' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(0);
+  });
+
+  it('checking -> savings still counts in full', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000, 'spending');
+    const savings = await makeAccount('Savings', 0, 'savings');
+
+    await store().transfer({ fromAccountId: checking, toAccountId: savings, amount: cents(40000), date: '2026-01-06' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(40000);
+  });
+
+  it('multi-savings setup nets: a spending deposit counts, a savings shuffle does not', async () => {
+    await freshChapter();
+    const checking = await makeAccount('Checking', 100000, 'spending');
+    const savA = await makeAccount('Savings A', 20000, 'savings');
+    const savB = await makeAccount('Savings B', 0, 'savings');
+
+    // Real deposit from spending: counts.
+    await store().transfer({ fromAccountId: checking, toAccountId: savA, amount: cents(25000), date: '2026-01-06' });
+    // Internal shuffle between the two savings accounts: nets to zero.
+    await store().transfer({ fromAccountId: savA, toAccountId: savB, amount: cents(15000), date: '2026-01-07' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(25000);
+  });
+
+  it('sweep still counts (spending-funded transfer into savings)', async () => {
+    await freshChapter();
+    const cat = await makeWeeklyEnvelope('Fun', 10000);
+    await makeAccount('Checking', 100000, 'spending');
+    const savings = await makeAccount('Savings', 0, 'savings');
+
+    await store().sweepToSavings(cat, WEEK, savings);
+    // A later savings->savings shuffle must not add to the swept total.
+    const savB = await makeAccount('Savings B', 0, 'savings');
+    await store().transfer({ fromAccountId: savings, toAccountId: savB, amount: cents(5000), date: '2026-01-08' });
+
+    expect(await store().evaluation.getMonthSavingsTotal('2026-01')).toBe(10000);
   });
 });
 
@@ -221,6 +501,75 @@ describe('undo window', () => {
   });
 });
 
+describe('envelope cadence plumbing', () => {
+  it('defaults to weekly when unspecified and round-trips a monthly cadence', async () => {
+    await freshChapter();
+    const weekly = await store().createCategory({
+      name: 'Groceries',
+      colorKey: 'amber',
+      fixed: false,
+      envelope: { period: 'weekly', budget: cents(10000), carryoverDefault: 'ask' },
+    });
+    expect(weekly.cadence).toBe('weekly');
+
+    const monthly = await store().createCategory({
+      name: 'Fun',
+      colorKey: 'pink',
+      fixed: false,
+      cadence: 'monthly',
+      envelope: { period: 'monthly', budget: cents(20000), carryoverDefault: 'ask' },
+    });
+    expect(monthly.cadence).toBe('monthly');
+
+    // Cadence survives a reload from committed DB state.
+    const reloaded = store().listCategories();
+    expect(reloaded.find((c) => c.id === weekly.id)!.cadence).toBe('weekly');
+    expect(reloaded.find((c) => c.id === monthly.id)!.cadence).toBe('monthly');
+  });
+
+  it('updateCategory changes cadence, and preserves it when the patch omits it', async () => {
+    await freshChapter();
+    const cat = await store().createCategory({
+      name: 'Fun',
+      colorKey: 'pink',
+      fixed: false,
+      cadence: 'monthly',
+      envelope: { period: 'monthly', budget: cents(20000), carryoverDefault: 'ask' },
+    });
+
+    // A rename that doesn't mention cadence leaves it at monthly.
+    await store().updateCategory(cat.id, { name: 'Fun Money' });
+    expect(store().listCategories().find((c) => c.id === cat.id)!.cadence).toBe('monthly');
+
+    // An explicit cadence change lands.
+    await store().updateCategory(cat.id, { cadence: 'weekly' });
+    expect(store().listCategories().find((c) => c.id === cat.id)!.cadence).toBe('weekly');
+  });
+
+  it('rejects an invalid cadence at the mutation boundary', async () => {
+    await freshChapter();
+    await expect(
+      store().createCategory({
+        name: 'Bad',
+        colorKey: 'blue',
+        fixed: false,
+        cadence: 'daily' as never,
+        envelope: { period: 'weekly', budget: cents(1000), carryoverDefault: 'ask' },
+      }),
+    ).rejects.toThrow(/cadence/i);
+
+    const ok = await store().createCategory({
+      name: 'Ok',
+      colorKey: 'blue',
+      fixed: false,
+      envelope: { period: 'weekly', budget: cents(1000), carryoverDefault: 'ask' },
+    });
+    await expect(
+      store().updateCategory(ok.id, { cadence: 'yearly' as never }),
+    ).rejects.toThrow(/cadence/i);
+  });
+});
+
 describe('EvaluationReadPort attribution (duck guard §5.4)', () => {
   it('cross-month borrow attributes both legs to the origin month', async () => {
     await freshChapter();
@@ -246,5 +595,87 @@ describe('EvaluationReadPort attribution (duck guard §5.4)', () => {
     const julyTotals = await store().evaluation.getMonthCategoryTotals('2026-07');
     expect(juneTotals.find((t) => t.categoryId === cat)!.spent).toBe(5000); // origin week's month
     expect(julyTotals.find((t) => t.categoryId === cat)!.spent).toBe(0); // NOT calendar month
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Final-review coverage: editTransaction + updateRecurringBill field edits
+// ---------------------------------------------------------------------------
+describe('editTransaction (final-review coverage)', () => {
+  it('edits amount/category/note and every downstream read follows', async () => {
+    await freshChapter();
+    const a = await makeAccount('A', 100000);
+    const food = await makeWeeklyEnvelope('Food', 10000);
+    const gas = await makeWeeklyEnvelope('Gas', 10000);
+    const id = await store().addExpense({
+      accountId: a, categoryId: food, amount: cents(2500), date: '2026-01-06',
+    });
+
+    await store().editTransaction(id, { amount: cents(4000), categoryId: gas, note: 'refuel' });
+
+    expect(store().getEnvelopeWeekState(food, '2026-01-05').spent).toBe(0);
+    expect(store().getEnvelopeWeekState(gas, '2026-01-05').spent).toBe(4000);
+    expect(store().getAccountBalance(a, '2026-01-06')).toBe(100000 - 4000);
+  });
+
+  it('rejects a zero, negative, or fractional amount and an unknown/deleted id', async () => {
+    await freshChapter();
+    const a = await makeAccount('A', 100000);
+    const food = await makeWeeklyEnvelope('Food', 10000);
+    const id = await store().addExpense({
+      accountId: a, categoryId: food, amount: cents(2500), date: '2026-01-06',
+    });
+
+    await expect(store().editTransaction(id, { amount: 0 as never })).rejects.toThrow(/positive/);
+    await expect(store().editTransaction(id, { amount: -100 as never })).rejects.toThrow(/positive/);
+    await expect(store().editTransaction(id, { amount: 10.5 as never })).rejects.toThrow(/positive/);
+    await expect(store().editTransaction('phantom', { note: 'x' })).rejects.toThrow(/unknown/);
+    await store().deleteTransaction(id);
+    await expect(store().editTransaction(id, { note: 'x' })).rejects.toThrow(/deleted/);
+    // The rejected edits left the original untouched (it is soft-deleted now,
+    // but its stored amount never changed along the way).
+  });
+});
+
+describe('updateRecurringBill field edits (final-review coverage)', () => {
+  it('amount and dueDay edits flow into the safe-to-spend reservation', async () => {
+    await freshChapter();
+    await makeAccount('A', 100000);
+    const fixed = await store().createCategory({
+      name: 'Rent', colorKey: 'violet', fixed: true, envelope: null,
+    });
+    await store().createIncomeSource({
+      name: 'Job', amount: cents(100000),
+      schedule: { kind: 'monthly', anchorDate: '2026-01-30' },
+      splits: [],
+    });
+    const env = await makeWeeklyEnvelope('Food', 50000);
+    void env;
+    const bill = await store().addRecurringBill({
+      name: 'Rent', categoryId: fixed.id, amountCents: cents(20000), dueDay: 10,
+    });
+
+    const before = store().getSafeToSpend('2026-01-05');
+    await store().updateRecurringBill(bill.id, { amountCents: cents(30000) });
+    const after = store().getSafeToSpend('2026-01-05');
+    expect(before - after).toBe(10000); // reservation followed the amount edit
+
+    // Move the due day past the next payday: the reservation disappears.
+    await store().updateRecurringBill(bill.id, { dueDay: 31 });
+    expect(store().getSafeToSpend('2026-01-05')).toBe(before + 20000);
+  });
+
+  it('rejects invalid dueDay and amount edits', async () => {
+    await freshChapter();
+    const fixed = await store().createCategory({
+      name: 'Rent', colorKey: 'violet', fixed: true, envelope: null,
+    });
+    const bill = await store().addRecurringBill({
+      name: 'Rent', categoryId: fixed.id, amountCents: cents(20000), dueDay: 10,
+    });
+    await expect(store().updateRecurringBill(bill.id, { dueDay: 0 })).rejects.toThrow(/1\.\.31/);
+    await expect(store().updateRecurringBill(bill.id, { dueDay: 32 })).rejects.toThrow(/1\.\.31/);
+    await expect(store().updateRecurringBill(bill.id, { amountCents: 0 as never })).rejects.toThrow(/positive/);
+    await expect(store().updateRecurringBill('phantom', { dueDay: 5 })).rejects.toThrow(/unknown/);
   });
 });

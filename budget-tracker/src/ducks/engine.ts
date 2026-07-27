@@ -381,6 +381,34 @@ export class DuckEngineImpl implements DuckEngine {
     }
   }
 
+  /**
+   * STARTER DUCK INVARIANT (v0.3 §1.1 "the pond is never empty")
+   * -----------------------------------------------------------
+   * Exactly one starter duck is seeded IFF the active chapter has NO issued
+   * evaluations AND an empty flock. This makes "the pond is never empty" hold
+   * without turning the starter into a free respawn:
+   *   • fresh chapter, no history      -> the flock starts at 1 duck;
+   *   • any month has been evaluated   -> evaluations.length > 0 forever, so a
+   *     flock later driven to 0 by 0/3 months is NEVER reseeded (losing your
+   *     last duck leaves an empty pond, not a fresh gift);
+   *   • a brand-new chapter            -> its own empty evaluation history, so
+   *     the starter returns for that chapter alone.
+   * Seeding runs on BOTH evaluate and getFlock so the invariant holds whichever
+   * the UI reaches first (the day-one Pond reads getFlock before any month
+   * completes). Mutates `ducks` in place; returns whether it seeded.
+   */
+  private seedStarterIfFresh(
+    evaluations: DuckEvaluation[],
+    ducks: Duck[],
+    chapter: Chapter,
+  ): boolean {
+    if (evaluations.length === 0 && ducks.length === 0) {
+      ducks.push({ id: this.generateId(), name: null, earnedMonth: monthOf(chapter.startedAt) });
+      return true;
+    }
+    return false;
+  }
+
   // --- Public API ----------------------------------------------------------
 
   async evaluatePendingMonths(now: ISODate): Promise<DuckEvaluation[]> {
@@ -415,14 +443,9 @@ export class DuckEngineImpl implements DuckEngine {
 
     const ducks: Duck[] = state.ducks.map((d) => ({ ...d }));
     let tier = state.accessoryTier;
-    let dirty = false;
-
-    // Enforce "chapter starts at 1 duck" if the flock was never seeded. Runs
-    // at most once (guarded by both no prior evals AND an empty flock).
-    if (state.evaluations.length === 0 && ducks.length === 0) {
-      ducks.push({ id: this.generateId(), name: null, earnedMonth: monthOf(chapter.startedAt) });
-      dirty = true;
-    }
+    // "Chapter starts at 1 duck" — see the STARTER DUCK INVARIANT above. Runs at
+    // most once (guarded by both no prior evals AND an empty flock).
+    let dirty = this.seedStarterIfFresh(state.evaluations, ducks, chapter);
 
     const issued: Array<{ evaluation: DuckEvaluation; bigWin: boolean }> = [];
 
@@ -481,7 +504,19 @@ export class DuckEngineImpl implements DuckEngine {
     const chapter = this.getActiveChapter();
     const state = await this.store.loadState(chapter.id);
     this.validateLoadedState(chapter.id, state);
-    return { ducks: state.ducks.map((d) => ({ ...d })), accessoryTier: state.accessoryTier };
+    const ducks = state.ducks.map((d) => ({ ...d }));
+    // Ensure the pond is never empty on a fresh chapter even if the Pond is read
+    // before the first evaluate runs (STARTER DUCK INVARIANT). Persist the seed
+    // so its id is stable across reads; validation above already guaranteed the
+    // loaded state is consistent, so an empty flock here means no history.
+    if (this.seedStarterIfFresh(state.evaluations, ducks, chapter)) {
+      await this.store.commit(chapter.id, {
+        newEvaluations: [],
+        ducks,
+        accessoryTier: state.accessoryTier,
+      });
+    }
+    return { ducks: ducks.map((d) => ({ ...d })), accessoryTier: state.accessoryTier };
   }
 }
 

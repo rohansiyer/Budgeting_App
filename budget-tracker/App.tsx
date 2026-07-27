@@ -3,6 +3,14 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
+import {
+  SpaceGrotesk_400Regular,
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+} from '@expo-google-fonts/space-grotesk';
+import { SpaceMono_400Regular, SpaceMono_700Bold } from '@expo-google-fonts/space-mono';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AppErrorBoundary } from './src/components/AppErrorBoundary';
 import { StoreProvider } from './src/providers/StoreProvider';
@@ -13,6 +21,7 @@ import { initDatabase } from './src/db/client';
 import { seedInitialData } from './src/db/seed';
 import { createStoreSetupWriter } from './src/setup/storeSetupWriter';
 import { DuckResultsGate } from './src/ducks/DuckResultsGate';
+import { PayPeriodRecapGate } from './src/ducks/PayPeriodRecapGate';
 import { LockScreen } from './src/security/LockScreen';
 import { useAutoLock } from './src/security/useAutoLock';
 import { isAppLockEnabled } from './src/security/lockSettings';
@@ -40,6 +49,14 @@ export default function App() {
   const [locked, setLocked] = useState(false);
   // First-run gate: no accounts yet ⇒ land on the setup wizard (skippable).
   const [firstRun, setFirstRun] = useState(false);
+  const [fontsLoaded, fontError] = useFonts({
+    SpaceGrotesk_400Regular,
+    SpaceGrotesk_500Medium,
+    SpaceGrotesk_600SemiBold,
+    SpaceGrotesk_700Bold,
+    SpaceMono_400Regular,
+    SpaceMono_700Bold,
+  });
   useAutoLock(() => setLocked(true));
   useEffect(() => {
     void isAppLockEnabled().then((enabled) => {
@@ -66,6 +83,12 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  // Keep the splash up while fonts load; a load error proceeds with the
+  // system font rather than blocking startup forever.
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   if (boot.phase !== 'ready') {
     return (
@@ -122,6 +145,10 @@ export default function App() {
             <StatusBar style="light" />
             <AppShellProvider>
               <RootNavigator />
+              {/* Mid-month pay-period recaps never carry a duck verdict, so they
+                  mount first; the month-end verdict gate paints above them
+                  when both happen to be pending at once. */}
+              <PayPeriodRecapGate />
               <DuckResultsGate
                 onGoToPond={() => openTab('Pond')}
                 onReviewBills={() => openTab('Calendar')}

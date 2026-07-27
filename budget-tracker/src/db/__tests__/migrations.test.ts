@@ -6,6 +6,7 @@ import { openDatabaseSync } from 'expo-sqlite';
 import { initDatabase, getRawDb, resetDatabaseForTests } from '../client';
 import { SqliteMigrationRunner, MIGRATIONS, type RawSqlDb } from '../migrations';
 import { migration001 } from '../migrations/migration_001';
+import { migration002 } from '../migrations/migration_002';
 import type { Migration } from '../migrations';
 
 describe('MigrationRunner', () => {
@@ -14,7 +15,7 @@ describe('MigrationRunner', () => {
   it('brings a fresh install to the latest version', async () => {
     await initDatabase();
     const runner = new SqliteMigrationRunner(getRawDb() as unknown as RawSqlDb, MIGRATIONS);
-    expect(await runner.currentVersion()).toBe(1);
+    expect(await runner.currentVersion()).toBe(MIGRATIONS.length);
   });
 
   it('is idempotent (second migrate applies nothing)', async () => {
@@ -22,14 +23,14 @@ describe('MigrationRunner', () => {
     const runner = new SqliteMigrationRunner(getRawDb() as unknown as RawSqlDb, MIGRATIONS);
     const result = await runner.migrateToLatest();
     expect(result.applied).toEqual([]); // already at latest from initDatabase
-    expect(result.currentVersion).toBe(1);
+    expect(result.currentVersion).toBe(MIGRATIONS.length);
   });
 
   it('records the applied version in schema_version', async () => {
     await initDatabase();
     const raw = getRawDb() as unknown as RawSqlDb;
     const row = raw.getFirstSync<{ v: number }>('SELECT MAX(version) AS v FROM schema_version');
-    expect(row?.v).toBe(1);
+    expect(row?.v).toBe(MIGRATIONS.length);
   });
 
   it('rejects a version gap', async () => {
@@ -106,5 +107,49 @@ describe('Migration 1 legacy conversion', () => {
       `SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('legacy_accounts','income_configs','recurring_statuses')`,
     );
     expect(legacy?.n).toBe(0);
+  });
+});
+
+describe('Migration 2 — category cadence column', () => {
+  type Raw = RawSqlDb & { getAllSync: <T>(sql: string) => T[] };
+
+  it('a fresh install has the cadence column defaulting to weekly', async () => {
+    await initDatabase();
+    const raw = getRawDb() as unknown as Raw;
+    const cols = raw.getAllSync<{ name: string; notnull: number; dflt_value: string | null }>(
+      `PRAGMA table_info(categories)`,
+    );
+    const cadence = cols.find((c) => c.name === 'cadence');
+    expect(cadence).toBeDefined();
+    expect(cadence!.notnull).toBe(1);
+    // Insert without cadence → the column default applies.
+    raw.execSync(
+      `INSERT INTO categories (id, chapter_id, name, color_key, fixed, created_at)
+       VALUES ('c1','ch','Food','amber',0,'t')`,
+    );
+    const row = raw.getFirstSync<{ cadence: string }>(`SELECT cadence FROM categories WHERE id='c1'`);
+    expect(row?.cadence).toBe('weekly');
+  });
+
+  it('backfills weekly onto rows created before v2', async () => {
+    // Stand up a DB at version 1 only, then upgrade to v2.
+    const raw = openDatabaseSync('cadence-legacy') as unknown as Raw & {
+      getFirstSync: <T>(sql: string) => T | null;
+    };
+    await new SqliteMigrationRunner(raw, [migration001]).migrateToLatest();
+    // A v1 categories row has no cadence column yet.
+    raw.execSync(
+      `INSERT INTO categories (id, chapter_id, name, color_key, fixed, created_at)
+       VALUES ('legacy-cat','ch','Rent','violet',1,'t')`,
+    );
+    const beforeCols = raw.getAllSync<{ name: string }>(`PRAGMA table_info(categories)`);
+    expect(beforeCols.some((c) => c.name === 'cadence')).toBe(false);
+
+    await new SqliteMigrationRunner(raw, [migration001, migration002]).migrateToLatest();
+
+    const row = raw.getFirstSync<{ cadence: string }>(
+      `SELECT cadence FROM categories WHERE id='legacy-cat'`,
+    );
+    expect(row?.cadence).toBe('weekly'); // pre-existing row backfilled
   });
 });

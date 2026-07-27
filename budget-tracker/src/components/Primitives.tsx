@@ -131,6 +131,9 @@ const styles = StyleSheet.create({
   },
   money: {
     fontWeight: typo.title.fontWeight,
+    // Money is always the mono face (handoff §2.4); fontWeight above is only
+    // the system-font fallback path.
+    fontFamily: tokens.font.monoBold,
     fontVariant: [...typo.tabularNums.fontVariant],
   },
   row: {

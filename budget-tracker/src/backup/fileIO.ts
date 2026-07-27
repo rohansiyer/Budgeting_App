@@ -20,18 +20,23 @@ export async function writeBackupFile(contents: string, now: Date = new Date()):
   return uri;
 }
 
-/** Hand the exported file to the OS share sheet (Save to Drive, email, etc). */
-export async function shareBackupFile(uri: string): Promise<void> {
+/**
+ * Hand the exported file to the OS share sheet (Save to Drive, email, etc).
+ * Returns whether the share sheet actually opened (F5-2): false means
+ * sharing isn't available on this platform/device — the file still exists on
+ * disk at `uri` — so callers can report the fallback honestly instead of
+ * always claiming "ready to share".
+ */
+export async function shareBackupFile(uri: string): Promise<boolean> {
   const available = await Sharing.isAvailableAsync();
   if (!available) {
-    // Sharing not available on this platform/device — the file still exists
-    // on disk at `uri` for the caller to surface another way.
-    return;
+    return false;
   }
   await Sharing.shareAsync(uri, {
     mimeType: 'application/json',
     dialogTitle: 'Export Ducks in a Row backup',
   });
+  return true;
 }
 
 /**
